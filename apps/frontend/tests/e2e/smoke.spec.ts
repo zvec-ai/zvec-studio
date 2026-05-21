@@ -490,6 +490,20 @@ async function mountFakeBackend(
     }
   });
 
+  await page.route('**/api/v1/**', async (route) => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    if (path.endsWith('/healthz')) {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"status":"ok"}' });
+    } else if (path.includes('/ai/embeddings')) {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"items":[]}' });
+    } else if (path.includes('/ai/rerankers')) {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"items":[]}' });
+    } else {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    }
+  });
+
   return state;
 }
 
