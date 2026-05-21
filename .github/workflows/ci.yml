@@ -138,8 +138,10 @@ jobs:
         run: |
           target=$(rustc -vV | awk '/^host:/ { print $2 }')
           mkdir -p apps/desktop/src-tauri/binaries
-          touch "apps/desktop/src-tauri/binaries/zvec-studio-sidecar-${target}"
-          chmod +x "apps/desktop/src-tauri/binaries/zvec-studio-sidecar-${target}"
+          ext=""
+          if [[ "$target" == *windows* ]]; then ext=".exe"; fi
+          touch "apps/desktop/src-tauri/binaries/zvec-studio-sidecar-${target}${ext}"
+          chmod +x "apps/desktop/src-tauri/binaries/zvec-studio-sidecar-${target}${ext}" 2>/dev/null || true
 
       - name: Check formatting
         working-directory: apps/desktop/src-tauri

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import platform
 from pathlib import Path
 
 import pytest
@@ -96,6 +97,7 @@ async def test_list_400_when_not_dir(tmp_path: Path, client: AsyncClient) -> Non
 
 
 @pytest.mark.integration
+@pytest.mark.skipif(platform.system() == "Windows", reason="POSIX root semantics")
 async def test_root_has_no_parent(client: AsyncClient) -> None:
     response = await client.get("/api/v1/fs/list", params={"path": "/"})
     assert response.status_code == 200
