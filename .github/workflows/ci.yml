@@ -62,6 +62,89 @@ jobs:
           path: artifacts/
           if-no-files-found: ignore
 
+  backend-platform:
+    name: Backend (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, name: "macOS ARM64", python-version: "3.12" }
+          - { os: ubuntu-24.04-arm, name: "Linux ARM64", python-version: "3.12" }
+          - { os: windows-latest, name: "Windows x64", python-version: "3.12" }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install backend (editable + dev extras)
+        run: pip install -e "apps/backend[dev]"
+
+      - name: Lint (ruff)
+        working-directory: apps/backend
+        run: ruff check .
+
+      - name: Unit tests
+        working-directory: apps/backend
+        run: pytest tests/unit -v --junitxml=../../artifacts/backend-unit-${{ matrix.name }}.xml
+
+      - name: Integration tests
+        working-directory: apps/backend
+        run: pytest tests/integration -v --junitxml=../../artifacts/backend-integration-${{ matrix.name }}.xml
+
+      - name: Upload diagnostic artifacts
+        if: failure() || always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-artifacts-${{ matrix.name }}
+          path: artifacts/
+          if-no-files-found: ignore
+
+  desktop:
+    name: Desktop (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, name: "Linux x64" }
+          - { os: macos-latest, name: "macOS ARM64" }
+          - { os: windows-latest, name: "Windows x64" }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - name: Check formatting
+        working-directory: apps/desktop/src-tauri
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        working-directory: apps/desktop/src-tauri
+        run: cargo clippy --all-targets --no-deps -- -D warnings
+
+      - name: Tests
+        working-directory: apps/desktop/src-tauri
+        run: cargo test --no-fail-fast
+
   frontend:
     name: Frontend (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
