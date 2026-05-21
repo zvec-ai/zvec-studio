@@ -1,0 +1,818 @@
+{
+  "app": {
+    "name": "Zvec Studio",
+    "tagline": "查看与管理 Zvec 集合"
+  },
+  "components": {
+    "toast": {
+      "notifications": "通知",
+      "dismiss": "关闭通知"
+    },
+    "directoryPicker": {
+      "title": "选择目录",
+      "pathLabel": "路径",
+      "go": "前往",
+      "home": "主目录",
+      "parent": "上级",
+      "select": "选择",
+      "cancel": "取消",
+      "empty": "没有子目录。"
+    }
+  },
+  "nav": {
+    "collections": "Collections",
+    "documents": "文档",
+    "search": "向量搜索",
+    "settings": "设置",
+    "aiFunctions": "AI 函数",
+    "embeddings": "Embeddings",
+    "rerankers": "Rerankers",
+    "newEmbedding": "新建 Embedding",
+    "newReranker": "新建 Reranker",
+    "showSidebar": "显示侧边栏",
+    "hideSidebar": "隐藏侧边栏"
+  },
+  "sidebar": {
+    "guide": "指南",
+    "github": "GitHub",
+    "docs": "文档",
+    "darkMode": "深色模式",
+    "lightMode": "浅色模式"
+  },
+  "tour": {
+    "steps": {
+      "collections": {
+        "title": "集合",
+        "body": "所有已打开和最近使用的集合都会显示在这里。点击某个集合即可查看其 schema、文档和执行查询。"
+      },
+      "collectionActions": {
+        "title": "创建或打开",
+        "body": "点击 + 按钮从头创建新集合，或点击箭头按钮从磁盘打开已有的集合目录。"
+      },
+      "embeddings": {
+        "title": "Embedding 函数",
+        "body": "注册 Embedding 模型（本地 ONNX、OpenAI、Qwen 等），实现插入和查询时自动将文本向量化。"
+      },
+      "rerankers": {
+        "title": "Reranker 函数",
+        "body": "设置 Reranker（RRF、加权或模型重排序），通过对初始结果重新打分来提升搜索相关性。"
+      },
+      "workspace": {
+        "title": "集合工作区",
+        "body": "打开集合后将看到四个标签页：概览用于 schema 和索引管理，浏览用于筛选和查看文档，查询用于向量相似度搜索，写入用于插入、更新或删除文档。"
+      }
+    }
+  },
+  "actions": {
+    "create": "创建",
+    "cancel": "取消",
+    "confirm": "确认",
+    "retry": "重试",
+    "close": "关闭",
+    "delete": "删除",
+    "open": "打开",
+    "browse": "浏览…",
+    "addField": "添加字段",
+    "remove": "移除",
+    "removeField": "移除",
+    "save": "保存",
+    "forget": "忘记",
+    "creating": "创建中…"
+  },
+  "pages": {
+    "home": {
+      "heading": "👋 欢迎使用 Zvec Studio",
+      "subheading": "创建新集合或打开已有集合开始使用。",
+      "createBtn": "✨ 创建集合",
+      "openBtn": "📂 从磁盘打开",
+      "openCollections": "📌 已打开的集合",
+      "recentTitle": "🕐 最近打开"
+    },
+    "collections": {
+      "title": "集合",
+      "subtitle": "创建、打开和管理本地 Zvec 集合。",
+      "empty": {
+        "title": "还没有集合",
+        "body": "创建你的第一个集合，或从磁盘打开已有的集合。",
+        "create": "创建集合",
+        "open": "打开已有集合"
+      },
+      "list": {
+        "columnName": "名称",
+        "columnPath": "路径",
+        "columnActions": "操作",
+        "delete": "删除",
+        "deleting": "删除中…",
+        "deleteConfirmTitle": "删除集合？",
+        "deleteConfirmBody": "这将关闭并从注册表中移除 \"{{name}}\"。磁盘上的数据不会被修改。",
+        "loadFailedTitle": "无法加载集合",
+        "loadFailedRetry": "重试"
+      },
+      "recent": {
+        "title": "最近打开",
+        "aria": "最近打开的集合",
+        "loading": "正在加载最近打开的集合…",
+        "clearAll": "清空全部",
+        "open": "打开",
+        "forgetAria": "忘记 {{path}}",
+        "reopenSuccessTitle": "集合已打开"
+      },
+      "create": {
+        "title": "创建集合",
+        "name": "集合名称",
+        "nameHelp": "3-64 个字符，必须以字母开头；允许字母、数字和下划线。",
+        "path": "存储路径",
+        "pathHelp": "尚不存在的目录的绝对路径 — Zvec 会自动创建。建议：用「浏览」选择父目录，集合名称会自动追加。",
+        "pathPlaceholder": "/绝对路径/到/新集合目录",
+        "pathBrowseHint": "将创建在 {{parent}}/{{name}} — 手动编辑路径可覆盖。",
+        "pathBrowseHintNoName": "已选择父目录 {{parent}}。请在上方填写集合名称，路径将自动补全。",
+        "pathUnsupported": "此浏览器无法打开目录选择器。在桌面应用中可以点击「浏览…」；否则请手动输入后端可访问的绝对路径。",
+        "pathBrowserNotice": "浏览器只能读取目录名（\"{{name}}\"），无法获取绝对路径。请在下方输入完整路径以便后端写入集合。",
+        "vector": "向量字段",
+        "vectorName": "向量名称",
+        "vectorDim": "维度",
+        "vectorType": "数据类型",
+        "metric": "度量方式",
+        "indexType": "索引类型",
+        "indexParams": "索引参数（JSON）",
+        "indexParamsHint": "可选。例如 HNSW 可填 {\"M\": 16, \"efConstruction\": 200}。",
+        "quantizeType": "量化方式",
+        "addVector": "添加向量字段",
+        "nullable": "可为空",
+        "indexed": "索引",
+        "rangeOptimization": "范围优化",
+        "extendedWildcard": "扩展通配符",
+        "quantizeNone": "无",
+        "fields": "字段",
+        "fieldsHelp": "可选的元数据字段（title、category、price…）。主键（`id`）由 Zvec 自动管理，无需声明。",
+        "fieldName": "名称",
+        "fieldType": "类型",
+        "primaryInfo": "Zvec 会自动为每个文档注入一个字符串主键（`id`）。",
+        "submitting": "创建中…",
+        "successTitle": "集合已创建",
+        "successBody": "\"{{name}}\" 已创建在 {{path}}",
+        "errors": {
+          "nameRequired": "名称为必填项。",
+          "nameFormat": "名称必须匹配 ^[A-Za-z][A-Za-z0-9_]{2,63}$（以字母开头，3-64 个字符）。",
+          "pathRequired": "路径为必填项。",
+          "pathAbsolute": "请提供绝对路径（macOS/Linux 以 / 开头，Windows 以盘符开头）。",
+          "dimRange": "维度必须是 1 到 32768 之间的整数。",
+          "fieldNameRequired": "每个字段需要一个有效名称。",
+          "reservedName": "字段名 \"{{name}}\" 是 Zvec 保留字段 — 请换一个名称。",
+          "invalidIndexParams": "索引参数必须是 JSON 对象。"
+        }
+      },
+      "open": {
+        "title": "打开集合",
+        "path": "存储路径",
+        "pathHelp": "已有集合目录的绝对路径。",
+        "pathPlaceholder": "/绝对路径/到/已有集合",
+        "pathUnsupported": "此浏览器无法打开目录选择器。在桌面应用中可以点击「浏览…」；否则请手动输入后端可访问的绝对路径。",
+        "pathBrowserNotice": "浏览器只能读取目录名（\"{{name}}\"），无法获取绝对路径。请在下方输入完整路径。",
+        "submitting": "打开中…",
+        "successTitle": "集合已打开",
+        "successBody": "\"{{name}}\" 已从 {{path}} 打开"
+      },
+      "detail": {
+        "back": "返回集合列表",
+        "loading": "正在加载集合…",
+        "loadFailedTitle": "无法加载此集合",
+        "loadFailedRetry": "重试",
+        "header": {
+          "path": "路径",
+          "documents": "文档数",
+          "dimension": "向量维度",
+          "indexState": "索引状态"
+        },
+        "tabs": {
+          "overview": "Overview",
+          "browse": "Browse",
+          "query": "Query",
+          "write": "Write",
+          "schema": "Schema",
+          "stats": "统计",
+          "documents": "文档",
+          "search": "搜索",
+          "viz": "可视化"
+        },
+        "loadingCollection": "正在加载集合…",
+        "loadFailed": "无法加载集合「{{name}}」。",
+        "overview": {
+          "documents": "文档数",
+          "storage": "存储",
+          "fields": "字段",
+          "indexes": "索引",
+          "indexCompleteness": "索引完整度",
+          "collectionInfo": "集合信息",
+          "collectionPath": "集合路径",
+          "path": "路径",
+          "openFolder": "打开文件夹",
+          "optimize": "Optimize",
+          "optimizeDocs": "Optimize 文档"
+        },
+        "schema": {
+          "vectorsTitle": "向量字段",
+          "fieldsTitle": "标量字段",
+          "indexTitle": "索引参数",
+          "columnName": "名称",
+          "columnType": "类型",
+          "columnDimension": "维度",
+          "columnIndex": "索引",
+          "columnMetric": "度量",
+          "columnParams": "参数",
+          "columnNullable": "可空",
+          "columnActions": "操作",
+          "indexType": "索引类型",
+          "metric": "度量方式",
+          "params": "参数",
+          "noFields": "未定义标量字段。",
+          "noIndex": "(延迟构建)",
+          "noParams": "(无额外参数)",
+          "ddl": {
+            "addField": "添加字段…",
+            "renameField": "重命名",
+            "dropField": "删除",
+            "createIndex": "创建索引…",
+            "editIndex": "编辑索引…",
+            "dropIndex": "删除索引",
+            "addFieldDialog": {
+              "title": "添加标量字段",
+              "nameLabel": "名称",
+              "namePlaceholder": "例如 category",
+              "nameHelp": "标识符格式；不会影响已有行（除非通过表达式回填）。",
+              "typeLabel": "数据类型",
+              "expressionLabel": "回填表达式（可选）",
+              "expressionPlaceholder": "例如 'unknown' 或 price * 0",
+              "expressionHelp": "Zvec 表达式，用于为已有行填充新列的值。留空则使用数据类型的零值。",
+              "submit": "添加",
+              "submitting": "添加中…",
+              "successTitle": "字段已添加",
+              "successDescription": "\"{{name}}\" 已添加。",
+              "failureTitle": "添加字段失败",
+              "errors": {
+                "nameRequired": "字段名为必填项。",
+                "reservedName": "字段名 \"{{name}}\" 是保留字段。"
+              }
+            },
+            "renameFieldDialog": {
+              "title": "重命名字段 \"{{name}}\"",
+              "newNameLabel": "新名称",
+              "newNameHelp": "标识符格式。更改会立即应用到磁盘。",
+              "submit": "重命名",
+              "submitting": "重命名中…",
+              "successTitle": "字段已重命名",
+              "successDescription": "\"{{oldName}}\" → \"{{newName}}\"。",
+              "failureTitle": "重命名失败",
+              "errors": {
+                "newNameRequired": "新名称为必填项。",
+                "sameName": "新名称必须与当前名称不同。"
+              }
+            },
+            "dropFieldDialog": {
+              "title": "删除字段 \"{{name}}\"？",
+              "body": "这将永久移除标量列 \"{{name}}\" 及其所有值。此操作不可撤销。",
+              "submit": "删除",
+              "submitting": "删除中…",
+              "successTitle": "字段已删除",
+              "successDescription": "\"{{name}}\" 已移除。",
+              "failureTitle": "删除字段失败"
+            },
+            "createIndexDialog": {
+              "title": "创建向量索引",
+              "vectorFieldLabel": "向量字段",
+              "indexTypeLabel": "索引类型",
+              "metricLabel": "度量方式",
+              "paramsLabel": "索引参数（JSON）",
+              "paramsHelp": "可选。例如 HNSW 可填 {\"M\": 16, \"efConstruction\": 200}。",
+              "submit": "创建",
+              "submitting": "创建中…",
+              "successTitle": "索引已创建",
+              "successDescription": "\"{{vectorField}}\" 的索引已创建。",
+              "failureTitle": "创建索引失败",
+              "errors": {
+                "invalidParams": "索引参数必须是 JSON 对象。",
+                "noVectorFields": "此集合没有向量字段。"
+              }
+            },
+            "createScalarIndex": "创建索引",
+            "editScalarIndex": "编辑索引",
+            "dropScalarIndex": "删除索引",
+            "createScalarIndexDialog": {
+              "title": "为 \"{{field}}\" 创建标量索引",
+              "hint": "目前标量字段仅支持 INVERT 索引类型。",
+              "rangeLabel": "范围优化",
+              "wildcardLabel": "扩展通配符",
+              "submit": "创建",
+              "submitting": "创建中…",
+              "successTitle": "标量索引已创建",
+              "successDescription": "\"{{field}}\" 上的 INVERT 索引已创建。",
+              "failureTitle": "创建标量索引失败"
+            },
+            "dropScalarIndexDialog": {
+              "title": "删除 \"{{field}}\" 上的标量索引？",
+              "body": "这将移除 \"{{field}}\" 上的 INVERT 索引。标量筛选将回退到全表扫描。",
+              "submit": "删除索引",
+              "submitting": "删除中…",
+              "successTitle": "标量索引已删除",
+              "successDescription": "\"{{field}}\" 上的索引已移除。",
+              "failureTitle": "删除标量索引失败"
+            },
+            "dropIndexDialog": {
+              "title": "删除 \"{{vectorField}}\" 的索引？",
+              "body": "这将移除 \"{{vectorField}}\" 上的向量索引。已有数据将保留；后续搜索需要重建索引。",
+              "submit": "删除索引",
+              "submitting": "删除中…",
+              "successTitle": "索引已删除",
+              "successDescription": "\"{{vectorField}}\" 的索引已移除。",
+              "failureTitle": "删除索引失败"
+            }
+          }
+        },
+        "stats": {
+          "documents": "文档数",
+          "indexState": "索引状态",
+          "storage": "存储"
+        },
+        "indexState": {
+          "none": "未构建",
+          "building": "构建中…",
+          "ready": "就绪"
+        },
+        "placeholder": {
+          "viz": "2D 投影可视化在 MVP 后的路线图中。目前请使用文档和搜索标签页。"
+        },
+        "documentsPanel": {
+          "filterLabel": "过滤器（Zvec SQL-WHERE）",
+          "filterPlaceholder": "例如 price > 10 AND category = 'book'",
+          "limitLabel": "限制条数",
+          "apply": "浏览",
+          "reset": "清空",
+          "showing": "显示 {{count}} 条文档",
+          "truncated": "可能还有更多结果 — 请细化过滤条件或提高限制。",
+          "loading": "正在加载文档…",
+          "empty": "此集合还没有文档。",
+          "emptyFiltered": "没有文档匹配此过滤条件。",
+          "loadFailedTitle": "无法加载文档",
+          "drawerTitle": "文档 {{id}}",
+          "drawerLoading": "正在加载文档…",
+          "drawerError": "无法加载此文档。",
+          "close": "关闭",
+          "selectAllAria": "全选可见行",
+          "selectRowAria": "选择文档 {{id}}",
+          "selectionAria": "选择操作",
+          "selectionCount": "已选 {{count}} 条",
+          "selectionClear": "取消选择",
+          "insert": {
+            "openLabel": "插入",
+            "title": "插入文档",
+            "bodyLabel": "JSON 内容",
+            "hint": "接受单个 JSON 对象或对象数组。字段名和类型必须匹配集合 schema。",
+            "submit": "插入",
+            "submitting": "插入中…",
+            "successTitle": "已插入",
+            "successDescription": "已插入 {{count}} 条文档。",
+            "failureTitle": "插入失败",
+            "errors": {
+              "invalidJson": "无效的 JSON",
+              "emptyArray": "数组必须包含至少一个文档。",
+              "notObject": "内容必须是 JSON 对象或对象数组。",
+              "notObjects": "数组中的每个元素都必须是 JSON 对象。"
+            },
+            "autoEmbed": {
+              "title": "从文本自动嵌入",
+              "hint": "选择已注册的 Embedding 函数和目标向量字段，每行输入一条文本，然后点击「生成」覆盖下方的 JSON。",
+              "embeddingLabel": "Embedding 函数",
+              "embeddingNone": "（请选择）",
+              "vectorFieldLabel": "目标向量字段",
+              "textsLabel": "文本（每行一条）",
+              "textsPlaceholder": "每个非空行将成为一条文档。",
+              "generate": "生成",
+              "generating": "生成中…",
+              "successTitle": "文本已嵌入",
+              "successDescription": "已准备 {{count}} 条文档。",
+              "errors": {
+                "embeddingRequired": "请先选择一个 Embedding 函数。",
+                "vectorFieldRequired": "请选择目标向量字段。",
+                "textsRequired": "请输入至少一行非空文本。",
+                "notDense": "此 Embedding 不返回稠密向量。",
+                "dimensionMismatch": "向量字段 {{field}} 的维度为 {{expected}}，但 Embedding 返回了 {{actual}}。"
+              }
+            }
+          },
+          "delete": {
+            "rowLabel": "删除",
+            "rowAria": "删除文档 {{id}}",
+            "batchLabel": "删除已选的 {{count}} 条",
+            "confirmTitle": "删除文档？",
+            "confirmSingle": "删除文档 {{id}}？此操作不可撤销。",
+            "confirmBatch": "删除已选的 {{count}} 条文档？此操作不可撤销。",
+            "cancel": "取消",
+            "confirm": "删除",
+            "confirming": "删除中…",
+            "successSingleTitle": "文档已删除",
+            "successSingleDescription": "文档 {{id}} 已移除。",
+            "successBatchTitle": "文档已删除",
+            "successBatchDescription": "已移除 {{count}} 条文档。",
+            "failureTitle": "删除失败"
+          },
+          "deleteByFilter": {
+            "openLabel": "按过滤器删除…",
+            "title": "按过滤器删除",
+            "filterLabel": "过滤器（Zvec SQL-WHERE）",
+            "filterHint": "所有匹配的文档将被移除。每次调用最多可删除 100,000 行。",
+            "missingFilter": "请提供过滤表达式 — 不允许空过滤器。",
+            "submit": "删除",
+            "submitting": "删除中…",
+            "successTitle": "文档已删除",
+            "successDescription": "已移除 {{count}} 条文档。",
+            "failureTitle": "按过滤器删除失败"
+          }
+        },
+        "searchPanel": {
+          "vectorLabel": "查询向量（JSON 数组，维度={{dimension}}）",
+          "modeVector": "原始向量",
+          "modeText": "从文本",
+          "textLabel": "查询文本",
+          "textPlaceholder": "输入问题或短语进行嵌入搜索。",
+          "embeddingLabel": "Embedding 函数",
+          "embeddingNone": "（请选择）",
+          "embeddingFailureTitle": "Embedding 失败",
+          "topKLabel": "Top K",
+          "vectorFieldLabel": "向量字段",
+          "filterLabel": "过滤器",
+          "filterPlaceholder": "例如 price > 10 或 category == \"book\"",
+          "outputFieldsLabel": "输出字段",
+          "outputFieldsPlaceholder": "逗号分隔，留空表示全部",
+          "rerankerLabel": "Reranker",
+          "rerankerNone": "（无）",
+          "submit": "搜索",
+          "submitting": "搜索中…",
+          "summary": "{{count}} 条结果 · {{ms}} ms",
+          "successTitle": "搜索完成",
+          "successDescription": "{{count}} 条结果，耗时 {{ms}} ms。",
+          "failureTitle": "搜索失败",
+          "errors": {
+            "invalidVector": "向量必须是非空的有限数字 JSON 数组。",
+            "dimensionMismatch": "向量维度必须为 {{expected}}（实际为 {{actual}}）。",
+            "queryRequired": "请先输入查询文本。",
+            "embeddingRequired": "请先选择一个 Embedding 函数。",
+            "embeddingNotDense": "此 Embedding 不返回稠密向量。",
+            "embeddingEmpty": "Embedding 服务未返回向量。"
+          },
+          "columns": {
+            "id": "ID",
+            "score": "得分",
+            "fields": "字段"
+          },
+          "resultsAria": "搜索结果",
+          "emptyState": "提交查询以查看最近邻结果。",
+          "noHits": "无匹配结果。请尝试不同的向量或放宽过滤条件。",
+          "drawerTitle": "结果 {{id}}",
+          "close": "关闭",
+          "historyAria": "搜索历史",
+          "historyTitle": "最近搜索",
+          "historyClear": "清空",
+          "historyEmpty": "最多显示 {{limit}} 条最近搜索记录。",
+          "historySummary": "{{count}} 条命中 · topK {{topK}}",
+          "historyRemoveAria": "从历史中移除此条目"
+        },
+        "delete": "关闭集合",
+        "deleteConfirmTitle": "关闭集合？",
+        "deleteConfirmBody": "这将关闭并从注册表中移除 \"{{name}}\"。磁盘上的数据不会被修改。",
+        "deleting": "关闭中…",
+        "maintenance": {
+          "title": "维护",
+          "flush": "刷盘",
+          "flushing": "刷盘中…",
+          "flushHint": "将待写入的数据持久化到磁盘。",
+          "flushSuccess": "刷盘完成",
+          "flushSuccessTitle": "已刷盘",
+          "flushSuccessDescription": "\"{{name}}\" 已持久化到磁盘。",
+          "flushFailureTitle": "刷盘失败",
+          "optimize": "优化",
+          "optimizing": "优化中…",
+          "optimizeHint": "合并段和重建辅助结构。",
+          "optimizeSuccess": "优化完成",
+          "optimizeSuccessTitle": "已优化",
+          "optimizeSuccessDescription": "\"{{name}}\" 优化完成。",
+          "optimizeFailureTitle": "优化失败",
+          "destroy": "销毁",
+          "destroying": "销毁中…",
+          "destroyHint": "永久删除磁盘上的数据 — 不可撤销。",
+          "destroyConfirmTitle": "销毁集合？",
+          "destroyConfirmBody": "这将永久删除 \"{{name}}\" 及其所有磁盘数据。此操作不可撤销。",
+          "destroyAcknowledgeLabel": "输入集合名称以确认",
+          "destroyAcknowledgePlaceholder": "{{name}}",
+          "destroySuccessTitle": "集合已销毁",
+          "destroySuccessDescription": "\"{{name}}\" 及其数据已移除。",
+          "destroyFailureTitle": "销毁失败"
+        },
+        "query": {
+          "vectorQueries": "向量查询",
+          "embedding": "Embedding",
+          "embeddingNone": "无（原始向量 / ID）",
+          "dimMismatch": "维度不匹配：Embedding 生成 {{embDim}} 维，字段期望 {{fieldDim}} 维",
+          "modeVector": "向量",
+          "modeId": "按 ID",
+          "vectorPlaceholder": "[0.1, 0.2, ...] ({{dim}} 维)",
+          "idPlaceholder": "文档 ID",
+          "textPlaceholder": "输入查询文本...",
+          "textDisabled": "已禁用 — 维度不匹配",
+          "queryParams": "查询参数",
+          "ef": "ef",
+          "efHint": "搜索宽度（默认 300）",
+          "radius": "radius",
+          "radiusHint": "距离阈值（0 = 禁用）",
+          "isLinear": "isLinear",
+          "isUsingRefiner": "isUsingRefiner",
+          "nprobe": "nprobe",
+          "nprobeHint": "探测聚类数（默认 10）",
+          "reranker": "Reranker",
+          "rerankerNone": "无",
+          "topK": "Top K",
+          "includeVector": "包含向量",
+          "includeVectorNo": "否",
+          "includeVectorYes": "是",
+          "filter": "过滤器",
+          "filterPlaceholder": "例如 category == 'news'",
+          "outputFields": "输出字段",
+          "outputFieldsAll": "全部（默认）",
+          "outputFieldsNone": "无",
+          "outputFieldsPlaceholder": "field1, field2, ...",
+          "search": "搜索",
+          "searching": "搜索中…",
+          "results": "结果",
+          "resultsMeta": "{{count}} 条命中，耗时 {{ms}} ms",
+          "noResults": "未找到结果。",
+          "runSearch": "执行搜索以查看结果。",
+          "embedFailed": "Embedding 失败",
+          "searchFailed": "搜索失败",
+          "resetToAll": "重置为全部",
+          "copyJson": "复制 JSON"
+        },
+        "browse": {
+          "modeFilter": "Filter",
+          "filterPlaceholder": "过滤表达式，例如 category = 'news'",
+          "idPlaceholder": "例如 doc_01 ; doc_02 ; doc_03",
+          "fetchBtn": "获取",
+          "filterBtn": "浏览",
+          "docCount": "{{count}} 条文档",
+          "copyJson": "复制 JSON",
+          "copied": "已复制到剪贴板",
+          "loading": "加载中…",
+          "empty": "未找到文档。",
+          "truncated": "结果已截断 — 请细化过滤条件以查看更多。",
+          "filterError": "无效的过滤表达式。请检查语法。"
+        },
+        "filter": {
+          "builder": "Builder",
+          "sqlPlaceholder": "例如 category = 'news' AND price > 10",
+          "valuePlaceholder": "值",
+          "addCondition": "添加条件"
+        },
+        "mutate": {
+          "insert": "Insert",
+          "upsert": "Upsert",
+          "update": "Update",
+          "delete": "Delete",
+          "insertTitle": "插入文档",
+          "insertIdLabel": "文档 ID（可选）",
+          "insertIdPlaceholder": "留空则自动生成",
+          "insertSubmit": "插入",
+          "insertSubmitting": "处理中…",
+          "insertSuccess": "已插入 {{count}} 条文档",
+          "insertFailed": "插入失败",
+          "upsertTitle": "Upsert 文档",
+          "upsertLabel": "文档（JSON 数组）",
+          "upsertSubmit": "Upsert",
+          "upsertSubmitting": "Upsert 中…",
+          "upsertSuccess": "Upsert 成功 — 已处理 {{count}} 条文档",
+          "upsertFailed": "Upsert 失败",
+          "upsertIdRequired": "Upsert 时每个文档必须有 ID",
+          "upsertIdPlaceholder": "文档 ID（必填）",
+          "updateTitle": "更新文档",
+          "updateLabel": "文档（JSON 数组 — 只包含要修改的字段）",
+          "updateHint": "部分更新：每个文档必须包含已有的 \"id\"。只有你包含的字段和向量会被修改；其他数据将保留。",
+          "updateSubmit": "更新",
+          "updateSubmitting": "更新中…",
+          "updateSuccess": "已更新 {{count}} 条文档",
+          "updateFailed": "更新失败",
+          "updateIdRequired": "更新时每个文档必须有 \"id\" 字段",
+          "deleteTitle": "删除文档",
+          "deleteById": "按 ID",
+          "deleteByFilter": "按过滤器",
+          "deleteIdPlaceholder": "输入要删除的文档 ID...",
+          "deleteFilterPlaceholder": "例如 category = 'archived'",
+          "deleteSubmit": "删除",
+          "deleteSubmitting": "删除中…",
+          "deleteIdSuccess": "文档 \"{{id}}\" 已删除",
+          "deleteFilterSuccess": "已删除匹配过滤条件的 {{count}} 条文档",
+          "deleteFailed": "删除失败",
+          "deleteIdConfirmTitle": "删除文档？",
+          "deleteIdConfirmBody": "删除文档 \"{{id}}\"？此操作不可撤销。",
+          "deleteFilterConfirmTitle": "按过滤器删除？",
+          "deleteFilterConfirmBody": "删除所有匹配此过滤条件的文档？此操作不可撤销。",
+          "filterLabel": "过滤器",
+          "invalidJson": "无效的 JSON",
+          "invalidJsonArray": "内容必须是文档对象的 JSON 数组。",
+          "selectEmbedding": "选择 Embedding...",
+          "embedTextPlaceholder": "输入要嵌入的文本...",
+          "modeRaw": "原始",
+          "modeEmbed": "嵌入",
+          "dimMismatch": "维度不匹配：Embedding 生成 {{embDim}} 维，字段期望 {{fieldDim}} 维",
+          "dimMismatchDisabled": "无法嵌入 — 维度不匹配",
+          "docLabel": "文档 #{{index}}",
+          "addDoc": "+ 文档",
+          "modeForm": "表单",
+          "modeJson": "JSON",
+          "idRequired": "ID *"
+        }
+      }
+    },
+    "documents": {
+      "title": "文档",
+      "placeholder": "请先打开一个集合 — 文档浏览在每个集合的「文档」标签页中。",
+      "cta": "前往集合"
+    },
+    "search": {
+      "title": "向量搜索",
+      "placeholder": "请先打开一个集合 — 向量搜索在每个集合的「搜索」标签页中。",
+      "cta": "前往集合"
+    },
+    "aiFunctions": {
+      "title": "AI 函数",
+      "subtitle": "注册和查看集合使用的 Embedding 和 Reranker 函数。",
+      "loadFailedTitle": "无法加载 AI 函数",
+      "loadFailedRetry": "重试",
+      "tabs": {
+        "embeddings": "Embeddings",
+        "rerankers": "Rerankers"
+      },
+      "columns": {
+        "name": "名称",
+        "type": "类型",
+        "description": "描述",
+        "actions": "操作"
+      },
+      "fields": {
+        "name": "名称",
+        "description": "描述",
+        "type": "类型",
+        "config": "配置（JSON）"
+      },
+      "embeddings": {
+        "create": "注册 Embedding",
+        "createTitle": "注册 Embedding",
+        "createSuccessTitle": "Embedding 已注册",
+        "createSuccessBody": "\"{{name}}\" 已创建。",
+        "createFailed": "创建 Embedding 失败",
+        "emptyTitle": "还没有 Embedding 函数",
+        "emptyBody": "注册一个以在搜索和插入中启用文本转向量工作流。",
+        "nameLabel": "名称",
+        "namePlaceholder": "例如 my_openai_emb",
+        "typeLabel": "类型",
+        "configLabel": "配置（JSON）",
+        "invalidJson": "配置必须是有效的 JSON"
+      },
+      "rerankers": {
+        "create": "注册 Reranker",
+        "createTitle": "注册 Reranker",
+        "createSuccessTitle": "Reranker 已注册",
+        "createSuccessBody": "\"{{name}}\" 已创建。",
+        "createFailed": "创建 Reranker 失败",
+        "emptyTitle": "还没有 Reranker 函数",
+        "emptyBody": "注册一个以使用交叉编码器或融合策略优化搜索排序。",
+        "nameLabel": "名称",
+        "namePlaceholder": "例如 my_rrf_reranker",
+        "typeLabel": "类型",
+        "configLabel": "配置（JSON）",
+        "invalidJson": "配置必须是有效的 JSON"
+      },
+      "delete": {
+        "title": "删除函数",
+        "body": "永久移除 \"{{name}}\"？引用它的集合将无法使用，直到重新注册。",
+        "successTitle": "函数已删除"
+      },
+      "errors": {
+        "nameRequired": "名称为必填项。",
+        "invalidJson": "配置必须是有效的 JSON 对象。"
+      }
+    },
+    "ai": {
+      "embedding": {
+        "loading": "正在加载 Embedding…",
+        "loadFailed": "无法加载 Embedding \"{{name}}\"。",
+        "descriptionLabel": "描述",
+        "descriptionPlaceholder": "可选描述",
+        "configLabel": "配置（JSON）",
+        "save": "保存",
+        "saving": "保存中…",
+        "saveSuccess": "Embedding 已更新",
+        "saveFailed": "更新 Embedding 失败",
+        "invalidJson": "配置中的 JSON 无效",
+        "delete": "删除",
+        "deleting": "删除中…",
+        "deleteTitle": "删除 Embedding",
+        "deleteBody": "永久移除 Embedding \"{{name}}\"？引用它的集合将无法使用，直到重新注册。"
+      },
+      "reranker": {
+        "loading": "正在加载 Reranker…",
+        "loadFailed": "无法加载 Reranker \"{{name}}\"。",
+        "descriptionLabel": "描述",
+        "descriptionPlaceholder": "可选描述",
+        "configLabel": "配置（JSON）",
+        "save": "保存",
+        "saving": "保存中…",
+        "saveSuccess": "Reranker 已更新",
+        "saveFailed": "更新 Reranker 失败",
+        "invalidJson": "配置中的 JSON 无效",
+        "delete": "删除",
+        "deleting": "删除中…",
+        "deleteTitle": "删除 Reranker",
+        "deleteBody": "永久移除 Reranker \"{{name}}\"？引用它的集合将无法使用，直到重新注册。"
+      }
+    },
+    "notFound": {
+      "title": "页面未找到",
+      "body": "您请求的页面不存在或已移动。",
+      "backHome": "返回首页"
+    },
+    "errorBoundary": {
+      "title": "出了点问题",
+      "body": "应用外壳捕获了一个意外错误。您可以关闭以恢复或重新加载页面。",
+      "dismiss": "关闭",
+      "reload": "重新加载",
+      "detailsSummary": "技术详情"
+    },
+    "onboarding": {
+      "title": "欢迎使用 Zvec Studio",
+      "stepperAria": "引导进度",
+      "skip": "跳过引导",
+      "prev": "上一步",
+      "next": "下一步",
+      "finish": "开始使用 Zvec",
+      "steps": {
+        "0": {
+          "title": "创建或打开集合",
+          "body": "集合存储你的向量和标量字段。使用侧边栏创建新集合或从磁盘打开已有目录。"
+        },
+        "1": {
+          "title": "Schema 与索引管理",
+          "body": "在概览标签页中可以查看和修改集合的 schema。添加或重命名标量字段，创建向量索引（HNSW、IVF_FLAT）和标量索引（INVERT）— 所有操作都在内联操作列中完成。"
+        },
+        "2": {
+          "title": "浏览和写入文档",
+          "body": "使用浏览标签页通过 Zvec 表达式筛选和查看文档，使用写入标签页插入、更新或删除行 — 支持表单和原始 JSON 输入。"
+        },
+        "3": {
+          "title": "运行向量搜索",
+          "body": "查询标签页支持 top-K 最近邻查询。粘贴查询向量，可选添加过滤条件，查看按相似度得分排列的结果。"
+        },
+        "4": {
+          "title": "Embeddings 与 Rerankers",
+          "body": "从侧边栏注册 Embedding 和 Reranker 函数。这些 AI 函数可以在插入时自动向量化文本，并在搜索时重排结果以提升相关性。"
+        }
+      },
+      "recent": {
+        "title": "最近打开",
+        "aria": "最近打开的集合",
+        "empty": "还没有最近打开的集合。",
+        "loading": "正在加载最近打开的集合…",
+        "clearAll": "清空全部",
+        "forgetAria": "忘记 {{path}}"
+      }
+    }
+  },
+  "common": {
+    "yes": "是",
+    "no": "否",
+    "empty": {
+      "noResults": "无结果",
+      "tryAgain": "请调整过滤条件或重新加载页面。"
+    },
+    "error": {
+      "genericTitle": "出了点问题",
+      "networkTitle": "网络不可用",
+      "retry": "重试"
+    }
+  },
+  "errors": {
+    "network": "无法连接到 Zvec Studio 后端。请检查网络。",
+    "unknown": "出了点问题。请重试。",
+    "openFailed": "打开集合失败",
+    "validation": "输入无效。请检查高亮的字段。",
+    "code": {
+      "COLLECTION_NOT_FOUND": "未找到集合。",
+      "COLLECTION_ALREADY_EXISTS": "已存在同名或同路径的集合。",
+      "INVALID_SCHEMA": "集合 schema 无效。",
+      "INVALID_FILTER_EXPRESSION": "过滤表达式无效。",
+      "DOCUMENT_NOT_FOUND": "未找到文档。",
+      "DIMENSION_MISMATCH": "向量维度与集合 schema 不匹配。",
+      "INTERNAL_ERROR": "内部服务器错误。请重试或查看日志。"
+    }
+  },
+  "status": {
+    "loading": "加载中…",
+    "savedAt": "保存于 {{time}}"
+  }
+}

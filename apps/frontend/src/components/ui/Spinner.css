@@ -1,0 +1,20 @@
+.zv-spinner {
+  display: inline-block;
+  border: 2px solid var(--zv-color-border-strong);
+  border-top-color: var(--zv-color-primary);
+  border-radius: 50%;
+  animation: zv-spin 0.7s linear infinite;
+}
+.zv-loading-overlay {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--zv-space-3);
+  padding: var(--zv-space-3) var(--zv-space-4);
+  background: var(--zv-color-surface);
+  border: 1px solid var(--zv-color-border);
+  border-radius: var(--zv-radius-md);
+  box-shadow: var(--zv-shadow-1);
+}
+.zv-loading-overlay__label {
+  color: var(--zv-color-text-muted);
+}

@@ -1,0 +1,110 @@
+#zv-create-collection-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--zv-space-4);
+}
+
+.zv-create__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--zv-space-3);
+  padding-top: var(--zv-space-4);
+  border-top: 1px solid var(--zv-color-border);
+}
+
+.zv-create__section-title {
+  font-size: var(--zv-font-size-base);
+  font-weight: 600;
+  color: var(--zv-color-text);
+}
+
+.zv-create__field-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--zv-space-3);
+}
+
+/* ── Field card ── */
+.zv-create__field-card {
+  position: relative;
+  border: 1px solid var(--zv-color-border);
+  border-radius: var(--zv-radius-md);
+  padding: var(--zv-space-4);
+  padding-right: var(--zv-space-6);
+  background: var(--zv-color-bg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--zv-space-3);
+}
+
+.zv-create__field-close {
+  position: absolute;
+  top: var(--zv-space-2);
+  right: var(--zv-space-2);
+}
+
+/* ── Field grids ── */
+.zv-create__field-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--zv-space-3);
+}
+
+.zv-create__field-vector {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--zv-space-3);
+}
+
+.zv-create__index-params {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: var(--zv-space-3);
+}
+
+/* ── Scalar field params ── */
+.zv-create__field-scalar-params {
+  display: flex;
+  gap: var(--zv-space-4);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.zv-create__checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--zv-space-2);
+  font-size: var(--zv-font-size-sm);
+  color: var(--zv-color-text);
+  cursor: pointer;
+  user-select: none;
+}
+.zv-create__checkbox input[type='checkbox'] {
+  margin: 0;
+  accent-color: var(--zv-color-primary);
+}
+
+/* ── Shared ── */
+.zv-create__add-field {
+  align-self: flex-start;
+  margin-top: var(--zv-space-2);
+}
+
+.zv-create__error {
+  color: var(--zv-color-danger);
+  font-size: var(--zv-font-size-sm);
+  margin: 0;
+}
+
+@media (max-width: 560px) {
+  .zv-create__field-head {
+    grid-template-columns: 1fr;
+  }
+  .zv-create__field-vector {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .zv-create__field-scalar-params {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

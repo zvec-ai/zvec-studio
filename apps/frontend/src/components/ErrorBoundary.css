@@ -1,0 +1,35 @@
+.zv-error-boundary {
+  padding: var(--zv-space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--zv-space-4);
+  max-width: 720px;
+  margin: var(--zv-space-8) auto;
+}
+
+.zv-error-boundary__details {
+  background: var(--zv-color-surface);
+  border: 1px solid var(--zv-color-border);
+  border-radius: var(--zv-radius-md);
+  padding: var(--zv-space-3) var(--zv-space-4);
+  font-size: var(--zv-font-size-sm);
+  color: var(--zv-color-text-muted);
+}
+
+.zv-error-boundary__details summary {
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--zv-color-text);
+}
+
+.zv-error-boundary__details pre {
+  margin: var(--zv-space-2) 0 0 0;
+  padding: var(--zv-space-2) var(--zv-space-3);
+  background: var(--zv-color-bg);
+  border-radius: var(--zv-radius-sm);
+  font-family: var(--zv-font-mono);
+  font-size: var(--zv-font-size-xs);
+  color: var(--zv-color-danger);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

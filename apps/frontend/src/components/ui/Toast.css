@@ -1,0 +1,47 @@
+.zv-toast-viewport {
+  position: fixed;
+  top: var(--zv-space-6);
+  right: var(--zv-space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--zv-space-3);
+  z-index: 9999;
+  pointer-events: none;
+}
+.zv-toast {
+  min-width: 280px;
+  max-width: 360px;
+  background: var(--zv-color-surface);
+  border: 1px solid var(--zv-color-border);
+  border-radius: var(--zv-radius-md);
+  box-shadow: var(--zv-shadow-2);
+  padding: var(--zv-space-3) var(--zv-space-4);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--zv-space-2);
+  pointer-events: auto;
+  border-left-width: 3px;
+}
+.zv-toast--info {
+  border-left-color: var(--zv-color-info);
+}
+.zv-toast--warning {
+  border-left-color: var(--zv-color-warning);
+}
+.zv-toast--error {
+  border-left-color: var(--zv-color-danger);
+}
+.zv-toast__title {
+  font-weight: 600;
+  color: var(--zv-color-text);
+}
+.zv-toast__body {
+  color: var(--zv-color-text-muted);
+  font-size: var(--zv-font-size-sm);
+  margin-top: var(--zv-space-1);
+  grid-column: 1;
+}
+.zv-toast__close {
+  grid-row: 1;
+  grid-column: 2;
+}

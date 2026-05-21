@@ -1,0 +1,29 @@
+.zv-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: none;
+  color: var(--zv-color-text-subtle);
+  cursor: pointer;
+  border-radius: var(--zv-radius-sm);
+  font-size: 15px;
+  line-height: 1;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background 150ms, color 150ms;
+}
+.zv-close-btn:hover {
+  color: var(--zv-color-danger);
+  background: color-mix(in srgb, var(--zv-color-danger) 10%, transparent);
+}
+.zv-close-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.zv-close-btn:disabled:hover {
+  color: var(--zv-color-text-subtle);
+  background: none;
+}

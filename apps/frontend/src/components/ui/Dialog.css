@@ -1,0 +1,46 @@
+.zv-dialog {
+  border: none;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  margin: auto;
+  position: fixed;
+  inset: 0;
+  width: fit-content;
+  height: fit-content;
+}
+.zv-dialog::backdrop {
+  background: rgba(20, 24, 32, 0.45);
+}
+.zv-dialog__panel {
+  min-width: 360px;
+  max-width: 560px;
+  background: var(--zv-color-surface);
+  border: 1px solid var(--zv-color-border);
+  border-radius: var(--zv-radius-lg);
+  box-shadow: var(--zv-shadow-2);
+  display: flex;
+  flex-direction: column;
+}
+.zv-dialog--wide .zv-dialog__panel {
+  max-width: 680px;
+  width: 680px;
+}
+.zv-dialog__title {
+  font-size: var(--zv-font-size-lg);
+  font-weight: 600;
+  padding: var(--zv-space-5) var(--zv-space-6) 0;
+}
+.zv-dialog__body {
+  padding: var(--zv-space-5) var(--zv-space-6);
+  color: var(--zv-color-text);
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.zv-dialog__footer {
+  padding: var(--zv-space-3) var(--zv-space-6) var(--zv-space-5);
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--zv-space-2);
+  border-top: 1px solid var(--zv-color-border);
+}

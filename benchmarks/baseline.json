@@ -1,0 +1,37 @@
+{
+  "$schema": "./baseline.schema.json",
+  "version": "0.1.0",
+  "generated": "2026-05-12",
+  "environment": {
+    "platform": "darwin-arm64",
+    "python": "3.11",
+    "backend": "zvec_studio.storage.sdk.SdkBackend",
+    "note": "Reference numbers captured on a local M-series SSD in power-connected mode. v0.2.0 onwards SdkBackend is the only backend (InMemoryBackend removed); rebase numbers when SDK upgrades. CI runners relax budgets 5x; see docs/testing.md."
+  },
+  "budgets": {
+    "search_topk10_over_1k_docs_dim4": {
+      "description": "POST /api/v1/collections/{name}/searches; topK=10; brute-force in-memory backend.",
+      "p50_ms": 40,
+      "p95_ms": 100,
+      "p99_ms": 200,
+      "regression_threshold_pct": 20
+    },
+    "insert_batch_100_docs": {
+      "description": "POST /api/v1/collections/{name}/documents with 100 items.",
+      "p50_ms": 50,
+      "p95_ms": 150,
+      "regression_threshold_pct": 25
+    },
+    "cursor_paginate_50_pages": {
+      "description": "GET /api/v1/collections/{name}/documents?limit=20 paging through 1k docs.",
+      "p50_total_ms": 500,
+      "p95_total_ms": 900,
+      "regression_threshold_pct": 20
+    }
+  },
+  "source_of_truth": "apps/backend/tests/benchmark/",
+  "notes": [
+    "Budgets are budgets, not averages. p95 is enforced in CI release workflow.",
+    "v0.2.0 removed the in-memory backend; benchmarks now run exclusively against the real Zvec SDK — next baseline refresh should rebase against measured SdkBackend numbers and bump the JSON `version` field."
+  ]
+}

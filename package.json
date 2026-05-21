@@ -1,0 +1,28 @@
+{
+  "name": "zvec-studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Open-source visual management tool for Zvec embedded vector database",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "dev": "pnpm --filter frontend dev",
+    "build": "pnpm --filter frontend build",
+    "lint": "pnpm -r --parallel run lint",
+    "typecheck": "pnpm -r --parallel run typecheck",
+    "test": "pnpm -r --parallel run test",
+    "test:unit": "pnpm -r --parallel run test:unit",
+    "test:integration": "pnpm -r --parallel run test:integration",
+    "e2e": "pnpm --filter frontend e2e",
+    "gen:api": "pnpm --filter frontend gen:api",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\" --ignore-path .gitignore"
+  },
+  "devDependencies": {
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.3"
+  }
+}

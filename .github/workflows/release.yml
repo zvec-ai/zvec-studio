@@ -1,0 +1,154 @@
+name: release
+
+# Cross-platform packaging for Zvec Studio.
+#
+# Triggers:
+#   * `v*` tag push (real release)
+#   * Manual `workflow_dispatch` (smoke-test the matrix without tagging)
+#
+# Each platform job runs:
+#   1. PyInstaller -> single-file `zvec-studio-sidecar` binary.
+#   2. `scripts/build_sidecar.py` to drop the binary into
+#      `apps/desktop/src-tauri/binaries/` with the rustc host-triple suffix.
+#   3. `tauri build --config tauri.bundle.conf.json` to produce installers.
+#   4. Upload artifacts.
+#   5. (macOS only) Ad-hoc re-sign the .app and recreate the DMG.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bundle:
+    name: bundle (${{ matrix.platform.name }})
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - name: macos-aarch64
+            runner: macos-14
+          - name: macos-x86_64
+            runner: macos-13
+          - name: linux-x86_64
+            runner: ubuntu-latest
+          - name: linux-aarch64
+            runner: ubuntu-24.04-arm
+          - name: windows-x86_64
+            runner: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry & target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/desktop/src-tauri/target
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
+
+      - name: Install Linux WebKit deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            patchelf
+
+      - name: Install backend (with packaging extras)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "apps/backend[packaging]"
+
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Build frozen sidecar binary
+        run: python scripts/build_sidecar.py
+
+      - name: Build frontend
+        run: pnpm --filter frontend build
+
+      - name: Build Tauri bundle
+        working-directory: apps/desktop
+        run: pnpm tauri build --config src-tauri/tauri.bundle.conf.json
+
+      - name: Sign macOS bundle
+        if: runner.os == 'macOS'
+        working-directory: apps/desktop
+        run: bash scripts/post-build-sign.sh
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p artifacts/release
+          shopt -s nullglob globstar
+          for f in \
+            apps/desktop/src-tauri/target/release/bundle/**/*.dmg \
+            apps/desktop/src-tauri/target/release/bundle/**/*.app.tar.gz \
+            apps/desktop/src-tauri/target/release/bundle/**/*.deb \
+            apps/desktop/src-tauri/target/release/bundle/**/*.AppImage \
+            apps/desktop/src-tauri/target/release/bundle/**/*.msi \
+            apps/desktop/src-tauri/target/release/bundle/**/*.exe; do
+            cp -v "$f" artifacts/release/
+          done
+          ls -la artifacts/release/ || true
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: zvec-studio-${{ matrix.platform.name }}
+          path: artifacts/release/
+          if-no-files-found: warn
+          retention-days: 14
+
+  release:
+    name: Create GitHub Release
+    needs: bundle
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
+          draft: false

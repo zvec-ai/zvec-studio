@@ -1,0 +1,62 @@
+.zv-select-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--zv-space-1);
+  margin-bottom: var(--zv-space-4);
+  min-width: 0;
+}
+.zv-select-field:last-child {
+  margin-bottom: 0;
+}
+.zv-select-field__label {
+  display: block;
+  font-size: var(--zv-font-size-sm);
+  font-weight: 500;
+  color: var(--zv-color-text);
+  line-height: 1.35;
+}
+.zv-select-field__helper,
+.zv-select-field__error {
+  font-size: var(--zv-font-size-xs);
+  line-height: 1.4;
+  margin: var(--zv-space-1) 0 0;
+}
+.zv-select-field__helper {
+  color: var(--zv-color-text-muted);
+}
+.zv-select-field__error {
+  color: var(--zv-color-danger);
+}
+
+.zv-select {
+  width: 100%;
+  background: var(--zv-color-surface);
+  color: var(--zv-color-text);
+  border: 1px solid var(--zv-color-border-strong);
+  border-radius: var(--zv-radius-md);
+  padding: 0 var(--zv-space-3);
+  padding-right: 28px;
+  height: 34px;
+  font: inherit;
+  font-size: var(--zv-font-size-md);
+  transition: border-color var(--zv-motion-fast) ease,
+    box-shadow var(--zv-motion-fast) ease;
+  box-sizing: border-box;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23636366' d='M6 8.5L1.5 4h9L6 8.5z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 12px;
+}
+.zv-select:focus {
+  outline: none;
+  border-color: var(--zv-color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--zv-color-primary) 16%, transparent);
+}
+.zv-select--invalid {
+  border-color: var(--zv-color-danger);
+}
+.zv-select--invalid:focus {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--zv-color-danger) 16%, transparent);
+}

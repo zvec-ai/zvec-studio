@@ -1,0 +1,18 @@
+{
+  "name": "desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tauri v2 desktop shell for Zvec Studio",
+  "scripts": {
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build && bash scripts/post-build-sign.sh",
+    "lint": "echo '(desktop shell uses cargo for lint -- run `make desktop.check`)' && exit 0",
+    "typecheck": "echo '(desktop shell typecheck happens via cargo check)' && exit 0",
+    "test": "echo '(desktop tests run via cargo test -- see `make desktop.test`)' && exit 0",
+    "test:unit": "echo '(desktop unit tests run via cargo test)' && exit 0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0"
+  }
+}

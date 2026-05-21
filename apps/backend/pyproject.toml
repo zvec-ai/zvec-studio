@@ -1,0 +1,168 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zvec-studio"
+version = "0.1.0"
+description = "Open-source visual management tool for Zvec embedded vector database"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Zvec Studio Contributors" }]
+keywords = ["zvec", "vector-database", "visualization", "studio"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "fastapi>=0.115,<0.120",
+    "uvicorn[standard]>=0.30,<0.35",
+    "pydantic>=2.7,<3.0",
+    "pydantic-settings>=2.4,<3.0",
+    "python-ulid>=3.0,<4.0",
+    "orjson>=3.10,<4.0",
+    "typing-extensions>=4.12",
+    # Zvec embedded vector database SDK (core runtime dependency).
+    "zvec>=0.4,<0.5",
+    # Required by zvec for numpy-backed vector payloads.
+    "numpy>=1.23",
+]
+
+[project.optional-dependencies]
+ai = [
+    # AI extensions (embedding + reranker) — optional because:
+    # 1. Some packages (dashtext) lack wheels for all platforms/Python versions.
+    # 2. ai_service.py gracefully handles ImportError → HTTP 503.
+    "sentence-transformers>=3.0,<5.0",
+    "dashtext>=0.0.7",
+    "dashscope>=1.20",
+    "openai>=1.40",
+]
+dev = [
+    "pytest>=8.3,<9.0",
+    "pytest-asyncio>=0.24,<0.25",
+    "pytest-cov>=5.0,<6.0",
+    "pytest-benchmark>=4.0,<5.0",
+    "httpx>=0.27,<0.29",
+    "hypothesis>=6.112,<7.0",
+    "schemathesis>=3.36,<4.0",
+    "ruff>=0.6,<0.9",
+    "mypy>=1.11,<2.0",
+    "types-setuptools",
+]
+packaging = [
+    # Used by `scripts/build_sidecar.py` (Task 13) to freeze the FastAPI app
+    # into the single-file `zvec-studio-sidecar` executable consumed by the
+    # Tauri desktop bundle. Kept opt-in so contributors not packaging the
+    # desktop binary don't have to install it.
+    "pyinstaller>=6.10,<7.0",
+]
+
+[project.scripts]
+zvec-studio = "zvec_studio.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/zvec/zvec-studio"
+Repository = "https://github.com/zvec/zvec-studio"
+Issues = "https://github.com/zvec/zvec-studio/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["zvec_studio*"]
+exclude = ["tests*"]
+
+# ---------- ruff ----------
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["build", "dist", ".venv"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "C4",  # comprehensions
+    "SIM", # simplify
+    "RUF", # ruff-specific
+]
+ignore = [
+    "E501",  # line-length handled by formatter
+    "B008",  # FastAPI uses Depends() in defaults
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["B018"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ---------- mypy ----------
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["zvec", "zvec.*"]
+ignore_missing_imports = true
+
+# ---------- pytest ----------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: integration tests (hit HTTP layer)",
+    "contract: OpenAPI contract tests via Schemathesis",
+    "flaky: known-flaky tests, retried; do not block release",
+]
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning",
+]
+
+# ---------- coverage ----------
+[tool.coverage.run]
+source = ["zvec_studio"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/__main__.py",
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]

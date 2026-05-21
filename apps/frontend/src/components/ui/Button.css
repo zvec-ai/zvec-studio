@@ -1,0 +1,76 @@
+.zv-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--zv-space-2);
+  border-radius: var(--zv-radius-md);
+  border: 1px solid transparent;
+  padding: 0 var(--zv-space-4);
+  height: 32px;
+  font-weight: 600;
+  font-size: var(--zv-font-size-md);
+  box-shadow: none;
+  -webkit-appearance: none;
+  appearance: none;
+  transition:
+    background var(--zv-motion-fast) ease,
+    border-color var(--zv-motion-fast) ease;
+  white-space: nowrap;
+}
+.zv-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.zv-btn--sm {
+  height: 26px;
+  padding: 0 var(--zv-space-3);
+  font-size: var(--zv-font-size-sm);
+}
+
+.zv-btn--primary {
+  background: var(--zv-color-primary);
+  color: var(--zv-color-primary-foreground);
+}
+.zv-btn--primary:hover:not(:disabled) {
+  background: var(--zv-color-primary-hover);
+}
+.zv-btn--primary:active:not(:disabled) {
+  background: var(--zv-color-primary-active);
+}
+
+.zv-btn--secondary {
+  background: var(--zv-color-surface);
+  color: var(--zv-color-text);
+  border-color: var(--zv-color-border-strong);
+}
+.zv-btn--secondary:hover:not(:disabled) {
+  background: var(--zv-color-bg);
+}
+
+.zv-btn--ghost {
+  background: transparent;
+  color: var(--zv-color-text);
+}
+.zv-btn--ghost:hover:not(:disabled) {
+  background: var(--zv-color-bg);
+}
+
+.zv-btn--danger {
+  background: var(--zv-color-danger);
+  color: var(--zv-color-primary-foreground);
+}
+
+.zv-btn__spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: zv-spin 0.6s linear infinite;
+}
+
+@keyframes zv-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

@@ -1,0 +1,160 @@
+/* ── Spotlight Tour ── */
+.zv-tour-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  pointer-events: none;
+}
+
+.zv-tour-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  pointer-events: auto;
+}
+
+.zv-tour-spotlight {
+  position: fixed;
+  z-index: 9999;
+  border-radius: 8px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  transition: top 0.3s ease, left 0.3s ease, width 0.3s ease, height 0.3s ease;
+}
+
+.zv-tour-tooltip {
+  position: fixed;
+  z-index: 10000;
+  background: var(--zv-color-surface, #fff);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.08);
+  padding: 20px;
+  width: 320px;
+  pointer-events: auto;
+  transition: top 0.3s ease, left 0.3s ease;
+}
+
+/* Arrow */
+.zv-tour-tooltip__arrow {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: var(--zv-color-surface, #fff);
+  transform: rotate(45deg);
+  box-shadow: -2px -2px 4px rgba(0, 0, 0, 0.04);
+}
+.zv-tour-tooltip--right .zv-tour-tooltip__arrow {
+  left: -6px;
+  top: 24px;
+}
+.zv-tour-tooltip--left .zv-tour-tooltip__arrow {
+  right: -6px;
+  top: 24px;
+  box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.04);
+}
+.zv-tour-tooltip--bottom .zv-tour-tooltip__arrow {
+  top: -6px;
+  left: 24px;
+  box-shadow: -2px -2px 4px rgba(0, 0, 0, 0.04);
+}
+.zv-tour-tooltip--top .zv-tour-tooltip__arrow {
+  bottom: -6px;
+  left: 24px;
+  box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.04);
+}
+
+.zv-tour-tooltip__step {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--zv-color-primary, #0071e3);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.zv-tour-tooltip__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--zv-color-text, #1d1d1f);
+  margin: 0 0 6px;
+  line-height: 1.3;
+}
+
+.zv-tour-tooltip__body {
+  font-size: 13px;
+  color: var(--zv-color-text-muted, #6e6e73);
+  line-height: 1.5;
+  margin: 0 0 16px;
+}
+
+.zv-tour-tooltip__footer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.zv-tour-tooltip__dots {
+  display: flex;
+  gap: 6px;
+}
+
+.zv-tour-tooltip__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+.zv-tour-tooltip__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--zv-color-border, #d2d2d7);
+  transition: background 0.2s;
+}
+.zv-tour-tooltip__dot--active {
+  background: var(--zv-color-primary, #0071e3);
+}
+.zv-tour-tooltip__dot--done {
+  background: color-mix(in srgb, var(--zv-color-primary, #0071e3) 50%, var(--zv-color-border, #d2d2d7));
+}
+
+.zv-tour-tooltip__skip {
+  padding: 6px 12px;
+  border: none;
+  background: none;
+  color: var(--zv-color-text-subtle, #86868b);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 6px;
+  font-family: var(--zv-font-family, system-ui);
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.zv-tour-tooltip__skip:hover {
+  background: var(--zv-color-hover);
+}
+
+.zv-tour-tooltip__btn {
+  padding: 6px 16px;
+  border: none;
+  background: var(--zv-color-primary, #0071e3);
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 6px;
+  font-family: var(--zv-font-family, system-ui);
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.zv-tour-tooltip__btn:hover {
+  background: var(--zv-color-primary-hover, #005bb5);
+}
+.zv-tour-tooltip__btn--secondary {
+  background: var(--zv-color-bg-secondary, #f5f5f7);
+  color: var(--zv-color-text, #1d1d1f);
+}
+.zv-tour-tooltip__btn--secondary:hover {
+  background: var(--zv-color-border, #d2d2d7);
+}

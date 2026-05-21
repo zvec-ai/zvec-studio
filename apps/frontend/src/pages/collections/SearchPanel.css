@@ -1,0 +1,199 @@
+.zv-search-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--zv-space-4);
+  padding: var(--zv-space-3) 0;
+}
+
+.zv-search-panel__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--zv-space-3);
+  padding: var(--zv-space-3);
+  background: var(--zv-color-surface);
+  border: 1px solid var(--zv-color-border);
+  border-radius: var(--zv-radius-md);
+}
+
+.zv-search-panel__label {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--zv-color-text-muted);
+}
+
+.zv-search-panel__textarea {
+  width: 100%;
+  font-family: var(--zv-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  padding: var(--zv-space-2);
+  border-radius: var(--zv-radius-sm);
+  border: 1px solid var(--zv-color-border);
+  background: var(--zv-color-bg);
+  resize: vertical;
+  min-height: 90px;
+}
+
+.zv-search-panel__error {
+  color: var(--zv-color-danger);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.zv-search-panel__mode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--zv-space-3);
+  align-items: center;
+}
+
+.zv-search-panel__mode-option {
+  display: inline-flex;
+  gap: var(--zv-space-1);
+  align-items: center;
+  font-size: 0.85rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.zv-search-panel__vector {
+  display: flex;
+  flex-direction: column;
+  gap: var(--zv-space-2);
+}
+
+.zv-search-panel__row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--zv-space-3);
+}
+
+.zv-search-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--zv-space-3);
+}
+
+.zv-search-panel__summary {
+  color: var(--zv-color-text-muted);
+  font-size: 0.85rem;
+}
+
+.zv-search-panel__results {
+  min-height: 120px;
+}
+
+.zv-search-panel__hint {
+  color: var(--zv-color-text-subtle);
+  font-size: 0.9rem;
+  padding: var(--zv-space-3) 0;
+  margin: 0;
+}
+
+.zv-search-panel__score {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--zv-space-2);
+}
+
+.zv-search-panel__score-value {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+  min-width: 4.5rem;
+}
+
+.zv-search-panel__score-bar {
+  display: inline-block;
+  height: 6px;
+  max-width: 140px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--zv-color-primary) 55%, white) 0%, var(--zv-color-primary) 100%);
+}
+
+.zv-search-panel__fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--zv-space-1);
+}
+
+.zv-search-panel__field-chip {
+  padding: 2px 6px;
+  font-size: 0.8rem;
+  background: var(--zv-color-bg-muted);
+  border-radius: 9999px;
+  font-family: var(--zv-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+
+.zv-search-panel__drawer-body {
+  font-family: var(--zv-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.85rem;
+  background: var(--zv-color-bg-muted);
+  padding: var(--zv-space-2);
+  border-radius: var(--zv-radius-sm);
+  max-height: 420px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.zv-search-panel__history {
+  padding: var(--zv-space-3);
+  background: var(--zv-color-surface);
+  border: 1px solid var(--zv-color-border);
+  border-radius: var(--zv-radius-md);
+}
+
+.zv-search-panel__history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--zv-space-2);
+}
+
+.zv-search-panel__history-header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.zv-search-panel__history-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--zv-space-1);
+}
+
+.zv-search-panel__history-item {
+  display: flex;
+  align-items: center;
+  gap: var(--zv-space-2);
+  padding: var(--zv-space-1) var(--zv-space-2);
+  border-radius: var(--zv-radius-sm);
+  background: var(--zv-color-bg);
+}
+
+.zv-search-panel__history-apply {
+  flex: 1;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+}
+
+.zv-search-panel__history-title {
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.zv-search-panel__history-meta {
+  color: var(--zv-color-text-subtle);
+  font-size: 0.8rem;
+}

@@ -1,0 +1,45 @@
+.zv-ai-page {
+  display: grid;
+  gap: var(--zv-space-4);
+}
+.zv-ai-page__header h1 {
+  margin: 0 0 var(--zv-space-1) 0;
+  font-size: var(--zv-font-size-xl);
+}
+.zv-ai-page__header p {
+  margin: 0;
+  color: var(--zv-color-text-subtle);
+}
+.zv-ai-page__body {
+  display: grid;
+  gap: var(--zv-space-3);
+}
+.zv-ai-page__toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+.zv-ai-form {
+  display: grid;
+  gap: var(--zv-space-3);
+}
+.zv-ai-form__label {
+  font-size: var(--zv-font-size-sm);
+  color: var(--zv-color-text);
+  margin: 0;
+}
+.zv-ai-form__textarea {
+  width: 100%;
+  font-family: var(--zv-font-mono, monospace);
+  font-size: var(--zv-font-size-sm);
+  padding: var(--zv-space-2);
+  border: 1px solid var(--zv-color-border);
+  border-radius: var(--zv-radius-sm);
+  background: var(--zv-color-surface);
+  color: var(--zv-color-text);
+  resize: vertical;
+}
+.zv-ai-form__error {
+  margin: 0;
+  color: var(--zv-color-danger, #b00);
+  font-size: var(--zv-font-size-sm);
+}

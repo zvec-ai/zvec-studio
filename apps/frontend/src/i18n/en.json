@@ -1,0 +1,818 @@
+{
+  "app": {
+    "name": "Zvec Studio",
+    "tagline": "Inspect and operate Zvec Collections"
+  },
+  "components": {
+    "toast": {
+      "notifications": "Notifications",
+      "dismiss": "Dismiss notification"
+    },
+    "directoryPicker": {
+      "title": "Choose a directory",
+      "pathLabel": "Path",
+      "go": "Go",
+      "home": "Home",
+      "parent": "Up",
+      "select": "Select",
+      "cancel": "Cancel",
+      "empty": "No subdirectories."
+    }
+  },
+  "nav": {
+    "collections": "Collections",
+    "documents": "Documents",
+    "search": "Vector search",
+    "settings": "Settings",
+    "aiFunctions": "AI Functions",
+    "embeddings": "Embeddings",
+    "rerankers": "Rerankers",
+    "newEmbedding": "New embedding",
+    "newReranker": "New reranker",
+    "showSidebar": "Show sidebar",
+    "hideSidebar": "Hide sidebar"
+  },
+  "sidebar": {
+    "guide": "Guide",
+    "github": "GitHub",
+    "docs": "Docs",
+    "darkMode": "Dark mode",
+    "lightMode": "Light mode"
+  },
+  "tour": {
+    "steps": {
+      "collections": {
+        "title": "Collections",
+        "body": "All your open and recently used collections appear here. Click one to view its schema, documents, and run queries."
+      },
+      "collectionActions": {
+        "title": "Create or Open",
+        "body": "Use + to create a new collection from scratch, or the arrow button to open an existing collection directory from disk."
+      },
+      "embeddings": {
+        "title": "Embedding Functions",
+        "body": "Register embedding models (local ONNX, OpenAI, Qwen, etc.) that auto-vectorize your text on insert and query."
+      },
+      "rerankers": {
+        "title": "Reranker Functions",
+        "body": "Set up rerankers (RRF, Weighted, or model-based) to improve search relevance by re-scoring initial results."
+      },
+      "workspace": {
+        "title": "Collection Workspace",
+        "body": "Open a collection and you will see four tabs: Overview for schema and index management, Browse for filtering and inspecting documents, Query for running vector similarity searches, and Write for inserting, upserting, or deleting documents."
+      }
+    }
+  },
+  "actions": {
+    "create": "Create",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "retry": "Retry",
+    "close": "Close",
+    "delete": "Delete",
+    "open": "Open",
+    "browse": "Browse…",
+    "addField": "Add field",
+    "remove": "Remove",
+    "removeField": "Remove",
+    "save": "Save",
+    "forget": "Forget",
+    "creating": "Creating…"
+  },
+  "pages": {
+    "home": {
+      "heading": "👋 Welcome to Zvec Studio",
+      "subheading": "Create a new Collection or open an existing one to get started.",
+      "createBtn": "✨ Create Collection",
+      "openBtn": "📂 Open from Disk",
+      "openCollections": "📌 Open Collections",
+      "recentTitle": "🕐 Recently Opened"
+    },
+    "collections": {
+      "title": "Collections",
+      "subtitle": "Create, open and manage local Zvec Collections.",
+      "empty": {
+        "title": "No Collection yet",
+        "body": "Create your first Collection or open an existing one from disk.",
+        "create": "Create Collection",
+        "open": "Open existing"
+      },
+      "list": {
+        "columnName": "Name",
+        "columnPath": "Path",
+        "columnActions": "Actions",
+        "delete": "Delete",
+        "deleting": "Deleting…",
+        "deleteConfirmTitle": "Delete Collection?",
+        "deleteConfirmBody": "This closes and removes \"{{name}}\" from the open registry. On-disk data is not touched.",
+        "loadFailedTitle": "Cannot load Collections",
+        "loadFailedRetry": "Retry"
+      },
+      "recent": {
+        "title": "Recently opened",
+        "aria": "Recently opened collections",
+        "loading": "Loading recently opened collections…",
+        "clearAll": "Clear all",
+        "open": "Open",
+        "forgetAria": "Forget {{path}}",
+        "reopenSuccessTitle": "Collection opened"
+      },
+      "create": {
+        "title": "Create Collection",
+        "name": "Collection name",
+        "nameHelp": "3-64 chars, must start with a letter; letters, digits and underscores.",
+        "path": "Storage path",
+        "pathHelp": "Absolute path to a directory that does NOT exist yet — Zvec will create it. Tip: pick the parent directory with Browse, the Collection name will be appended automatically.",
+        "pathPlaceholder": "/absolute/path/to/new-collection-dir",
+        "pathBrowseHint": "Will create at {{parent}}/{{name}} — edit the path manually to override.",
+        "pathBrowseHintNoName": "Picked parent {{parent}}. Fill in the Collection name above and the path will auto-complete.",
+        "pathUnsupported": "This browser cannot open a directory picker. In the desktop app you can click Browse…; otherwise type the absolute path the backend can reach.",
+        "pathBrowserNotice": "Browsers can only see the directory name (\"{{name}}\"), not its absolute path. Please type the full path below so the backend can write the Collection there.",
+        "vector": "Vector field",
+        "vectorName": "Vector name",
+        "vectorDim": "Dimension",
+        "vectorType": "Dtype",
+        "metric": "Metric",
+        "indexType": "Index",
+        "indexParams": "Index params (JSON)",
+        "indexParamsHint": "Optional. e.g. {\"M\": 16, \"efConstruction\": 200} for HNSW.",
+        "quantizeType": "Quantization",
+        "addVector": "Add vector field",
+        "nullable": "Nullable",
+        "indexed": "Index",
+        "rangeOptimization": "Range optimization",
+        "extendedWildcard": "Extended wildcard",
+        "quantizeNone": "None",
+        "fields": "Fields",
+        "fieldsHelp": "Optional metadata fields (title, category, price…). The primary key (`id`) is managed by Zvec — do not declare it.",
+        "fieldName": "Name",
+        "fieldType": "Type",
+        "primaryInfo": "Zvec injects a string primary key (`id`) for every document automatically.",
+        "submitting": "Creating…",
+        "successTitle": "Collection created",
+        "successBody": "\"{{name}}\" created at {{path}}",
+        "errors": {
+          "nameRequired": "Name is required.",
+          "nameFormat": "Name must match ^[A-Za-z][A-Za-z0-9_]{2,63}$ (start with a letter, 3-64 chars).",
+          "pathRequired": "Path is required.",
+          "pathAbsolute": "Please provide an absolute path (starting with / on macOS/Linux or a drive letter on Windows).",
+          "dimRange": "Dimension must be an integer between 1 and 32768.",
+          "fieldNameRequired": "Each field needs a valid name.",
+          "reservedName": "Field name \"{{name}}\" is reserved by Zvec — pick another name.",
+          "invalidIndexParams": "Index params must be a JSON object."
+        }
+      },
+      "open": {
+        "title": "Open Collection",
+        "path": "Storage path",
+        "pathHelp": "Absolute path to an existing Collection directory.",
+        "pathPlaceholder": "/absolute/path/to/existing-collection",
+        "pathUnsupported": "This browser cannot open a directory picker. In the desktop app you can click Browse…; otherwise type the absolute path the backend can reach.",
+        "pathBrowserNotice": "Browsers can only see the directory name (\"{{name}}\"), not its absolute path. Please type the full path below.",
+        "submitting": "Opening…",
+        "successTitle": "Collection opened",
+        "successBody": "\"{{name}}\" opened from {{path}}"
+      },
+      "detail": {
+        "back": "Back to Collections",
+        "loading": "Loading Collection…",
+        "loadFailedTitle": "Cannot load this Collection",
+        "loadFailedRetry": "Retry",
+        "header": {
+          "path": "Path",
+          "documents": "Documents",
+          "dimension": "Vector dimension",
+          "indexState": "Index"
+        },
+        "tabs": {
+          "overview": "Overview",
+          "browse": "Browse",
+          "query": "Query",
+          "write": "Write",
+          "schema": "Schema",
+          "stats": "Stats",
+          "documents": "Documents",
+          "search": "Search",
+          "viz": "Visualization"
+        },
+        "loadingCollection": "Loading collection…",
+        "loadFailed": "Failed to load collection \"{{name}}\".",
+        "overview": {
+          "documents": "Documents",
+          "storage": "Storage",
+          "fields": "Fields",
+          "indexes": "Indexes",
+          "indexCompleteness": "Index Completeness",
+          "collectionInfo": "Collection Info",
+          "collectionPath": "Collection Path",
+          "path": "Path",
+          "openFolder": "Open Folder",
+          "optimize": "Optimize",
+          "optimizeDocs": "Optimize docs"
+        },
+        "schema": {
+          "vectorsTitle": "Vector fields",
+          "fieldsTitle": "Scalar fields",
+          "indexTitle": "Index parameters",
+          "columnName": "Name",
+          "columnType": "Type",
+          "columnDimension": "Dimension",
+          "columnIndex": "Index",
+          "columnMetric": "Metric",
+          "columnParams": "Params",
+          "columnNullable": "Nullable",
+          "columnActions": "Actions",
+          "indexType": "Index type",
+          "metric": "Metric",
+          "params": "Parameters",
+          "noFields": "No scalar fields defined.",
+          "noIndex": "(lazy)",
+          "noParams": "(no extra parameters)",
+          "ddl": {
+            "addField": "Add field…",
+            "renameField": "Rename",
+            "dropField": "Drop",
+            "createIndex": "Create index…",
+            "editIndex": "Edit index…",
+            "dropIndex": "Drop index",
+            "addFieldDialog": {
+              "title": "Add scalar field",
+              "nameLabel": "Name",
+              "namePlaceholder": "e.g. category",
+              "nameHelp": "Identifier-like; will not affect existing rows except via expression.",
+              "typeLabel": "Data type",
+              "expressionLabel": "Backfill expression (optional)",
+              "expressionPlaceholder": "e.g. 'unknown' or price * 0",
+              "expressionHelp": "Zvec expression used to populate the new column for existing rows. Leave blank to use the dtype's zero value.",
+              "submit": "Add",
+              "submitting": "Adding…",
+              "successTitle": "Field added",
+              "successDescription": "\"{{name}}\" added.",
+              "failureTitle": "Add field failed",
+              "errors": {
+                "nameRequired": "Field name is required.",
+                "reservedName": "Field name \"{{name}}\" is reserved."
+              }
+            },
+            "renameFieldDialog": {
+              "title": "Rename field \"{{name}}\"",
+              "newNameLabel": "New name",
+              "newNameHelp": "Identifier-like. The change is applied immediately on disk.",
+              "submit": "Rename",
+              "submitting": "Renaming…",
+              "successTitle": "Field renamed",
+              "successDescription": "\"{{oldName}}\" → \"{{newName}}\".",
+              "failureTitle": "Rename failed",
+              "errors": {
+                "newNameRequired": "New name is required.",
+                "sameName": "New name must differ from the current one."
+              }
+            },
+            "dropFieldDialog": {
+              "title": "Drop field \"{{name}}\"?",
+              "body": "This permanently removes the scalar column \"{{name}}\" and all of its values. This cannot be undone.",
+              "submit": "Drop",
+              "submitting": "Dropping…",
+              "successTitle": "Field dropped",
+              "successDescription": "\"{{name}}\" removed.",
+              "failureTitle": "Drop field failed"
+            },
+            "createIndexDialog": {
+              "title": "Create vector index",
+              "vectorFieldLabel": "Vector field",
+              "indexTypeLabel": "Index type",
+              "metricLabel": "Metric",
+              "paramsLabel": "Index params (JSON)",
+              "paramsHelp": "Optional. e.g. {\"M\": 16, \"efConstruction\": 200} for HNSW.",
+              "submit": "Create",
+              "submitting": "Creating…",
+              "successTitle": "Index created",
+              "successDescription": "Index for \"{{vectorField}}\" created.",
+              "failureTitle": "Create index failed",
+              "errors": {
+                "invalidParams": "Index params must be a JSON object.",
+                "noVectorFields": "This Collection has no vector fields."
+              }
+            },
+            "createScalarIndex": "Create index",
+            "editScalarIndex": "Edit index",
+            "dropScalarIndex": "Drop index",
+            "createScalarIndexDialog": {
+              "title": "Create scalar index on \"{{field}}\"",
+              "hint": "Currently only the INVERT index type is supported for scalar fields.",
+              "rangeLabel": "Range optimization",
+              "wildcardLabel": "Extended wildcard",
+              "submit": "Create",
+              "submitting": "Creating…",
+              "successTitle": "Scalar index created",
+              "successDescription": "INVERT index on \"{{field}}\" created.",
+              "failureTitle": "Create scalar index failed"
+            },
+            "dropScalarIndexDialog": {
+              "title": "Drop scalar index on \"{{field}}\"?",
+              "body": "This removes the INVERT index on \"{{field}}\". Scalar filtering will fall back to full scan.",
+              "submit": "Drop index",
+              "submitting": "Dropping…",
+              "successTitle": "Scalar index dropped",
+              "successDescription": "Index on \"{{field}}\" removed.",
+              "failureTitle": "Drop scalar index failed"
+            },
+            "dropIndexDialog": {
+              "title": "Drop index for \"{{vectorField}}\"?",
+              "body": "This removes the vector index on \"{{vectorField}}\". Existing data is kept; subsequent searches must rebuild the index.",
+              "submit": "Drop index",
+              "submitting": "Dropping…",
+              "successTitle": "Index dropped",
+              "successDescription": "Index for \"{{vectorField}}\" removed.",
+              "failureTitle": "Drop index failed"
+            }
+          }
+        },
+        "stats": {
+          "documents": "Documents",
+          "indexState": "Index state",
+          "storage": "Storage"
+        },
+        "indexState": {
+          "none": "Not built",
+          "building": "Building…",
+          "ready": "Ready"
+        },
+        "placeholder": {
+          "viz": "The 2D projection playground is on the post-MVP roadmap. Use the Documents and Search tabs for now."
+        },
+        "documentsPanel": {
+          "filterLabel": "Filter (Zvec SQL-WHERE)",
+          "filterPlaceholder": "e.g. price > 10 AND category = 'book'",
+          "limitLabel": "Limit",
+          "apply": "Browse",
+          "reset": "Clear",
+          "showing": "Showing {{count}} document(s)",
+          "truncated": "More may exist — refine the filter or raise the limit.",
+          "loading": "Loading documents…",
+          "empty": "This Collection has no documents yet.",
+          "emptyFiltered": "No documents match this filter.",
+          "loadFailedTitle": "Cannot load documents",
+          "drawerTitle": "Document {{id}}",
+          "drawerLoading": "Loading document…",
+          "drawerError": "Could not load this document.",
+          "close": "Close",
+          "selectAllAria": "Select all visible rows",
+          "selectRowAria": "Select document {{id}}",
+          "selectionAria": "Selection actions",
+          "selectionCount": "{{count}} selected",
+          "selectionClear": "Clear selection",
+          "insert": {
+            "openLabel": "Insert",
+            "title": "Insert document",
+            "bodyLabel": "JSON body",
+            "hint": "Accepts a single JSON object or an array of objects. Field names and types must match the Collection schema.",
+            "submit": "Insert",
+            "submitting": "Inserting…",
+            "successTitle": "Inserted",
+            "successDescription": "{{count}} document(s) inserted.",
+            "failureTitle": "Insert failed",
+            "errors": {
+              "invalidJson": "Invalid JSON",
+              "emptyArray": "The array must contain at least one document.",
+              "notObject": "The body must be a JSON object or an array of objects.",
+              "notObjects": "Every array entry must be a JSON object."
+            },
+            "autoEmbed": {
+              "title": "Auto-embed from text",
+              "hint": "Pick a registered embedding function and a target vector field, type one document text per line, then Generate to overwrite the JSON below.",
+              "embeddingLabel": "Embedding function",
+              "embeddingNone": "(select)",
+              "vectorFieldLabel": "Target vector field",
+              "textsLabel": "Texts (one per line)",
+              "textsPlaceholder": "Each non-empty line becomes one document.",
+              "generate": "Generate",
+              "generating": "Generating…",
+              "successTitle": "Texts embedded",
+              "successDescription": "{{count}} document(s) prepared.",
+              "errors": {
+                "embeddingRequired": "Pick an embedding function first.",
+                "vectorFieldRequired": "Pick a target vector field.",
+                "textsRequired": "Type at least one non-empty line.",
+                "notDense": "This embedding does not return dense vectors.",
+                "dimensionMismatch": "Dimension of vector field {{field}} is {{expected}} but the embedding returned {{actual}}."
+              }
+            }
+          },
+          "delete": {
+            "rowLabel": "Delete",
+            "rowAria": "Delete document {{id}}",
+            "batchLabel": "Delete {{count}} selected",
+            "confirmTitle": "Delete documents?",
+            "confirmSingle": "Delete document {{id}}? This cannot be undone.",
+            "confirmBatch": "Delete {{count}} selected document(s)? This cannot be undone.",
+            "cancel": "Cancel",
+            "confirm": "Delete",
+            "confirming": "Deleting…",
+            "successSingleTitle": "Document deleted",
+            "successSingleDescription": "Document {{id}} removed.",
+            "successBatchTitle": "Documents deleted",
+            "successBatchDescription": "{{count}} document(s) removed.",
+            "failureTitle": "Delete failed"
+          },
+          "deleteByFilter": {
+            "openLabel": "Delete by filter…",
+            "title": "Delete by filter",
+            "filterLabel": "Filter (Zvec SQL-WHERE)",
+            "filterHint": "All matching documents will be removed. Up to 100,000 rows can be deleted per call.",
+            "missingFilter": "Provide a filter expression — empty filters are not allowed.",
+            "submit": "Delete",
+            "submitting": "Deleting…",
+            "successTitle": "Documents deleted",
+            "successDescription": "{{count}} document(s) removed.",
+            "failureTitle": "Delete by filter failed"
+          }
+        },
+        "searchPanel": {
+          "vectorLabel": "Query vector (JSON array, dim={{dimension}})",
+          "modeVector": "Raw vector",
+          "modeText": "From text",
+          "textLabel": "Query text",
+          "textPlaceholder": "Type a question or phrase to embed and search.",
+          "embeddingLabel": "Embedding function",
+          "embeddingNone": "(select)",
+          "embeddingFailureTitle": "Embedding failed",
+          "topKLabel": "Top K",
+          "vectorFieldLabel": "Vector field",
+          "filterLabel": "Filter",
+          "filterPlaceholder": "e.g. price > 10 or category == \"book\"",
+          "outputFieldsLabel": "Output fields",
+          "outputFieldsPlaceholder": "Comma-separated, leave blank for all",
+          "rerankerLabel": "Reranker",
+          "rerankerNone": "(none)",
+          "submit": "Search",
+          "submitting": "Searching…",
+          "summary": "{{count}} result(s) · {{ms}} ms",
+          "successTitle": "Search complete",
+          "successDescription": "{{count}} result(s) in {{ms}} ms.",
+          "failureTitle": "Search failed",
+          "errors": {
+            "invalidVector": "Vector must be a non-empty JSON array of finite numbers.",
+            "dimensionMismatch": "Vector dimension must be {{expected}} (got {{actual}}).",
+            "queryRequired": "Type a query text first.",
+            "embeddingRequired": "Pick an embedding function first.",
+            "embeddingNotDense": "This embedding does not return dense vectors.",
+            "embeddingEmpty": "The embedding service returned no vector."
+          },
+          "columns": {
+            "id": "ID",
+            "score": "Score",
+            "fields": "Fields"
+          },
+          "resultsAria": "Search results",
+          "emptyState": "Submit a query to see the nearest neighbors.",
+          "noHits": "No matches. Try a different vector or loosen the filter.",
+          "drawerTitle": "Result {{id}}",
+          "close": "Close",
+          "historyAria": "Search history",
+          "historyTitle": "Recent searches",
+          "historyClear": "Clear",
+          "historyEmpty": "Up to {{limit}} recent searches will appear here.",
+          "historySummary": "{{count}} hit(s) · topK {{topK}}",
+          "historyRemoveAria": "Remove this entry from history"
+        },
+        "delete": "Close Collection",
+        "deleteConfirmTitle": "Close Collection?",
+        "deleteConfirmBody": "This closes and removes \"{{name}}\" from the open registry. On-disk data is not touched.",
+        "deleting": "Closing…",
+        "maintenance": {
+          "title": "Maintenance",
+          "flush": "Flush",
+          "flushing": "Flushing…",
+          "flushHint": "Persist pending writes to disk.",
+          "flushSuccess": "Flush completed",
+          "flushSuccessTitle": "Flushed",
+          "flushSuccessDescription": "\"{{name}}\" persisted to disk.",
+          "flushFailureTitle": "Flush failed",
+          "optimize": "Optimize",
+          "optimizing": "Optimizing…",
+          "optimizeHint": "Compact segments and rebuild auxiliary structures.",
+          "optimizeSuccess": "Optimize completed",
+          "optimizeSuccessTitle": "Optimized",
+          "optimizeSuccessDescription": "\"{{name}}\" optimization completed.",
+          "optimizeFailureTitle": "Optimize failed",
+          "destroy": "Destroy",
+          "destroying": "Destroying…",
+          "destroyHint": "Permanently delete on-disk data — cannot be undone.",
+          "destroyConfirmTitle": "Destroy Collection?",
+          "destroyConfirmBody": "This permanently deletes \"{{name}}\" and all of its on-disk data. This cannot be undone.",
+          "destroyAcknowledgeLabel": "Type the Collection name to confirm",
+          "destroyAcknowledgePlaceholder": "{{name}}",
+          "destroySuccessTitle": "Collection destroyed",
+          "destroySuccessDescription": "\"{{name}}\" and its data were removed.",
+          "destroyFailureTitle": "Destroy failed"
+        },
+        "query": {
+          "vectorQueries": "Vector Queries",
+          "embedding": "Embedding",
+          "embeddingNone": "None (raw vector / ID)",
+          "dimMismatch": "Dimension mismatch: embedding produces {{embDim}}d, field expects {{fieldDim}}d",
+          "modeVector": "Vector",
+          "modeId": "By ID",
+          "vectorPlaceholder": "[0.1, 0.2, ...] ({{dim}}d)",
+          "idPlaceholder": "Document ID",
+          "textPlaceholder": "Enter query text...",
+          "textDisabled": "Disabled — dimension mismatch",
+          "queryParams": "Query Parameters",
+          "ef": "ef",
+          "efHint": "Search breadth (default 300)",
+          "radius": "radius",
+          "radiusHint": "Distance threshold (0 = disabled)",
+          "isLinear": "isLinear",
+          "isUsingRefiner": "isUsingRefiner",
+          "nprobe": "nprobe",
+          "nprobeHint": "Number of clusters to probe (default 10)",
+          "reranker": "Reranker",
+          "rerankerNone": "None",
+          "topK": "Top K",
+          "includeVector": "Include Vector",
+          "includeVectorNo": "No",
+          "includeVectorYes": "Yes",
+          "filter": "Filter",
+          "filterPlaceholder": "e.g. category == 'news'",
+          "outputFields": "Output Fields",
+          "outputFieldsAll": "All (default)",
+          "outputFieldsNone": "None",
+          "outputFieldsPlaceholder": "field1, field2, ...",
+          "search": "Search",
+          "searching": "Searching…",
+          "results": "Results",
+          "resultsMeta": "{{count}} hits in {{ms}} ms",
+          "noResults": "No results found.",
+          "runSearch": "Run a search to see results.",
+          "embedFailed": "Embed failed",
+          "searchFailed": "Search failed",
+          "resetToAll": "Reset to all",
+          "copyJson": "Copy JSON"
+        },
+        "browse": {
+          "modeFilter": "Filter",
+          "filterPlaceholder": "Filter expression, e.g. category = 'news'",
+          "idPlaceholder": "e.g. doc_01 ; doc_02 ; doc_03",
+          "fetchBtn": "Fetch",
+          "filterBtn": "Browse",
+          "docCount": "{{count}} docs",
+          "copyJson": "Copy JSON",
+          "copied": "Copied to clipboard",
+          "loading": "Loading…",
+          "empty": "No documents found.",
+          "truncated": "Results truncated — refine your filter to see more.",
+          "filterError": "Invalid filter expression. Check your syntax."
+        },
+        "filter": {
+          "builder": "Builder",
+          "sqlPlaceholder": "e.g. category = 'news' AND price > 10",
+          "valuePlaceholder": "Value",
+          "addCondition": "Add condition"
+        },
+        "mutate": {
+          "insert": "Insert",
+          "upsert": "Upsert",
+          "update": "Update",
+          "delete": "Delete",
+          "insertTitle": "Insert Document",
+          "insertIdLabel": "Document ID (optional)",
+          "insertIdPlaceholder": "Auto-generated if empty",
+          "insertSubmit": "Insert",
+          "insertSubmitting": "Processing…",
+          "insertSuccess": "{{count}} document(s) inserted",
+          "insertFailed": "Insert failed",
+          "upsertTitle": "Upsert Documents",
+          "upsertLabel": "Documents (JSON array)",
+          "upsertSubmit": "Upsert",
+          "upsertSubmitting": "Upserting…",
+          "upsertSuccess": "Upsert successful — {{count}} document(s) processed",
+          "upsertFailed": "Upsert failed",
+          "upsertIdRequired": "Each document must have an ID for upsert",
+          "upsertIdPlaceholder": "Document ID (required)",
+          "updateTitle": "Update Documents",
+          "updateLabel": "Documents (JSON array — only include fields to change)",
+          "updateHint": "Partial update: each document must have an \"id\" that already exists. Only the fields and vectors you include will be modified; all other data is preserved.",
+          "updateSubmit": "Update",
+          "updateSubmitting": "Updating…",
+          "updateSuccess": "{{count}} document(s) updated",
+          "updateFailed": "Update failed",
+          "updateIdRequired": "Each document must have an \"id\" field for update",
+          "deleteTitle": "Delete Documents",
+          "deleteById": "By ID",
+          "deleteByFilter": "By Filter",
+          "deleteIdPlaceholder": "Enter document ID to delete...",
+          "deleteFilterPlaceholder": "e.g. category = 'archived'",
+          "deleteSubmit": "Delete",
+          "deleteSubmitting": "Deleting…",
+          "deleteIdSuccess": "Document \"{{id}}\" deleted",
+          "deleteFilterSuccess": "Deleted {{count}} document(s) matching filter",
+          "deleteFailed": "Delete failed",
+          "deleteIdConfirmTitle": "Delete document?",
+          "deleteIdConfirmBody": "Delete document \"{{id}}\"? This cannot be undone.",
+          "deleteFilterConfirmTitle": "Delete by filter?",
+          "deleteFilterConfirmBody": "Delete all documents matching this filter? This cannot be undone.",
+          "filterLabel": "Filter",
+          "invalidJson": "Invalid JSON",
+          "invalidJsonArray": "Body must be a JSON array of document objects.",
+          "selectEmbedding": "Select embedding...",
+          "embedTextPlaceholder": "Enter text to embed...",
+          "modeRaw": "Raw",
+          "modeEmbed": "Embed",
+          "dimMismatch": "Dimension mismatch: embedding produces {{embDim}}d, field expects {{fieldDim}}d",
+          "dimMismatchDisabled": "Cannot embed — dimension mismatch",
+          "docLabel": "Doc #{{index}}",
+          "addDoc": "+ Doc",
+          "modeForm": "Form",
+          "modeJson": "JSON",
+          "idRequired": "ID *"
+        }
+      }
+    },
+    "documents": {
+      "title": "Documents",
+      "placeholder": "Open a Collection first — document browsing lives inside each Collection's Documents tab.",
+      "cta": "Go to Collections"
+    },
+    "search": {
+      "title": "Vector search",
+      "placeholder": "Open a Collection first — vector search lives inside each Collection's Search tab.",
+      "cta": "Go to Collections"
+    },
+    "aiFunctions": {
+      "title": "AI Functions",
+      "subtitle": "Register and inspect embedding and reranker functions used by Collections.",
+      "loadFailedTitle": "Cannot load AI functions",
+      "loadFailedRetry": "Retry",
+      "tabs": {
+        "embeddings": "Embeddings",
+        "rerankers": "Rerankers"
+      },
+      "columns": {
+        "name": "Name",
+        "type": "Type",
+        "description": "Description",
+        "actions": "Actions"
+      },
+      "fields": {
+        "name": "Name",
+        "description": "Description",
+        "type": "Type",
+        "config": "Config (JSON)"
+      },
+      "embeddings": {
+        "create": "Register embedding",
+        "createTitle": "Register Embedding",
+        "createSuccessTitle": "Embedding registered",
+        "createSuccessBody": "\"{{name}}\" created.",
+        "createFailed": "Failed to create embedding",
+        "emptyTitle": "No embedding functions yet",
+        "emptyBody": "Register one to enable text-to-vector workflows in Search and Insert.",
+        "nameLabel": "Name",
+        "namePlaceholder": "e.g. my_openai_emb",
+        "typeLabel": "Type",
+        "configLabel": "Config (JSON)",
+        "invalidJson": "Config must be valid JSON"
+      },
+      "rerankers": {
+        "create": "Register reranker",
+        "createTitle": "Register Reranker",
+        "createSuccessTitle": "Reranker registered",
+        "createSuccessBody": "\"{{name}}\" created.",
+        "createFailed": "Failed to create reranker",
+        "emptyTitle": "No reranker functions yet",
+        "emptyBody": "Register one to refine search ranking with cross-encoder or fusion strategies.",
+        "nameLabel": "Name",
+        "namePlaceholder": "e.g. my_rrf_reranker",
+        "typeLabel": "Type",
+        "configLabel": "Config (JSON)",
+        "invalidJson": "Config must be valid JSON"
+      },
+      "delete": {
+        "title": "Delete function",
+        "body": "Permanently remove \"{{name}}\"? Collections referencing it will fail until it is re-registered.",
+        "successTitle": "Function deleted"
+      },
+      "errors": {
+        "nameRequired": "Name is required.",
+        "invalidJson": "Config must be a valid JSON object."
+      }
+    },
+    "ai": {
+      "embedding": {
+        "loading": "Loading embedding…",
+        "loadFailed": "Failed to load embedding \"{{name}}\".",
+        "descriptionLabel": "Description",
+        "descriptionPlaceholder": "Optional description",
+        "configLabel": "Config (JSON)",
+        "save": "Save",
+        "saving": "Saving…",
+        "saveSuccess": "Embedding updated",
+        "saveFailed": "Failed to update embedding",
+        "invalidJson": "Invalid JSON in config",
+        "delete": "Delete",
+        "deleting": "Deleting…",
+        "deleteTitle": "Delete embedding",
+        "deleteBody": "Permanently remove embedding \"{{name}}\"? Collections referencing it will fail until re-registered."
+      },
+      "reranker": {
+        "loading": "Loading reranker…",
+        "loadFailed": "Failed to load reranker \"{{name}}\".",
+        "descriptionLabel": "Description",
+        "descriptionPlaceholder": "Optional description",
+        "configLabel": "Config (JSON)",
+        "save": "Save",
+        "saving": "Saving…",
+        "saveSuccess": "Reranker updated",
+        "saveFailed": "Failed to update reranker",
+        "invalidJson": "Invalid JSON in config",
+        "delete": "Delete",
+        "deleting": "Deleting…",
+        "deleteTitle": "Delete reranker",
+        "deleteBody": "Permanently remove reranker \"{{name}}\"? Collections referencing it will fail until re-registered."
+      }
+    },
+    "notFound": {
+      "title": "Page not found",
+      "body": "The page you requested does not exist or has moved.",
+      "backHome": "Back to home"
+    },
+    "errorBoundary": {
+      "title": "Something went wrong",
+      "body": "An unexpected error was caught by the application shell. You can dismiss to recover or reload the page.",
+      "dismiss": "Dismiss",
+      "reload": "Reload app",
+      "detailsSummary": "Technical details"
+    },
+    "onboarding": {
+      "title": "Welcome to Zvec Studio",
+      "stepperAria": "Onboarding progress",
+      "skip": "Skip tour",
+      "prev": "Back",
+      "next": "Next",
+      "finish": "Start using Zvec",
+      "steps": {
+        "0": {
+          "title": "Create or open a Collection",
+          "body": "Collections hold your vectors and scalar fields. Use the sidebar to create a new collection or open an existing directory from disk."
+        },
+        "1": {
+          "title": "Schema & Index management",
+          "body": "In the Overview tab you can inspect and modify your collection schema. Add or rename scalar fields, create vector indexes (HNSW, IVF_FLAT) and scalar indexes (INVERT) — all from the inline Actions column."
+        },
+        "2": {
+          "title": "Browse and write documents",
+          "body": "Use the Browse tab to filter and inspect documents with Zvec expressions, and the Write tab to insert, upsert or delete rows — with form-based or raw JSON input."
+        },
+        "3": {
+          "title": "Run vector searches",
+          "body": "The Query tab lets you run top-K nearest-neighbour queries. Paste a query vector, optionally add a filter, and view results ranked by similarity score."
+        },
+        "4": {
+          "title": "Embeddings & Rerankers",
+          "body": "Register embedding and reranker functions from the sidebar. These AI functions can auto-vectorize text on insert and re-rank search results for better relevance."
+        }
+      },
+      "recent": {
+        "title": "Recently opened",
+        "aria": "Recently opened collections",
+        "empty": "No recently opened collections yet.",
+        "loading": "Loading recently opened collections\u2026",
+        "clearAll": "Clear all",
+        "forgetAria": "Forget {{path}}"
+      }
+    }
+  },
+  "common": {
+    "yes": "Yes",
+    "no": "No",
+    "empty": {
+      "noResults": "No results",
+      "tryAgain": "Try adjusting your filters or reload the page."
+    },
+    "error": {
+      "genericTitle": "Something went wrong",
+      "networkTitle": "Network unavailable",
+      "retry": "Retry"
+    }
+  },
+  "errors": {
+    "network": "Cannot reach the Zvec Studio backend. Please check your network.",
+    "unknown": "Something went wrong. Please try again.",
+    "openFailed": "Failed to open collection",
+    "validation": "Invalid input. Please review the highlighted fields.",
+    "code": {
+      "COLLECTION_NOT_FOUND": "Collection was not found.",
+      "COLLECTION_ALREADY_EXISTS": "A Collection with this name or path already exists.",
+      "INVALID_SCHEMA": "The Collection schema is invalid.",
+      "INVALID_FILTER_EXPRESSION": "The filter expression is invalid.",
+      "DOCUMENT_NOT_FOUND": "Document was not found.",
+      "DIMENSION_MISMATCH": "Vector dimension does not match the Collection schema.",
+      "INTERNAL_ERROR": "Internal server error. Please retry or inspect logs."
+    }
+  },
+  "status": {
+    "loading": "Loading…",
+    "savedAt": "Saved at {{time}}"
+  }
+}

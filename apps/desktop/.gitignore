@@ -1,0 +1,9 @@
+# Rust build output (Tauri).
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Generated icon sets (intermediate build artifacts).
+src-tauri/icons/*.iconset/
+
+# Local Tauri state.
+.tauri/

@@ -1,0 +1,108 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+# Generic build/install dirs (Python). Anchored to repo root via leading slash so
+# they don't accidentally swallow source folders like `apps/frontend/src/lib/`.
+/build/
+/develop-eggs/
+/dist/
+/downloads/
+/eggs/
+/.eggs/
+/lib/
+/lib64/
+/parts/
+/sdist/
+/var/
+/wheels/
+/share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.hypothesis/
+.benchmarks/
+.ruff_cache/
+.mypy_cache/
+.tox/
+
+# --- Node ---
+node_modules/
+.pnpm-store/
+.pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-lock.yaml.bak
+
+# Vite / build outputs
+apps/frontend/dist/
+apps/frontend/dist-ssr/
+apps/frontend/.vite/
+packages/api-client/dist/
+
+# Vitest coverage
+coverage/
+
+# Playwright
+playwright-report/
+test-results/
+.playwright/
+
+# --- Tauri / Rust ---
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/binaries/*
+!apps/desktop/src-tauri/binaries/.gitkeep
+
+# --- PyInstaller (Task 13: frozen sidecar binary) ---
+apps/backend/build/
+apps/backend/dist/
+
+# Local backend runtime data (e.g. scripts/seed_demo.py output)
+apps/backend/data/
+.run/
+apps/backend/.run/
+
+# --- Editors / OS ---
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# --- Runtime artifacts (test diagnostics, logs) ---
+artifacts/
+*.log
+logs/
+
+# --- Secrets / local configs ---
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# --- Project-specific ---
+# Local zvec-studio user data
+~/.zvec-studio/
+tmp/
+.cache/

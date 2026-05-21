@@ -1,0 +1,222 @@
+/**
+ * CollectionDetailPage unit tests.
+ *
+ * Drives the new tab-based detail page (Overview / Query / Data) through an
+ * injected fake ApiClient. Covers:
+ * - loading state,
+ * - success: overview tab with stats, collection info, schema DDL, maintenance,
+ * - tab switching,
+ * - error with retry,
+ * - destroy flow (confirmation gate, navigates home).
+ */
+import type { JSX } from 'react';
+import { describe, it, expect, vi } from 'vitest';
+import { screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { QueryClient } from '@tanstack/react-query';
+import { Route, Routes } from 'react-router-dom';
+
+import { renderWithProviders } from '@/test-utils/render';
+import { ApiError, type ApiClient } from '@/lib/api-client';
+import type { UserFacingError } from '@/lib/error-mapper';
+import type { CollectionSummary } from '@/features/collections';
+import { CollectionDetailPage } from './CollectionDetailPage';
+
+interface FakeCollection {
+  readonly summary: CollectionSummary;
+}
+
+interface FakeState {
+  collections: Map<string, FakeCollection>;
+  getError?: UserFacingError;
+  calls: Array<{ method: string; path: string }>;
+}
+
+function fakeSummary(name = 'demo'): CollectionSummary {
+  return {
+    name,
+    path: `/tmp/${name}`,
+    schema: {
+      name,
+      vectors: [
+        {
+          name: 'embedding',
+          dataType: 'VECTOR_FP32',
+          dimension: 768,
+          indexParam: { indexType: 'HNSW', metric: 'COSINE', params: { M: 16 } },
+        },
+      ],
+      fields: [
+        { name: 'id', dataType: 'INT64', nullable: false },
+        { name: 'title', dataType: 'STRING', nullable: false },
+      ],
+    },
+    stats: { documentCount: 42, indexState: 'ready', storageBytes: 2048 },
+  };
+}
+
+function fakeError(code: string): UserFacingError {
+  return {
+    code,
+    message: code,
+    messageKey: `errors.code.${code}`,
+    status: 500,
+    traceId: null,
+    severity: 'error',
+  };
+}
+
+function makeApiClient(state: FakeState): ApiClient {
+  return {
+    baseUrl: 'fake',
+    request: async <T,>(path: string, opts?: { method?: string; body?: unknown }): Promise<T> => {
+      const method = opts?.method ?? 'GET';
+      state.calls.push({ method, path });
+      if (path.startsWith('/collections/') && method === 'GET') {
+        if (state.getError) throw new ApiError(state.getError);
+        const name = decodeURIComponent(path.slice('/collections/'.length));
+        const record = state.collections.get(name);
+        if (!record) throw new ApiError(fakeError('COLLECTION_NOT_FOUND'));
+        return record.summary as unknown as T;
+      }
+      if (path.endsWith(':flush') && method === 'POST') {
+        return { name: 'ok', performed: true } as unknown as T;
+      }
+      if (path.endsWith(':optimize') && method === 'POST') {
+        return { name: 'ok', performed: true } as unknown as T;
+      }
+      if (path.endsWith(':destroy') && method === 'POST') {
+        const name = decodeURIComponent(
+          path.slice('/collections/'.length, path.length - ':destroy'.length),
+        );
+        state.collections.delete(name);
+        return undefined as unknown as T;
+      }
+      if (path.endsWith('/documents:browse') && method === 'POST') {
+        return { items: [], truncated: false } as unknown as T;
+      }
+      if (path.startsWith('/collections/') && method === 'DELETE') {
+        return undefined as unknown as T;
+      }
+      if (method === 'GET' && (path === '/ai/rerankers' || path === '/ai/embeddings')) {
+        return { items: [] } as unknown as T;
+      }
+      if (path === '/collections/recent' && method === 'GET') {
+        return { items: [] } as unknown as T;
+      }
+      if (path === '/fs/reveal' && method === 'POST') {
+        return undefined as unknown as T;
+      }
+      return { items: [] } as unknown as T;
+    },
+  };
+}
+
+function makeQueryClient(): QueryClient {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+}
+
+function renderDetail(name: string, apiClient: ApiClient) {
+  function Landing(): JSX.Element {
+    return <div data-testid="landing-home">HOME</div>;
+  }
+  return renderWithProviders(
+    <Routes>
+      <Route path="/" element={<Landing />} />
+      <Route path="/collections/:name" element={<CollectionDetailPage />} />
+    </Routes>,
+    {
+      apiClient,
+      queryClient: makeQueryClient(),
+      initialEntries: [`/collections/${encodeURIComponent(name)}`],
+    },
+  );
+}
+
+describe('CollectionDetailPage', () => {
+  it('renders overview tab with collection info and schema', async () => {
+    const state: FakeState = {
+      collections: new Map([['demo', { summary: fakeSummary('demo') }]]),
+      calls: [],
+    };
+    renderDetail('demo', makeApiClient(state));
+
+    expect(await screen.findByText(/\/tmp\/demo/)).toBeInTheDocument();
+    expect(screen.getByText('42')).toBeInTheDocument();
+
+    const vectors = screen.getByTestId('zv-collection-detail-vectors');
+    expect(within(vectors).getByText('embedding')).toBeInTheDocument();
+    expect(within(vectors).getByText('VECTOR_FP32')).toBeInTheDocument();
+  });
+
+  it('switches tabs', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = {
+      collections: new Map([['demo', { summary: fakeSummary('demo') }]]),
+      calls: [],
+    };
+    renderDetail('demo', makeApiClient(state));
+
+    await screen.findByText(/\/tmp\/demo/);
+
+    await user.click(screen.getByText('Query'));
+    expect(screen.getByText('Vector Queries')).toBeInTheDocument();
+
+    await user.click(screen.getByText('Write'));
+    expect(screen.getByText('Insert')).toBeInTheDocument();
+
+    await user.click(screen.getByText('Overview'));
+    expect(screen.getByText('Vector fields')).toBeInTheDocument();
+  });
+
+  it('shows error state and retries on failure', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = {
+      collections: new Map([['demo', { summary: fakeSummary('demo') }]]),
+      getError: fakeError('INTERNAL_ERROR'),
+      calls: [],
+    };
+    const client = makeApiClient(state);
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    renderDetail('demo', client);
+
+    expect(await screen.findByText(/Failed to load/)).toBeInTheDocument();
+
+    state.getError = undefined;
+    await user.click(screen.getByRole('button', { name: /retry/i }));
+    expect(await screen.findByText(/\/tmp\/demo/)).toBeInTheDocument();
+    spy.mockRestore();
+  });
+
+  it('destroy is gated by typing the Collection name and navigates home', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = {
+      collections: new Map([['demo', { summary: fakeSummary('demo') }]]),
+      calls: [],
+    };
+    renderDetail('demo', makeApiClient(state));
+    await screen.findByText(/\/tmp\/demo/);
+
+    // Click the Destroy button to open confirmation dialog
+    const openBtn = screen.getByRole('button', { name: /destroy/i });
+    await user.click(openBtn);
+
+    // Inside dialog: confirm button should be disabled until name is typed
+    const confirmBtns = screen.getAllByRole('button', { name: /destroy/i });
+    const confirmBtn = confirmBtns[confirmBtns.length - 1];
+    expect(confirmBtn).toBeDisabled();
+
+    const confirmInput = screen.getByPlaceholderText('demo');
+    await user.type(confirmInput, 'demo');
+    expect(confirmBtn).toBeEnabled();
+    await user.click(confirmBtn);
+
+    expect(await screen.findByTestId('landing-home')).toBeInTheDocument();
+    expect(state.calls.some((c) => c.method === 'POST' && c.path.endsWith(':destroy'))).toBe(true);
+  });
+});

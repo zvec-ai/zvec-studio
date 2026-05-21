@@ -1,0 +1,14 @@
+.zv-directory-input__row {
+  display: flex;
+  gap: var(--zv-space-2);
+  align-items: stretch;
+  min-width: 0;
+}
+.zv-directory-input__row .zv-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.zv-directory-input__row .zv-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
