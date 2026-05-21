@@ -69,9 +69,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-latest, name: "macOS ARM64", python-version: "3.12" }
-          - { os: ubuntu-24.04-arm, name: "Linux ARM64", python-version: "3.12" }
-          - { os: windows-latest, name: "Windows x64", python-version: "3.12" }
+          - { os: macos-latest, name: "macOS ARM64", slug: macos-arm64, python-version: "3.12" }
+          - { os: ubuntu-24.04-arm, name: "Linux ARM64", slug: linux-arm64, python-version: "3.12" }
+          - { os: windows-latest, name: "Windows x64", slug: windows-x64, python-version: "3.12" }
     steps:
       - uses: actions/checkout@v4
 
@@ -90,17 +90,17 @@ jobs:
 
       - name: Unit tests
         working-directory: apps/backend
-        run: pytest tests/unit -v --junitxml=../../artifacts/backend-unit-${{ matrix.name }}.xml
+        run: pytest tests/unit -v --junitxml=../../artifacts/backend-unit-${{ matrix.slug }}.xml
 
       - name: Integration tests
         working-directory: apps/backend
-        run: pytest tests/integration -v --junitxml=../../artifacts/backend-integration-${{ matrix.name }}.xml
+        run: pytest tests/integration -v --junitxml=../../artifacts/backend-integration-${{ matrix.slug }}.xml
 
       - name: Upload diagnostic artifacts
         if: failure() || always()
         uses: actions/upload-artifact@v4
         with:
-          name: backend-artifacts-${{ matrix.name }}
+          name: backend-artifacts-${{ matrix.slug }}
           path: artifacts/
           if-no-files-found: ignore
 

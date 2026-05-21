@@ -122,7 +122,10 @@ pub fn spawn(config: &SidecarConfig) -> Result<SidecarHandle, SidecarError> {
         #[cfg(not(target_os = "windows"))]
         let child = Command::new("true").spawn().map_err(SidecarError::Spawn)?;
         #[cfg(target_os = "windows")]
-        let child = Command::new("cmd").args(["/C", "echo."]).spawn().map_err(SidecarError::Spawn)?;
+        let child = Command::new("cmd")
+            .args(["/C", "echo."])
+            .spawn()
+            .map_err(SidecarError::Spawn)?;
         return Ok(SidecarHandle { child });
     }
 
@@ -163,10 +166,7 @@ pub fn spawn(config: &SidecarConfig) -> Result<SidecarHandle, SidecarError> {
     command.stdout(Stdio::inherit()).stderr(Stdio::inherit());
     // Ensure CORS allows the Tauri webview origin regardless of what's baked
     // into the sidecar binary. The server is localhost-only so "*" is safe.
-    command.env(
-        "ZVEC_STUDIO_CORS_ORIGINS",
-        r#"["*"]"#,
-    );
+    command.env("ZVEC_STUDIO_CORS_ORIGINS", r#"["*"]"#);
 
     let child = command.spawn().map_err(SidecarError::Spawn)?;
 
