@@ -33,8 +33,6 @@ jobs:
         platform:
           - name: macos-aarch64
             runner: macos-14
-          - name: macos-x86_64
-            runner: macos-13
           - name: linux-x86_64
             runner: ubuntu-latest
           - name: linux-aarch64
@@ -112,16 +110,10 @@ jobs:
         shell: bash
         run: |
           mkdir -p artifacts/release
-          shopt -s nullglob globstar
-          for f in \
-            apps/desktop/src-tauri/target/release/bundle/**/*.dmg \
-            apps/desktop/src-tauri/target/release/bundle/**/*.app.tar.gz \
-            apps/desktop/src-tauri/target/release/bundle/**/*.deb \
-            apps/desktop/src-tauri/target/release/bundle/**/*.AppImage \
-            apps/desktop/src-tauri/target/release/bundle/**/*.msi \
-            apps/desktop/src-tauri/target/release/bundle/**/*.exe; do
-            cp -v "$f" artifacts/release/
-          done
+          find apps/desktop/src-tauri/target/release/bundle \
+            \( -name '*.dmg' -o -name '*.app.tar.gz' -o -name '*.deb' \
+               -o -name '*.AppImage' -o -name '*.msi' -o -name '*.exe' \) \
+            -exec cp -v {} artifacts/release/ \;
           ls -la artifacts/release/ || true
 
       - name: Upload artifacts
