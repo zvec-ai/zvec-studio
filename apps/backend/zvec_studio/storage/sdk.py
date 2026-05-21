@@ -46,8 +46,10 @@ from zvec import (
     HnswQueryParam,
     HnswRabitqIndexParam,
     HnswRabitqQueryParam,
+    InvertIndexParam,
     IVFIndexParam,
     IVFQueryParam,
+    VamanaIndexParam,
     VamanaQueryParam,
 )
 from zvec import (
@@ -143,6 +145,8 @@ _INDEX_CLS: dict[IndexType, type] = {
     IndexType.FLAT: FlatIndexParam,
     IndexType.IVF: IVFIndexParam,
     IndexType.HNSW_RABITQ: HnswRabitqIndexParam,
+    IndexType.VAMANA: VamanaIndexParam,
+    IndexType.INVERT: InvertIndexParam,
 }
 
 _CAMEL_TO_SNAKE_RE = re.compile(r"(?<!^)(?=[A-Z])")

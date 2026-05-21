@@ -1182,7 +1182,7 @@ export interface components {
          * @description Index families exposed by the Zvec SDK.
          * @enum {string}
          */
-        IndexType: "HNSW" | "FLAT" | "IVF" | "HNSW_RABITQ" | "INVERT";
+        IndexType: "HNSW" | "FLAT" | "IVF" | "HNSW_RABITQ" | "VAMANA" | "INVERT";
         /**
          * IvfQueryParamSpec
          * @description Maps to ``zvec.IVFQueryParam(nprobe)``.

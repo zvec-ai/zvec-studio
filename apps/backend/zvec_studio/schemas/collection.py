@@ -71,6 +71,7 @@ class IndexType(str, Enum):
     FLAT = "FLAT"
     IVF = "IVF"
     HNSW_RABITQ = "HNSW_RABITQ"
+    VAMANA = "VAMANA"
     INVERT = "INVERT"
 
 

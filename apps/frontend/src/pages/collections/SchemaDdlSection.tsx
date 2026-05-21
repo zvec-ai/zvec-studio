@@ -79,6 +79,7 @@ const INDEX_TYPES: ReadonlyArray<SelectOption<IndexType>> = [
   { value: 'FLAT', label: 'FLAT' },
   { value: 'IVF', label: 'IVF' },
   { value: 'HNSW_RABITQ', label: 'HNSW_RABITQ' },
+  { value: 'VAMANA', label: 'VAMANA' },
 ];
 const METRIC_TYPES: ReadonlyArray<SelectOption<MetricType>> = [
   { value: 'COSINE', label: 'COSINE' },

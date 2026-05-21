@@ -22,7 +22,7 @@ const ALL_DATA_TYPES = [...VECTOR_TYPES, ...SCALAR_TYPES] as const;
 type AnyDataType = (typeof ALL_DATA_TYPES)[number];
 
 const METRICS = ['COSINE', 'L2', 'IP'] as const;
-const INDEX_TYPES = ['HNSW', 'FLAT', 'IVF', 'HNSW_RABITQ'] as const;
+const INDEX_TYPES = ['HNSW', 'FLAT', 'IVF', 'HNSW_RABITQ', 'VAMANA'] as const;
 const QUANTIZE_TYPES = ['UNDEFINED', 'FP16', 'INT8', 'INT4', 'RABITQ'] as const;
 
 function isVectorType(dt: string): boolean {
