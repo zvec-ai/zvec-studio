@@ -105,17 +105,31 @@ class CollectionRecord:
 
 
 _SCALAR_TO_SDK: dict[ScalarDataType, SdkDataType] = {
+    ScalarDataType.INT32: SdkDataType.INT32,
     ScalarDataType.INT64: SdkDataType.INT64,
+    ScalarDataType.UINT32: SdkDataType.UINT32,
+    ScalarDataType.UINT64: SdkDataType.UINT64,
     ScalarDataType.FLOAT: SdkDataType.FLOAT,
     ScalarDataType.DOUBLE: SdkDataType.DOUBLE,
     ScalarDataType.BOOL: SdkDataType.BOOL,
     ScalarDataType.STRING: SdkDataType.STRING,
+    ScalarDataType.ARRAY_BOOL: SdkDataType.ARRAY_BOOL,
+    ScalarDataType.ARRAY_INT32: SdkDataType.ARRAY_INT32,
+    ScalarDataType.ARRAY_INT64: SdkDataType.ARRAY_INT64,
+    ScalarDataType.ARRAY_UINT32: SdkDataType.ARRAY_UINT32,
+    ScalarDataType.ARRAY_UINT64: SdkDataType.ARRAY_UINT64,
+    ScalarDataType.ARRAY_FLOAT: SdkDataType.ARRAY_FLOAT,
+    ScalarDataType.ARRAY_DOUBLE: SdkDataType.ARRAY_DOUBLE,
+    ScalarDataType.ARRAY_STRING: SdkDataType.ARRAY_STRING,
 }
 
 _VECTOR_TO_SDK: dict[VectorDataType, SdkDataType] = {
     VectorDataType.VECTOR_FP32: SdkDataType.VECTOR_FP32,
     VectorDataType.VECTOR_FP16: SdkDataType.VECTOR_FP16,
+    VectorDataType.VECTOR_FP64: SdkDataType.VECTOR_FP64,
     VectorDataType.VECTOR_INT8: SdkDataType.VECTOR_INT8,
+    VectorDataType.SPARSE_VECTOR_FP32: SdkDataType.SPARSE_VECTOR_FP32,
+    VectorDataType.SPARSE_VECTOR_FP16: SdkDataType.SPARSE_VECTOR_FP16,
 }
 
 _METRIC_TO_SDK: dict[MetricType, SdkMetricType] = {

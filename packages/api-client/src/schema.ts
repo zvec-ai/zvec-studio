@@ -1440,7 +1440,7 @@ export interface components {
          * @description Scalar field types supported in a Collection schema.
          * @enum {string}
          */
-        ScalarDataType: "INT64" | "FLOAT" | "DOUBLE" | "BOOL" | "STRING";
+        ScalarDataType: "INT32" | "INT64" | "UINT32" | "UINT64" | "FLOAT" | "DOUBLE" | "BOOL" | "STRING" | "ARRAY_BOOL" | "ARRAY_INT32" | "ARRAY_INT64" | "ARRAY_UINT32" | "ARRAY_UINT64" | "ARRAY_FLOAT" | "ARRAY_DOUBLE" | "ARRAY_STRING";
         /**
          * ScalarIndexCreateRequest
          * @description Body for ``POST /collections/{name}/fields/{field}/index``.
@@ -1575,7 +1575,7 @@ export interface components {
          * @description Vector dtypes supported by the Zvec SDK.
          * @enum {string}
          */
-        VectorDataType: "VECTOR_FP32" | "VECTOR_FP16" | "VECTOR_INT8";
+        VectorDataType: "VECTOR_FP32" | "VECTOR_FP16" | "VECTOR_FP64" | "VECTOR_INT8" | "SPARSE_VECTOR_FP32" | "SPARSE_VECTOR_FP16";
         /**
          * VectorIndexParam
          * @description Index build parameters attached to a single vector field.

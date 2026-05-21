@@ -37,17 +37,31 @@ class VectorDataType(str, Enum):
 
     VECTOR_FP32 = "VECTOR_FP32"
     VECTOR_FP16 = "VECTOR_FP16"
+    VECTOR_FP64 = "VECTOR_FP64"
     VECTOR_INT8 = "VECTOR_INT8"
+    SPARSE_VECTOR_FP32 = "SPARSE_VECTOR_FP32"
+    SPARSE_VECTOR_FP16 = "SPARSE_VECTOR_FP16"
 
 
 class ScalarDataType(str, Enum):
     """Scalar field types supported in a Collection schema."""
 
+    INT32 = "INT32"
     INT64 = "INT64"
+    UINT32 = "UINT32"
+    UINT64 = "UINT64"
     FLOAT = "FLOAT"
     DOUBLE = "DOUBLE"
     BOOL = "BOOL"
     STRING = "STRING"
+    ARRAY_BOOL = "ARRAY_BOOL"
+    ARRAY_INT32 = "ARRAY_INT32"
+    ARRAY_INT64 = "ARRAY_INT64"
+    ARRAY_UINT32 = "ARRAY_UINT32"
+    ARRAY_UINT64 = "ARRAY_UINT64"
+    ARRAY_FLOAT = "ARRAY_FLOAT"
+    ARRAY_DOUBLE = "ARRAY_DOUBLE"
+    ARRAY_STRING = "ARRAY_STRING"
 
 
 class IndexType(str, Enum):

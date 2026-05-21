@@ -49,18 +49,30 @@ type VectorRow = NonNullable<CollectionSummary['schema']['vectors']>[number];
 type FieldRow = NonNullable<CollectionSummary['schema']['fields']>[number];
 
 function typeBadgeClass(dataType: string): string {
-  if (dataType.startsWith('VECTOR')) return 'zv-type-badge zv-type-badge--vector';
-  if (['INT64', 'FLOAT', 'DOUBLE'].includes(dataType)) return 'zv-type-badge zv-type-badge--numeric';
+  if (dataType.startsWith('VECTOR') || dataType.startsWith('SPARSE_VECTOR')) return 'zv-type-badge zv-type-badge--vector';
+  if (['INT32', 'INT64', 'UINT32', 'UINT64', 'FLOAT', 'DOUBLE'].includes(dataType)) return 'zv-type-badge zv-type-badge--numeric';
   if (dataType === 'BOOL') return 'zv-type-badge zv-type-badge--bool';
+  if (dataType.startsWith('ARRAY_')) return 'zv-type-badge zv-type-badge--array';
   return 'zv-type-badge zv-type-badge--text';
 }
 
 const SCALAR_TYPES: ReadonlyArray<SelectOption<ScalarDataType>> = [
+  { value: 'INT32', label: 'INT32' },
   { value: 'INT64', label: 'INT64' },
+  { value: 'UINT32', label: 'UINT32' },
+  { value: 'UINT64', label: 'UINT64' },
   { value: 'FLOAT', label: 'FLOAT' },
   { value: 'DOUBLE', label: 'DOUBLE' },
   { value: 'BOOL', label: 'BOOL' },
   { value: 'STRING', label: 'STRING' },
+  { value: 'ARRAY_BOOL', label: 'ARRAY_BOOL' },
+  { value: 'ARRAY_INT32', label: 'ARRAY_INT32' },
+  { value: 'ARRAY_INT64', label: 'ARRAY_INT64' },
+  { value: 'ARRAY_UINT32', label: 'ARRAY_UINT32' },
+  { value: 'ARRAY_UINT64', label: 'ARRAY_UINT64' },
+  { value: 'ARRAY_FLOAT', label: 'ARRAY_FLOAT' },
+  { value: 'ARRAY_DOUBLE', label: 'ARRAY_DOUBLE' },
+  { value: 'ARRAY_STRING', label: 'ARRAY_STRING' },
 ];
 const INDEX_TYPES: ReadonlyArray<SelectOption<IndexType>> = [
   { value: 'HNSW', label: 'HNSW' },
