@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import stat
 from pathlib import Path
 
@@ -49,6 +50,7 @@ class TestEmbeddingsCrud:
         reg2 = AIFunctionRegistry(tmp_path)
         assert [r.name for r in reg2.list_embeddings()] == ["qwen-1024"]
 
+    @pytest.mark.skipif(platform.system() == "Windows", reason="POSIX file modes")
     def test_persisted_file_is_chmod_0600(self, tmp_path: Path) -> None:
         reg = AIFunctionRegistry(tmp_path)
         reg.create_embedding(_embedding("qwen-1024"))

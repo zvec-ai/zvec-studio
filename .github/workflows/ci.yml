@@ -133,6 +133,14 @@ jobs:
         with:
           workspaces: apps/desktop/src-tauri
 
+      - name: Create sidecar stub
+        shell: bash
+        run: |
+          target=$(rustc -vV | awk '/^host:/ { print $2 }')
+          mkdir -p apps/desktop/src-tauri/binaries
+          touch "apps/desktop/src-tauri/binaries/zvec-studio-sidecar-${target}"
+          chmod +x "apps/desktop/src-tauri/binaries/zvec-studio-sidecar-${target}"
+
       - name: Check formatting
         working-directory: apps/desktop/src-tauri
         run: cargo fmt --all -- --check
