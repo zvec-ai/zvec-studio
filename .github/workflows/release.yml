@@ -173,6 +173,15 @@ jobs:
       - name: Install Python build tools
         run: pip install build wheel twine
 
+      - name: Inject version from git tag
+        run: |
+          # Convert git tag to PEP 440: v0.1.0-rc.2 -> 0.1.0rc2
+          TAG="${GITHUB_REF#refs/tags/v}"
+          VERSION=$(echo "$TAG" | sed 's/-rc\./rc/' | sed 's/-alpha\./a/' | sed 's/-beta\./b/')
+          echo "Publishing version: $VERSION"
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" apps/backend/pyproject.toml
+          grep version apps/backend/pyproject.toml | head -1
+
       - name: Bundle frontend into Python package
         run: make build.pip
 
