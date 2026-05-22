@@ -76,6 +76,7 @@ apps/desktop/src-tauri/binaries/*
 # --- PyInstaller (Task 13: frozen sidecar binary) ---
 apps/backend/build/
 apps/backend/dist/
+apps/backend/README.pypi.md
 
 # Bundled frontend static files (populated by `make build.pip`, not committed)
 apps/backend/zvec_studio/static/*
