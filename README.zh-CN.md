@@ -55,6 +55,7 @@ zvec-studio
 ```bash
 git clone https://github.com/zvec-ai/zvec-studio.git
 cd zvec-studio
+make install    # 安装 Node + Python 依赖
 make dev        # 同时启动后端 + 前端开发服务器
 ```
 

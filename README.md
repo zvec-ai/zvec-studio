@@ -55,6 +55,7 @@ Double-click to run — no Python needed.
 ```bash
 git clone https://github.com/zvec-ai/zvec-studio.git
 cd zvec-studio
+make install    # install Node + Python dependencies
 make dev        # starts backend + frontend dev servers
 ```
 
