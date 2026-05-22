@@ -48,6 +48,13 @@ build: ## Build frontend and prepare backend package
 	$(PNPM) --filter frontend build
 	cd $(BACKEND_DIR) && $(PYTHON) -m build --wheel --no-isolation || echo "(skip wheel build: install 'build' package to enable)"
 
+.PHONY: build.pip
+build.pip: ## Build frontend and bundle into Python package (for PyPI release)
+	$(PNPM) --filter frontend build
+	rm -rf $(BACKEND_DIR)/zvec_studio/static/assets $(BACKEND_DIR)/zvec_studio/static/index.html
+	cp -r $(FRONTEND_DIR)/dist/* $(BACKEND_DIR)/zvec_studio/static/
+	cd $(BACKEND_DIR) && $(PYTHON) -m build --wheel --no-isolation
+
 # ---------- Lint / types ----------
 .PHONY: lint
 lint: lint.backend lint.frontend ## Run all linters

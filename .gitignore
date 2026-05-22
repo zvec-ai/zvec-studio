@@ -77,6 +77,10 @@ apps/desktop/src-tauri/binaries/*
 apps/backend/build/
 apps/backend/dist/
 
+# Bundled frontend static files (populated by `make build.pip`, not committed)
+apps/backend/zvec_studio/static/*
+!apps/backend/zvec_studio/static/.gitkeep
+
 # Local backend runtime data (e.g. scripts/seed_demo.py output)
 apps/backend/data/
 .run/

@@ -79,6 +79,9 @@ where = ["."]
 include = ["zvec_studio*"]
 exclude = ["tests*"]
 
+[tool.setuptools.package-data]
+zvec_studio = ["static/**/*"]
+
 # ---------- ruff ----------
 [tool.ruff]
 line-length = 100

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
-import { OnboardingFlow, SpotlightTour, useOnboarding, type TourStep } from '@/features/onboarding';
+import { SpotlightTour, type TourStep } from '@/features/onboarding';
 import { useHealthz } from '@/features/system';
 import { Button, CloseButton, Dialog } from '@/components/ui';
 import { useToast } from '@/components/ui/toast-context';
@@ -145,7 +145,6 @@ const TOUR_STEPS: TourStep[] = [
 export function AppShell(): JSX.Element {
   const { t, i18n } = useTranslation();
   const toast = useToast();
-  const onboarding = useOnboarding();
   const healthz = useHealthz();
   const theme = useTheme();
 
@@ -540,7 +539,6 @@ export function AppShell(): JSX.Element {
         </main>
       </div>
 
-      <OnboardingFlow open={onboarding.open} onDismiss={onboarding.dismiss} />
       <SpotlightTour open={showTour} steps={TOUR_STEPS} onDismiss={() => setShowTour(false)} />
       <CreateCollectionDialog open={showCreateCollection} onClose={() => setShowCreateCollection(false)} />
       <OpenCollectionDialog open={showOpenCollection} onClose={() => setShowOpenCollection(false)} />

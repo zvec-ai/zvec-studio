@@ -248,67 +248,14 @@ async function mountFakeBackend(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Onboarding
+// Onboarding (auto-open removed; only manual SpotlightTour remains)
 // ─────────────────────────────────────────────────────────────────────────────
 
 test.describe('Onboarding', () => {
-  test('auto-opens on first visit and finishes in 5 steps', async ({ page }) => {
+  test('does not auto-open onboarding on first visit', async ({ page }) => {
     await page.addInitScript(() => {
       try {
         window.localStorage.removeItem('zvec-studio:onboarded');
-      } catch { /* noop */ }
-    });
-    await mountFakeBackend(page, []);
-    await page.goto('/');
-
-    await expect(page.getByTestId('zv-onboarding')).toBeVisible();
-    await expect(page.getByTestId('zv-onboarding-step-0')).toBeVisible();
-
-    await page.getByTestId('zv-onboarding-next').click();
-    await expect(page.getByTestId('zv-onboarding-step-1')).toBeVisible();
-
-    await page.getByTestId('zv-onboarding-next').click();
-    await expect(page.getByTestId('zv-onboarding-step-2')).toBeVisible();
-
-    await page.getByTestId('zv-onboarding-next').click();
-    await expect(page.getByTestId('zv-onboarding-step-3')).toBeVisible();
-
-    await page.getByTestId('zv-onboarding-next').click();
-    await expect(page.getByTestId('zv-onboarding-step-4')).toBeVisible();
-
-    // Final click dismisses the dialog.
-    await page.getByTestId('zv-onboarding-next').click();
-    await expect(page.getByTestId('zv-onboarding')).toBeHidden();
-
-    const stored = await page.evaluate(() =>
-      window.localStorage.getItem('zvec-studio:onboarded'),
-    );
-    expect(stored).toBe('1');
-  });
-
-  test('skip button immediately dismisses onboarding', async ({ page }) => {
-    await page.addInitScript(() => {
-      try {
-        window.localStorage.removeItem('zvec-studio:onboarded');
-      } catch { /* noop */ }
-    });
-    await mountFakeBackend(page, []);
-    await page.goto('/');
-
-    await expect(page.getByTestId('zv-onboarding')).toBeVisible();
-    await page.getByTestId('zv-onboarding-skip').click();
-    await expect(page.getByTestId('zv-onboarding')).toBeHidden();
-
-    const stored = await page.evaluate(() =>
-      window.localStorage.getItem('zvec-studio:onboarded'),
-    );
-    expect(stored).toBe('1');
-  });
-
-  test('does not show onboarding when already completed', async ({ page }) => {
-    await page.addInitScript(() => {
-      try {
-        window.localStorage.setItem('zvec-studio:onboarded', '1');
       } catch { /* noop */ }
     });
     await mountFakeBackend(page, []);

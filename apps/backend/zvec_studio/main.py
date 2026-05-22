@@ -7,12 +7,15 @@ diagnostic router used by tests to exercise the error pipeline.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import zvec as _zvec
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.responses import FileResponse
 
 from zvec_studio.__about__ import __version__
 from zvec_studio.ai_service import AIService
@@ -192,6 +195,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(searches_router, prefix=effective.api_prefix)
     app.include_router(ai_router, prefix=effective.api_prefix)
     app.include_router(_diagnostics_router(), prefix=effective.api_prefix)
+
+    # Serve bundled frontend static files (populated by `make build.pip`).
+    # In dev mode the directory is empty and this is a no-op.
+    _static_dir = Path(__file__).parent / "static"
+    _index = _static_dir / "index.html"
+    if _index.exists():
+        app.mount("/assets", StaticFiles(directory=_static_dir / "assets"), name="static-assets")
+
+        @app.get("/{path:path}", include_in_schema=False)
+        async def _spa_fallback(path: str) -> FileResponse:
+            """Serve index.html for all non-API routes (SPA client-side routing)."""
+            file = _static_dir / path
+            if file.is_file():
+                return FileResponse(file)
+            return FileResponse(_index)
 
     return app
 
