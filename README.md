@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/screenshot.png" width="720" alt="Zvec Studio screenshot" />
+  <img src="docs/assets/tour-guide.gif" width="720" alt="Zvec Studio guided tour" />
 </p>
 
 ---
