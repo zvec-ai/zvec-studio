@@ -133,7 +133,7 @@ class VectorSchema(BaseModel):
 
     name: str
     dataType: VectorDataType
-    dimension: Annotated[int, Field(ge=1, le=32_768)]
+    dimension: Annotated[int, Field(ge=1, le=20_000)]
     indexParam: VectorIndexParam | None = Field(
         default=None,
         description="Optional index params; if omitted the index is created lazily.",

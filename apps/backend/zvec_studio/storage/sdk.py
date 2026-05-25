@@ -532,9 +532,9 @@ class SdkBackend:
     # ---- DDL: scalar fields ----
 
     def add_field(
-        self, name: str, *, field: FieldSchema, expression: str = ""
+        self, name: str, *, field: FieldSchema, expression: str = "", path: str | None = None
     ) -> CollectionRecord:
-        record = self.get(name)
+        record = self.get(name, path=path)
         existing = {f.name for f in record.schema.fields} | {
             v.name for v in record.schema.vectors
         }
@@ -562,8 +562,8 @@ class SdkBackend:
         record.schema = _from_sdk_schema(record.sdk_obj.schema, record.path)
         return record
 
-    def drop_field(self, name: str, field_name: str) -> CollectionRecord:
-        record = self.get(name)
+    def drop_field(self, name: str, field_name: str, *, path: str | None = None) -> CollectionRecord:
+        record = self.get(name, path=path)
         if field_name not in {f.name for f in record.schema.fields}:
             raise InvalidSchemaError(
                 f"Scalar field '{field_name}' does not exist on '{name}'.",
@@ -580,9 +580,9 @@ class SdkBackend:
         return record
 
     def rename_field(
-        self, name: str, *, old_name: str, new_name: str
+        self, name: str, *, old_name: str, new_name: str, path: str | None = None
     ) -> CollectionRecord:
-        record = self.get(name)
+        record = self.get(name, path=path)
         all_names = {f.name for f in record.schema.fields} | {
             v.name for v in record.schema.vectors
         }
@@ -616,8 +616,9 @@ class SdkBackend:
         *,
         vector_field: str,
         index_param: VectorIndexParam,
+        path: str | None = None,
     ) -> CollectionRecord:
-        record = self.get(name)
+        record = self.get(name, path=path)
         matches = [v for v in record.schema.vectors if v.name == vector_field]
         if not matches:
             raise InvalidSchemaError(
@@ -637,8 +638,8 @@ class SdkBackend:
         record.schema = _from_sdk_schema(record.sdk_obj.schema, record.path)
         return record
 
-    def drop_index(self, name: str, vector_field: str) -> CollectionRecord:
-        record = self.get(name)
+    def drop_index(self, name: str, vector_field: str, *, path: str | None = None) -> CollectionRecord:
+        record = self.get(name, path=path)
         matches = [v for v in record.schema.vectors if v.name == vector_field]
         if not matches:
             raise InvalidSchemaError(
@@ -664,8 +665,9 @@ class SdkBackend:
         field_name: str,
         enable_range_optimization: bool = False,
         enable_extended_wildcard: bool = False,
+        path: str | None = None,
     ) -> CollectionRecord:
-        record = self.get(name)
+        record = self.get(name, path=path)
         if field_name not in {f.name for f in record.schema.fields}:
             raise InvalidSchemaError(
                 f"Scalar field '{field_name}' does not exist on '{name}'.",
@@ -686,8 +688,8 @@ class SdkBackend:
         record.schema = _from_sdk_schema(record.sdk_obj.schema, record.path)
         return record
 
-    def drop_scalar_index(self, name: str, field_name: str) -> CollectionRecord:
-        record = self.get(name)
+    def drop_scalar_index(self, name: str, field_name: str, *, path: str | None = None) -> CollectionRecord:
+        record = self.get(name, path=path)
         if field_name not in {f.name for f in record.schema.fields}:
             raise InvalidSchemaError(
                 f"Scalar field '{field_name}' does not exist on '{name}'.",

@@ -99,7 +99,7 @@ class TestWrapImportError:
         exc = ImportError("something failed")
         exc.name = None  # type: ignore[assignment]
         wrapped = _wrap_import_error(exc, feature="test")
-        assert wrapped.extra["missingPackage"] == "unknown"
+        assert wrapped.extra["missingPackage"] == "zvec-studio[ai]"
 
 
 class TestQwenDenseFactory:

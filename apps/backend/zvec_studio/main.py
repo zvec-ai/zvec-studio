@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import zvec as _zvec
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -203,9 +203,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     if _index.exists():
         app.mount("/assets", StaticFiles(directory=_static_dir / "assets"), name="static-assets")
 
+        # Strip leading/trailing slashes so we can compare against FastAPI's
+        # path-variable form (which never carries a leading ``/``).
+        _api_prefix_segment = effective.api_prefix.strip("/")
+
         @app.get("/{path:path}", include_in_schema=False)
         async def _spa_fallback(path: str) -> FileResponse:
-            """Serve index.html for all non-API routes (SPA client-side routing)."""
+            """Serve index.html for all non-API routes (SPA client-side routing).
+
+            Requests targeting the API prefix must NOT be swallowed by the SPA
+            fallback, otherwise unknown endpoints would respond with 200 +
+            ``index.html`` instead of the RFC 7807 problem document. Re-raising
+            ``HTTPException(404)`` lets the registered error handlers produce
+            the canonical ``application/problem+json`` payload.
+            """
+            if _api_prefix_segment and (
+                path == _api_prefix_segment
+                or path.startswith(f"{_api_prefix_segment}/")
+            ):
+                raise HTTPException(status_code=404)
             file = _static_dir / path
             if file.is_file():
                 return FileResponse(file)

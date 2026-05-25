@@ -49,8 +49,26 @@ if TYPE_CHECKING:  # pragma: no cover
     pass
 
 
-def _wrap_import_error(exc: ImportError, *, feature: str) -> AIDependencyMissingError:
-    pkg = getattr(exc, "name", None) or "unknown"
+# Mapping from config type → known required pip package.
+_KNOWN_DEPS: dict[type, str] = {
+    DefaultLocalDenseConfig: "sentence-transformers",
+    DefaultLocalSparseConfig: "sentence-transformers",
+    BM25Config: "dashtext",
+    QwenDenseConfig: "dashscope",
+    QwenSparseConfig: "dashscope",
+    OpenAIDenseConfig: "openai",
+    DefaultLocalRerankerConfig: "sentence-transformers",
+    QwenRerankerConfig: "dashscope",
+}
+
+
+def _wrap_import_error(exc: ImportError, *, feature: str, cfg: Any = None) -> AIDependencyMissingError:
+    # Try exc.name first; fall back to known mapping; last resort is "unknown".
+    pkg = getattr(exc, "name", None)
+    if not pkg and cfg is not None:
+        pkg = _KNOWN_DEPS.get(type(cfg))
+    if not pkg:
+        pkg = "zvec-studio[ai]"
     msg = (
         f"AI feature '{feature}' requires package '{pkg}' which is not"
         f" installed. Run ``pip install {pkg}`` and restart the server."
@@ -131,7 +149,7 @@ class AIService:
                     kwargs["dimension"] = cfg.dimension
                 return OpenAIDenseEmbedding(**kwargs)
         except ImportError as exc:
-            raise _wrap_import_error(exc, feature=cfg.type.value) from exc
+            raise _wrap_import_error(exc, feature=cfg.type.value, cfg=cfg) from exc
         raise AIFunctionInvocationError(
             f"Unsupported embedding config type: {type(cfg).__name__}",
             extra={"type": getattr(cfg, "type", None)},
@@ -201,7 +219,7 @@ class AIService:
                     weights=effective_weights,
                 )
         except ImportError as exc:
-            raise _wrap_import_error(exc, feature=cfg.type.value) from exc
+            raise _wrap_import_error(exc, feature=cfg.type.value, cfg=cfg) from exc
         raise AIFunctionInvocationError(
             f"Unsupported reranker config type: {type(cfg).__name__}",
             extra={"type": getattr(cfg, "type", None)},

@@ -254,7 +254,7 @@ def add_field(
     backend: SdkBackend = Depends(_get_backend),
     path: str | None = Query(default=None),
 ) -> CollectionSummary:
-    record = backend.add_field(name, field=body.field, expression=body.expression)
+    record = backend.add_field(name, field=body.field, expression=body.expression, path=path)
     return _summary(record, backend)
 
 
@@ -265,7 +265,7 @@ def drop_field(
     backend: SdkBackend = Depends(_get_backend),
     path: str | None = Query(default=None),
 ) -> CollectionSummary:
-    record = backend.drop_field(name, field)
+    record = backend.drop_field(name, field, path=path)
     return _summary(record, backend)
 
 
@@ -277,7 +277,7 @@ def rename_field(
     backend: SdkBackend = Depends(_get_backend),
     path: str | None = Query(default=None),
 ) -> CollectionSummary:
-    record = backend.rename_field(name, old_name=field, new_name=body.newName)
+    record = backend.rename_field(name, old_name=field, new_name=body.newName, path=path)
     return _summary(record, backend)
 
 
@@ -300,7 +300,7 @@ def create_index(
     param = VectorIndexParam(
         indexType=body.indexType, metric=body.metric, params=body.params
     )
-    record = backend.create_index(name, vector_field=body.vectorField, index_param=param)
+    record = backend.create_index(name, vector_field=body.vectorField, index_param=param, path=path)
     return _summary(record, backend)
 
 
@@ -313,7 +313,7 @@ def drop_index(
     backend: SdkBackend = Depends(_get_backend),
     path: str | None = Query(default=None),
 ) -> CollectionSummary:
-    record = backend.drop_index(name, vector_field)
+    record = backend.drop_index(name, vector_field, path=path)
     return _summary(record, backend)
 
 
@@ -340,6 +340,7 @@ def create_scalar_index(
         field_name=field,
         enable_range_optimization=b.enableRangeOptimization,
         enable_extended_wildcard=b.enableExtendedWildcard,
+        path=path,
     )
     return _summary(record, backend)
 
@@ -353,5 +354,5 @@ def drop_scalar_index(
     backend: SdkBackend = Depends(_get_backend),
     path: str | None = Query(default=None),
 ) -> CollectionSummary:
-    record = backend.drop_scalar_index(name, field)
+    record = backend.drop_scalar_index(name, field, path=path)
     return _summary(record, backend)
