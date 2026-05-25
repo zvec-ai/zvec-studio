@@ -97,6 +97,19 @@ jobs:
       - name: Build frontend
         run: pnpm --filter frontend build
 
+      - name: Inject version from git tag into Tauri config
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            TAG="${GITHUB_REF#refs/tags/v}"
+            # Strip pre-release suffix for Tauri (semver only): v0.1.1-rc.2 -> 0.1.1
+            VERSION=$(echo "$TAG" | sed 's/-.*//')
+            echo "Setting Tauri version: $VERSION"
+            sed -i.bak "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" apps/desktop/src-tauri/tauri.conf.json
+            rm -f apps/desktop/src-tauri/tauri.conf.json.bak
+            grep version apps/desktop/src-tauri/tauri.conf.json
+          fi
+
       - name: Build Tauri bundle
         working-directory: apps/desktop
         run: pnpm tauri build --config src-tauri/tauri.bundle.conf.json
