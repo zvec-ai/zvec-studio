@@ -110,6 +110,10 @@ jobs:
             grep version apps/desktop/src-tauri/tauri.conf.json
           fi
 
+      - name: Clean stale bundle artifacts from cache
+        shell: bash
+        run: rm -rf apps/desktop/src-tauri/target/release/bundle
+
       - name: Build Tauri bundle
         working-directory: apps/desktop
         run: pnpm tauri build --config src-tauri/tauri.bundle.conf.json
