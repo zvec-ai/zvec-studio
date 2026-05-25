@@ -16,7 +16,7 @@
 
 <p align="center">
   <a href="https://github.com/zvec-ai/zvec-studio/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"/></a>
-  <a href="https://github.com/zvec-ai/zvec-studio/blob/main/CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.1.0-blue" alt="Version"/></a>
+  <a href="https://pypi.org/project/zvec-studio/"><img src="https://img.shields.io/pypi/v/zvec-studio?color=blue&label=version" alt="Version"/></a>
   <a href="#"><img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-3DDC84" alt="Platforms"/></a>
   <a href="https://github.com/zvec-ai/zvec-studio/actions/workflows/ci.yml"><img src="https://github.com/zvec-ai/zvec-studio/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"/></a>
 </p>
