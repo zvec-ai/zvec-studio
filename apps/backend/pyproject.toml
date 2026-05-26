@@ -41,7 +41,10 @@ ai = [
     # AI extensions (embedding + reranker) — optional because:
     # 1. Some packages (dashtext) lack wheels for all platforms/Python versions.
     # 2. ai_service.py gracefully handles ImportError → HTTP 503.
-    "sentence-transformers>=3.0,<5.0",
+    # ``sentence-transformers>=5.0`` is required for the ``SparseEncoder``
+    # backend used by ``DefaultLocalSparseEmbedding`` (the 4.x line did not
+    # ship ``sentence_transformers.sparse_encoder``).
+    "sentence-transformers>=5.0,<6.0",
     "dashtext>=0.0.7",
     "dashscope>=1.20",
     "openai>=1.40",

@@ -16,7 +16,15 @@ The persistence side (``ai_functions.json``) lives in
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING, Any
+
+# Default the HuggingFace download endpoint to the community mirror unless the
+# user has explicitly set ``HF_ENDPOINT``. The official ``huggingface.co`` host
+# is unreachable from many networks (notably mainland China), and without this
+# fallback ``DefaultLocalDense`` / ``DefaultLocalSparse`` block on a long retry
+# storm before failing. Set ``HF_ENDPOINT=https://huggingface.co`` to opt out.
+os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
 from zvec_studio.ai_store import AIFunctionRegistry
 from zvec_studio.exceptions import (
@@ -88,12 +96,28 @@ class AIService:
 
     # ------------------------------------------------------------- factories
 
-    def _build_embedding(self, cfg: EmbeddingConfig) -> Any:
+    def _build_embedding(
+        self, cfg: EmbeddingConfig, *, is_query: bool | None = None
+    ) -> Any:
         """Instantiate the Zvec extension class for ``cfg``.
 
         Re-raises any ``ImportError`` from optional extras as a 503-mapped
         :class:`AIDependencyMissingError`.
+
+        ``is_query`` lets the caller flip the construction-time
+        ``encoding_type`` of sparse encoders (``DefaultLocalSparse`` /
+        ``BM25``) between ``"query"`` and ``"document"``. The Zvec 0.4 SDK
+        binds ``encoding_type`` at instantiation (it's a read-only property
+        with a single ``embed(input: str)`` method), so to honour the per-call
+        ``isQuery`` flag we must rebuild the instance for every invocation.
+        Dense encoders do not distinguish q/d and ignore this argument.
         """
+
+        def _encoding_type_for(default: str) -> str:
+            if is_query is None:
+                return default
+            return "query" if is_query else "document"
+
         try:
             if isinstance(cfg, DefaultLocalDenseConfig):
                 from zvec import DefaultLocalDenseEmbedding  # type: ignore[attr-defined]
@@ -110,13 +134,13 @@ class AIService:
                 return DefaultLocalSparseEmbedding(
                     model_source=cfg.modelSource.value,
                     device=cfg.device,
-                    encoding_type=cfg.encodingType.value,
+                    encoding_type=_encoding_type_for(cfg.encodingType.value),
                 )
             if isinstance(cfg, BM25Config):
                 from zvec import BM25EmbeddingFunction  # type: ignore[attr-defined]
 
                 return BM25EmbeddingFunction(
-                    encoding_type=cfg.encodingType.value,
+                    encoding_type=_encoding_type_for(cfg.encodingType.value),
                     language=cfg.language.value,
                     b=cfg.b,
                     k1=cfg.k1,
@@ -247,14 +271,18 @@ class AIService:
         )
 
     def embed(self, name: str, body: EmbedRequest) -> EmbedResponse:
-        """Run ``:embed`` against the named embedding function."""
+        """Run ``:embed`` against the named embedding function.
+
+        Zvec 0.4's ``EmbeddingFunction.embed`` accepts a single ``str`` only
+        (passing a list raises ``TypeError: unhashable type: 'list'``), so we
+        iterate the input batch ourselves. The ``encoding_type`` (query vs.
+        document) is bound at construction; we propagate ``body.isQuery`` to
+        :meth:`_build_embedding` so the right value is baked in.
+        """
         rec = self._registry.get_embedding(name)
-        instance = self._build_embedding(rec.config)
+        instance = self._build_embedding(rec.config, is_query=body.isQuery)
         try:
-            if body.isQuery:
-                vectors = instance.encode_queries(body.texts)
-            else:
-                vectors = instance.encode_documents(body.texts)
+            vectors = [instance.embed(text) for text in body.texts]
         except ImportError as exc:
             raise _wrap_import_error(exc, feature=rec.config.type.value) from exc
         except Exception as exc:

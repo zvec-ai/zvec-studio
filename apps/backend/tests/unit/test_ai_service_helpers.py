@@ -198,7 +198,7 @@ class TestEmbedInvocationError:
             def __init__(self, **kwargs):
                 pass
 
-            def encode_documents(self, texts):
+            def embed(self, text):
                 raise RuntimeError("GPU out of memory")
 
         monkeypatch.setattr(zvec, "DefaultLocalDenseEmbedding", FakeEmbedding, raising=True)
@@ -222,7 +222,7 @@ class TestEmbedInvocationError:
             def __init__(self, **kwargs):
                 pass
 
-            def encode_documents(self, texts):
+            def embed(self, text):
                 raise ImportError("torch not found", name="torch")
 
         monkeypatch.setattr(zvec, "DefaultLocalDenseEmbedding", FakeEmbedding, raising=True)
@@ -247,8 +247,8 @@ class TestEmbedSuccessPath:
             def __init__(self, **kwargs):
                 pass
 
-            def encode_documents(self, texts):
-                return [np.array([0.1, 0.2, 0.3]) for _ in texts]
+            def embed(self, text):
+                return np.array([0.1, 0.2, 0.3])
 
         monkeypatch.setattr(zvec, "DefaultLocalDenseEmbedding", FakeEmbedding, raising=True)
         reg, svc = _svc(tmp_path)
@@ -271,8 +271,8 @@ class TestEmbedSuccessPath:
             def __init__(self, **kwargs):
                 pass
 
-            def encode_documents(self, texts):
-                return [{0: 1.0, 5: 0.5} for _ in texts]
+            def embed(self, text):
+                return {0: 1.0, 5: 0.5}
 
         monkeypatch.setattr(zvec, "DefaultLocalSparseEmbedding", FakeEmbedding, raising=True)
         reg, svc = _svc(tmp_path)
@@ -285,27 +285,29 @@ class TestEmbedSuccessPath:
         assert result.kind == "sparse"
         assert result.vectors[0] == {"0": 1.0, "5": 0.5}
 
-    def test_embed_uses_encode_queries_when_is_query_true(
+    def test_embed_propagates_is_query_to_sparse_encoding_type(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """Zvec 0.4 binds ``encoding_type`` at construction; ``isQuery`` must
+        flow through to the constructor so q/d switches are honoured."""
         import zvec
+
+        captured: list[str] = []
 
         class FakeEmbedding:
             def __init__(self, **kwargs):
-                pass
+                captured.append(kwargs.get("encoding_type", ""))
 
-            def encode_queries(self, texts):
-                return [np.array([9.0, 9.0]) for _ in texts]
+            def embed(self, text):
+                return {1: 1.0}
 
-            def encode_documents(self, texts):
-                raise AssertionError("Should not be called")
-
-        monkeypatch.setattr(zvec, "DefaultLocalDenseEmbedding", FakeEmbedding, raising=True)
+        monkeypatch.setattr(zvec, "BM25EmbeddingFunction", FakeEmbedding, raising=True)
         reg, svc = _svc(tmp_path)
         reg.create_embedding(
             EmbeddingFunctionRecord.model_validate(
-                {"name": "local", "config": {"type": "default_local_dense"}}
+                {"name": "bm25", "config": {"type": "bm25"}}
             )
         )
-        result = svc.embed("local", EmbedRequest(texts=["q"], isQuery=True))
-        assert result.vectors[0][0] == 9.0
+        svc.embed("bm25", EmbedRequest(texts=["q"], isQuery=True))
+        svc.embed("bm25", EmbedRequest(texts=["d"], isQuery=False))
+        assert captured == ["query", "document"]
