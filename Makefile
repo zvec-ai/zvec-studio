@@ -21,9 +21,14 @@ help: ## Show this help
 
 # ---------- Install ----------
 .PHONY: install
-install: ## Install all dependencies (Node + Python)
+install: ## Install all dependencies (Node + Python, no AI runtime)
 	$(PNPM) install --frozen-lockfile=false
 	$(PIP) install -e "$(BACKEND_DIR)[dev]"
+
+.PHONY: install.ai
+install.ai: ## Install with AI extras (sentence-transformers / dashscope / openai / dashtext)
+	$(PNPM) install --frozen-lockfile=false
+	$(PIP) install -e "$(BACKEND_DIR)[dev,ai]"
 
 # ---------- Dev servers ----------
 .PHONY: dev

@@ -30,6 +30,12 @@ pip install -e ".[dev]"
 cd ../..
 ```
 
+> **AI extras (optional).** The base install above does not pull in
+> `sentence-transformers`, `dashscope`, `openai`, or `dashtext`. Without them,
+> calls to `local-dense` / `local-sparse` / `bm25` / remote providers return
+> HTTP 503. To enable them, replace the `pip install` line with
+> `pip install -e ".[dev,ai]"`, or — at the repo root — run `make install.ai`.
+
 ## 3. Run in Web Mode
 
 ```bash

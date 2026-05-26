@@ -32,6 +32,9 @@ Pull requests without DCO sign-off will be blocked by CI.
 ```bash
 pnpm install
 pip install -e "apps/backend[dev]"
+# Add `,ai` extras (sentence-transformers / dashscope / openai / dashtext)
+# only when you need to exercise :embed / :rerank locally:
+#   pip install -e "apps/backend[dev,ai]"   # or: make install.ai
 ```
 
 ### Common commands

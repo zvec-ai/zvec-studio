@@ -59,6 +59,11 @@ make install    # 安装 Node + Python 依赖
 make dev        # 同时启动后端 + 前端开发服务器
 ```
 
+> **需要本地调用 Embedding 模型？** 为了避免不必要的重依赖拖慢 CI，`make install`
+> **不会**安装 AI 运行时依赖（`sentence-transformers` / `dashscope` 等）。
+> 如果需要调用 `local-dense` / `bm25` 等内置函数的 `:embed` / `:rerank`，
+> 改为执行 `make install.ai`。
+
 > 环境要求：**Node.js ≥ 20**、**pnpm ≥ 9**、**Python ≥ 3.10**、**Rust**（桌面版需要）。
 > 完整开发环境搭建见 [贡献指南](CONTRIBUTING.md)。
 

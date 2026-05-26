@@ -59,6 +59,11 @@ make install    # install Node + Python dependencies
 make dev        # starts backend + frontend dev servers
 ```
 
+> **Trying embedding models locally?** `make install` does NOT install AI runtime
+> dependencies (`sentence-transformers`, `dashscope`, etc.) to keep CI fast. Run
+> `make install.ai` instead if you want to call `:embed` / `:rerank` against
+> built-in functions like `local-dense` or `bm25`.
+
 > Prerequisites: **Node.js ≥ 20**, **pnpm ≥ 9**, **Python ≥ 3.10**, **Rust** (desktop only).
 > See [Contributing](https://github.com/zvec-ai/zvec-studio/blob/main/CONTRIBUTING.md) for the full dev setup guide.
 
