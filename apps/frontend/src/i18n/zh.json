@@ -713,7 +713,19 @@
         "delete": "删除",
         "deleting": "删除中…",
         "deleteTitle": "删除 Embedding",
-        "deleteBody": "永久移除 Embedding \"{{name}}\"？引用它的集合将无法使用，直到重新注册。"
+        "deleteBody": "永久移除 Embedding \"{{name}}\"？引用它的集合将无法使用，直到重新注册。",
+        "try": {
+          "title": "试用 Embedding",
+          "inputLabel": "输入文本",
+          "inputPlaceholder": "输入一段查询或句子来生成向量…",
+          "run": "生成",
+          "running": "生成中…",
+          "failedTitle": "Embedding 失败",
+          "denseLabel": "Dense · {{dim}} 维",
+          "sparseLabel": "Sparse · {{count}} 个 token",
+          "copy": "复制",
+          "copied": "向量已复制到剪贴板"
+        }
       },
       "reranker": {
         "loading": "正在加载 Reranker…",

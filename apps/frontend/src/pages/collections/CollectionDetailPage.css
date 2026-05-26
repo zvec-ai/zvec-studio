@@ -1235,3 +1235,16 @@ details[open] .zv-query-params-summary::before {
 .zv-empty-state--error {
   color: var(--zv-color-danger);
 }
+
+/* ── Try Embedding result ── */
+.zv-try-result__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.zv-try-result__meta {
+  font-size: var(--zv-font-size-sm);
+  font-weight: 500;
+  color: var(--zv-color-text-subtle);
+}

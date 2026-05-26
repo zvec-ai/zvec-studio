@@ -713,7 +713,19 @@
         "delete": "Delete",
         "deleting": "Deleting…",
         "deleteTitle": "Delete embedding",
-        "deleteBody": "Permanently remove embedding \"{{name}}\"? Collections referencing it will fail until re-registered."
+        "deleteBody": "Permanently remove embedding \"{{name}}\"? Collections referencing it will fail until re-registered.",
+        "try": {
+          "title": "Try Embedding",
+          "inputLabel": "Input text",
+          "inputPlaceholder": "Type a query or sentence to embed…",
+          "run": "Generate",
+          "running": "Generating…",
+          "failedTitle": "Embedding failed",
+          "denseLabel": "Dense · {{dim}}d",
+          "sparseLabel": "Sparse · {{count}} tokens",
+          "copy": "Copy",
+          "copied": "Vector copied to clipboard"
+        }
       },
       "reranker": {
         "loading": "Loading reranker…",
