@@ -2,22 +2,36 @@
  * Integration tests for the Collections list page.
  */
 import { describe, it, expect } from 'vitest';
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient } from '@tanstack/react-query';
 
 import { renderWithProviders } from '@/test-utils/render';
-import type { ApiClient } from '@/lib/api-client';
+import { ApiError, type ApiClient } from '@/lib/api-client';
+import type { UserFacingError } from '@/lib/error-mapper';
 import { CollectionsListPage } from './CollectionsListPage';
 
-function makeApiClient(collections: Array<{ name: string; path: string }>): ApiClient {
+function makeApiClient(collections: Array<{ name: string; path: string }>, recentItems?: Array<{ name: string; path: string }>): ApiClient {
   return {
     baseUrl: 'fake',
-    request: async <T,>(path: string): Promise<T> => {
-      if (path === '/collections') {
+    request: async <T,>(path: string, opts?: { method?: string; body?: unknown }): Promise<T> => {
+      const method = opts?.method ?? 'GET';
+      if (path === '/collections' && method === 'GET') {
         return { items: collections } as unknown as T;
       }
-      if (path === '/collections/recent') {
-        return { items: [] } as unknown as T;
+      if (path === '/collections/recent' && method === 'GET') {
+        return { items: recentItems ?? [] } as unknown as T;
+      }
+      if (path === '/collections/open' && method === 'POST') {
+        const err: UserFacingError = {
+          code: 'COLLECTION_NOT_FOUND',
+          message: 'Path /tmp/ghost does not exist.',
+          messageKey: 'errors.code.COLLECTION_NOT_FOUND',
+          status: 404,
+          traceId: null,
+          severity: 'warning',
+        };
+        throw new ApiError(err);
       }
       return { items: [] } as unknown as T;
     },
@@ -69,5 +83,22 @@ describe('<CollectionsListPage />', () => {
     const buttons = await screen.findAllByRole('button');
     expect(buttons.length).toBeGreaterThan(0);
     expect(screen.queryByText('alpha')).not.toBeInTheDocument();
+  });
+
+  it('shows error toast when opening a recent collection fails', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<CollectionsListPage />, {
+      apiClient: makeApiClient([], [{ name: 'ghost', path: '/tmp/ghost' }]),
+      queryClient: makeQueryClient(),
+    });
+
+    // Wait for recent item to appear.
+    const recentBtn = await screen.findByText('ghost');
+    await user.click(recentBtn);
+
+    // Toast should show with the error message.
+    await waitFor(() => {
+      expect(screen.getByTestId('zv-toast')).toBeInTheDocument();
+    });
   });
 });

@@ -278,6 +278,16 @@
   background: var(--zv-color-text-subtle);
   opacity: 0.4;
 }
+.zv-index-tag {
+  display: inline-flex;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: var(--zv-font-size-xs, 11px);
+  font-family: var(--zv-font-mono);
+  background: var(--zv-color-surface-raised, #f3f4f6);
+  color: var(--zv-color-text-subtle);
+  border: 1px solid var(--zv-color-border-subtle, #e5e7eb);
+}
 
 .zv-mono {
   font-family: var(--zv-font-mono);
@@ -805,6 +815,10 @@
 }
 .zv-btn--success {
   background: var(--zv-color-success);
+  color: white;
+}
+.zv-btn--success:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--zv-color-success) 85%, black);
   color: white;
 }
 .zv-btn--danger {

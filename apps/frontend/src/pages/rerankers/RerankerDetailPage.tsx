@@ -80,7 +80,7 @@ export function RerankerDetailPage(): JSX.Element {
   function confirmDelete() {
     if (!data) return;
     deleteReranker.mutate(data.name, {
-      onSuccess: () => navigate('/'),
+      onSuccess: () => navigate('/collections'),
     });
   }
 

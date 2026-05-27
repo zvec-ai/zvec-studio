@@ -127,9 +127,9 @@ describe('BrowseTab', () => {
     const state: FakeBrowseState = { docs: fakeDocs(3), calls: [] };
     renderTab(state);
 
-    expect(await screen.findByText('doc-1')).toBeInTheDocument();
-    expect(screen.getByText('doc-2')).toBeInTheDocument();
-    expect(screen.getByText('doc-3')).toBeInTheDocument();
+    expect(await screen.findByText('"doc-1"')).toBeInTheDocument();
+    expect(screen.getByText('"doc-2"')).toBeInTheDocument();
+    expect(screen.getByText('"doc-3"')).toBeInTheDocument();
   });
 
   it('shows empty state when no documents exist', async () => {
@@ -145,7 +145,7 @@ describe('BrowseTab', () => {
     const state: FakeBrowseState = { docs, calls: [] };
     renderTab(state);
 
-    await screen.findByText('doc-1');
+    await screen.findByText('"doc-1"');
     expect(screen.getByText(/truncat/i)).toBeInTheDocument();
   });
 
@@ -154,7 +154,7 @@ describe('BrowseTab', () => {
     const state: FakeBrowseState = { docs: fakeDocs(3), calls: [] };
     renderTab(state);
 
-    await screen.findByText('doc-1');
+    await screen.findByText('"doc-1"');
     await user.click(screen.getByText('ID'));
 
     // The ID-mode input placeholder mentions doc IDs
@@ -167,7 +167,7 @@ describe('BrowseTab', () => {
     const state: FakeBrowseState = { docs: fakeDocs(5), calls: [] };
     renderTab(state);
 
-    await screen.findByText('doc-1');
+    await screen.findByText('"doc-1"');
     await user.click(screen.getByText('ID'));
 
     const idInput = screen.getByPlaceholderText(/doc_01/);
@@ -188,7 +188,7 @@ describe('BrowseTab', () => {
     const state: FakeBrowseState = { docs: fakeDocs(5), calls: [] };
     renderTab(state);
 
-    await screen.findByText('doc-1');
+    await screen.findByText('"doc-1"');
 
     // Type filter in the SQL input
     const filterInput = screen.getByPlaceholderText(/category = 'news'/);

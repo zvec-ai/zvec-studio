@@ -90,6 +90,21 @@ from zvec_studio.schemas import (
 )
 
 
+def _exc_msg(exc: BaseException) -> str:
+    """Extract a human-readable message from an exception.
+
+    The zvec C++ binding sometimes raises exceptions whose ``__str__``
+    returns an empty string. In those cases fall back to ``repr(exc)``
+    or ``exc.args`` so the API response always carries useful detail.
+    """
+    msg = str(exc)
+    if msg:
+        return msg
+    if exc.args:
+        return " ".join(str(a) for a in exc.args if a)
+    return repr(exc)
+
+
 @dataclass
 class CollectionRecord:
     """Live representation of an opened Collection.
@@ -182,7 +197,8 @@ def _build_index_param(spec: VectorIndexParam | None) -> Any:
 
 def _to_sdk_schema(schema: CollectionSchema) -> SdkCollectionSchema:
     sdk_fields = [
-        SdkFieldSchema(f.name, _SCALAR_TO_SDK[f.dataType]) for f in schema.fields
+        SdkFieldSchema(f.name, _SCALAR_TO_SDK[f.dataType], nullable=f.nullable)
+        for f in schema.fields
     ]
     sdk_vectors = [
         SdkVectorSchema(
@@ -356,10 +372,80 @@ def _ensure_id(doc: dict[str, Any]) -> str:
     return raw
 
 
+# ── Field type validation ──
+
+_NUMERIC_SCALAR_TYPES = frozenset({
+    ScalarDataType.INT32, ScalarDataType.INT64,
+    ScalarDataType.UINT32, ScalarDataType.UINT64,
+    ScalarDataType.FLOAT, ScalarDataType.DOUBLE,
+})
+_ARRAY_SCALAR_TYPES = frozenset({
+    ScalarDataType.ARRAY_INT32, ScalarDataType.ARRAY_INT64,
+    ScalarDataType.ARRAY_UINT32, ScalarDataType.ARRAY_UINT64,
+    ScalarDataType.ARRAY_FLOAT, ScalarDataType.ARRAY_DOUBLE,
+    ScalarDataType.ARRAY_BOOL, ScalarDataType.ARRAY_STRING,
+})
+
+
+def _validate_field_value(name: str, value: Any, field: FieldSchema) -> None:
+    """Pre-validate a field value against its schema type.
+
+    Raises :class:`InvalidSchemaError` with a human-readable message when the
+    value type does not match the declared schema type, before the SDK can
+    produce a confusing error.
+    """
+    dt = field.dataType
+
+    # Null check
+    if value is None:
+        if not field.nullable:
+            raise InvalidSchemaError(
+                f"Field '{name}': expected {dt.value}, got null (field is not nullable).",
+                extra={"field": name, "expectedType": dt.value},
+            )
+        return  # null is valid for nullable fields
+
+    # Numeric scalars: must be int or float, not str/bool
+    if dt in _NUMERIC_SCALAR_TYPES:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise InvalidSchemaError(
+                f"Field '{name}': expected {dt.value}, got {type(value).__name__}.",
+                extra={"field": name, "expectedType": dt.value, "actualType": type(value).__name__},
+            )
+        return
+
+    # Boolean
+    if dt == ScalarDataType.BOOL:
+        if not isinstance(value, bool):
+            raise InvalidSchemaError(
+                f"Field '{name}': expected BOOL, got {type(value).__name__}.",
+                extra={"field": name, "expectedType": "BOOL", "actualType": type(value).__name__},
+            )
+        return
+
+    # String
+    if dt == ScalarDataType.STRING:
+        if not isinstance(value, str):
+            raise InvalidSchemaError(
+                f"Field '{name}': expected STRING, got {type(value).__name__}.",
+                extra={"field": name, "expectedType": "STRING", "actualType": type(value).__name__},
+            )
+        return
+
+    # Array types
+    if dt in _ARRAY_SCALAR_TYPES:
+        if not isinstance(value, list):
+            raise InvalidSchemaError(
+                f"Field '{name}': expected array ({dt.value}), got {type(value).__name__}.",
+                extra={"field": name, "expectedType": dt.value, "actualType": type(value).__name__},
+            )
+        return
+
+
 def _build_doc(doc: dict[str, Any], schema: CollectionSchema) -> SdkDoc:
     doc_id = _ensure_id(doc)
     vec_dims = {v.name: v.dimension for v in schema.vectors}
-    field_names = {f.name for f in schema.fields}
+    field_map = {f.name: f for f in schema.fields}
     # ``Any`` mirrors the SDK's invariant value type (list[float]/list[int]/
     # ndarray/sparse dict) so mypy does not complain about narrowing.
     vectors: dict[str, Any] = {}
@@ -378,8 +464,11 @@ def _build_doc(doc: dict[str, Any], schema: CollectionSchema) -> SdkDoc:
                     },
                 )
             vectors[k] = v
-        elif k in field_names:
-            fields[k] = v
+        elif k in field_map:
+            _validate_field_value(k, v, field_map[k])
+            # SDK does not accept None; omit nullable fields with null value.
+            if v is not None:
+                fields[k] = v
         else:
             raise InvalidSchemaError(
                 f"Unknown column '{k}' in document.",
@@ -408,7 +497,7 @@ def _build_doc_partial(doc: dict[str, Any], schema: CollectionSchema) -> SdkDoc:
             extra={"id": raw_id},
         )
     vec_dims = {v.name: v.dimension for v in schema.vectors}
-    field_names = {f.name for f in schema.fields}
+    field_map = {f.name: f for f in schema.fields}
     # See note on ``_build_doc`` -- ``Any`` matches the SDK's invariant value type.
     vectors: dict[str, Any] = {}
     fields: dict[str, Any] = {}
@@ -426,8 +515,11 @@ def _build_doc_partial(doc: dict[str, Any], schema: CollectionSchema) -> SdkDoc:
                     },
                 )
             vectors[k] = v
-        elif k in field_names:
-            fields[k] = v
+        elif k in field_map:
+            _validate_field_value(k, v, field_map[k])
+            # SDK does not accept None; omit nullable fields with null value.
+            if v is not None:
+                fields[k] = v
         else:
             raise InvalidSchemaError(
                 f"Unknown column '{k}' in document.",
@@ -523,7 +615,7 @@ class SdkBackend:
             except Exception as exc:
                 self._by_path[key] = record
                 raise ZvecStudioError(
-                    f"Zvec destroy failed: {exc}",
+                    f"Zvec destroy failed: {_exc_msg(exc)}",
                     code="DESTROY_FAILED",
                     extra={"name": name},
                 ) from exc
@@ -556,7 +648,7 @@ class SdkBackend:
             )
         except (ValueError, RuntimeError) as exc:
             raise InvalidSchemaError(
-                f"Zvec add_column failed: {exc}",
+                f"Zvec add_column failed: {_exc_msg(exc)}",
                 extra={"name": name, "column": field.name},
             ) from exc
         record.schema = _from_sdk_schema(record.sdk_obj.schema, record.path)
@@ -573,7 +665,7 @@ class SdkBackend:
             record.sdk_obj.drop_column(field_name)
         except (ValueError, RuntimeError) as exc:
             raise InvalidSchemaError(
-                f"Zvec drop_column failed: {exc}",
+                f"Zvec drop_column failed: {_exc_msg(exc)}",
                 extra={"name": name, "column": field_name},
             ) from exc
         record.schema = _from_sdk_schema(record.sdk_obj.schema, record.path)
@@ -602,7 +694,7 @@ class SdkBackend:
             )
         except (ValueError, RuntimeError) as exc:
             raise InvalidSchemaError(
-                f"Zvec alter_column failed: {exc}",
+                f"Zvec alter_column failed: {_exc_msg(exc)}",
                 extra={"name": name, "oldName": old_name, "newName": new_name},
             ) from exc
         record.schema = _from_sdk_schema(record.sdk_obj.schema, record.path)
@@ -632,7 +724,7 @@ class SdkBackend:
             )
         except (ValueError, RuntimeError) as exc:
             raise InvalidSchemaError(
-                f"Zvec create_index failed: {exc}",
+                f"Zvec create_index failed: {_exc_msg(exc)}",
                 extra={"name": name, "vectorField": vector_field},
             ) from exc
         record.schema = _from_sdk_schema(record.sdk_obj.schema, record.path)
@@ -650,7 +742,7 @@ class SdkBackend:
             record.sdk_obj.drop_index(vector_field)
         except (ValueError, RuntimeError) as exc:
             raise InvalidSchemaError(
-                f"Zvec drop_index failed: {exc}",
+                f"Zvec drop_index failed: {_exc_msg(exc)}",
                 extra={"name": name, "vectorField": vector_field},
             ) from exc
         record.schema = _from_sdk_schema(record.sdk_obj.schema, record.path)
@@ -668,13 +760,18 @@ class SdkBackend:
         path: str | None = None,
     ) -> CollectionRecord:
         record = self.get(name, path=path)
-        if field_name not in {f.name for f in record.schema.fields}:
+        field_obj = next((f for f in record.schema.fields if f.name == field_name), None)
+        if field_obj is None:
             raise InvalidSchemaError(
                 f"Scalar field '{field_name}' does not exist on '{name}'.",
                 extra={"name": name, "field": field_name},
             )
         try:
             import zvec as _zvec
+            # If the field already has an index, drop it first (SDK does not
+            # support in-place overwrite) so that "Edit Index" works correctly.
+            if field_obj.indexParam is not None:
+                record.sdk_obj.drop_index(field_name)
             param = _zvec.InvertIndexParam(
                 enable_range_optimization=enable_range_optimization,
                 enable_extended_wildcard=enable_extended_wildcard,
@@ -682,7 +779,7 @@ class SdkBackend:
             record.sdk_obj.create_index(field_name, param, _zvec.IndexOption())
         except (ValueError, RuntimeError) as exc:
             raise InvalidSchemaError(
-                f"Zvec create_index (scalar) failed: {exc}",
+                f"Zvec create_index (scalar) failed: {_exc_msg(exc)}",
                 extra={"name": name, "field": field_name},
             ) from exc
         record.schema = _from_sdk_schema(record.sdk_obj.schema, record.path)
@@ -699,7 +796,7 @@ class SdkBackend:
             record.sdk_obj.drop_index(field_name)
         except (ValueError, RuntimeError) as exc:
             raise InvalidSchemaError(
-                f"Zvec drop_index (scalar) failed: {exc}",
+                f"Zvec drop_index (scalar) failed: {_exc_msg(exc)}",
                 extra={"name": name, "field": field_name},
             ) from exc
         record.schema = _from_sdk_schema(record.sdk_obj.schema, record.path)
@@ -813,19 +910,89 @@ class SdkBackend:
         return [d.id for d in sdk_docs]
 
     def upsert_documents(self, name: str, docs: list[dict[str, Any]]) -> list[str]:
+        """Insert-or-merge by id.
+
+        For documents whose id already exists, only the provided fields are
+        updated (merge semantics); omitted fields retain their existing values.
+        For new ids, the document is inserted as-is.
+
+        Implementation: uses ``update()`` for existing docs (partial merge)
+        and falls back to ``insert()`` for new docs.
+        """
         record = self.get(name)
-        sdk_docs = [_build_doc(d, record.schema) for d in docs]
-        statuses = record.sdk_obj.upsert(sdk_docs)
-        if not isinstance(statuses, list):
-            statuses = [statuses]
-        for s in statuses:
-            if not _status_ok(s):
-                raise ZvecStudioError(
-                    f"Zvec upsert returned non-zero status: {s}",
-                    code="UPSERT_FAILED",
-                )
+
+        # Split into docs with explicit id vs without
+        with_id: list[dict[str, Any]] = []
+        without_id: list[dict[str, Any]] = []
+        for d in docs:
+            if d.get("id"):
+                with_id.append(d)
+            else:
+                without_id.append(d)
+
+        result_ids: list[str] = []
+
+        # For docs with id: try update (partial merge), fallback to insert
+        if with_id:
+            # Check which ids already exist
+            ids_to_check = [str(d["id"]) for d in with_id]
+            fetched = record.sdk_obj.fetch(ids_to_check)
+            existing_ids: set[str] = set()
+            if isinstance(fetched, dict):
+                existing_ids = {k for k, v in fetched.items() if v is not None}
+
+            to_update: list[dict[str, Any]] = []
+            to_insert: list[dict[str, Any]] = []
+            for d in with_id:
+                if str(d["id"]) in existing_ids:
+                    to_update.append(d)
+                else:
+                    to_insert.append(d)
+
+            # Update existing docs (partial — only provided fields change)
+            if to_update:
+                sdk_update_docs = [_build_doc_partial(d, record.schema) for d in to_update]
+                statuses = record.sdk_obj.update(sdk_update_docs)
+                if not isinstance(statuses, list):
+                    statuses = [statuses]
+                for s in statuses:
+                    if not _status_ok(s):
+                        raise ZvecStudioError(
+                            f"Zvec update returned non-zero status: {s}",
+                            code="UPSERT_FAILED",
+                        )
+                result_ids.extend(d.id for d in sdk_update_docs)
+
+            # Insert new docs with explicit id (full doc required)
+            if to_insert:
+                sdk_insert_docs = [_build_doc(d, record.schema) for d in to_insert]
+                statuses = record.sdk_obj.insert(sdk_insert_docs)
+                if not isinstance(statuses, list):
+                    statuses = [statuses]
+                for s in statuses:
+                    if not _status_ok(s):
+                        raise ZvecStudioError(
+                            f"Zvec insert returned non-zero status: {s}",
+                            code="UPSERT_FAILED",
+                        )
+                result_ids.extend(d.id for d in sdk_insert_docs)
+
+        # Insert docs without id (auto-generate ULID)
+        if without_id:
+            sdk_new_docs = [_build_doc(d, record.schema) for d in without_id]
+            statuses = record.sdk_obj.insert(sdk_new_docs)
+            if not isinstance(statuses, list):
+                statuses = [statuses]
+            for s in statuses:
+                if not _status_ok(s):
+                    raise ZvecStudioError(
+                        f"Zvec insert returned non-zero status: {s}",
+                        code="UPSERT_FAILED",
+                    )
+            result_ids.extend(d.id for d in sdk_new_docs)
+
         record.sdk_obj.flush()
-        return [d.id for d in sdk_docs]
+        return result_ids
 
     def update_documents(self, name: str, docs: list[dict[str, Any]]) -> list[str]:
         record = self.get(name)

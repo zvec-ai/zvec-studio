@@ -21,7 +21,7 @@ export interface ProblemDetails {
   readonly [key: string]: unknown;
 }
 
-export type ErrorSeverity = 'info' | 'warning' | 'error';
+export type ErrorSeverity = 'info' | 'success' | 'warning' | 'error';
 
 export interface UserFacingError {
   /** Stable machine code (e.g. ``COLLECTION_NOT_FOUND``). */
@@ -45,7 +45,11 @@ const KNOWN_CODES = new Set<string>([
   'INVALID_FILTER_EXPRESSION',
   'DOCUMENT_NOT_FOUND',
   'DIMENSION_MISMATCH',
-  'CURSOR_EXPIRED',
+  'AI_DEPENDENCY_MISSING',
+  'AI_FUNCTION_NOT_FOUND',
+  'AI_FUNCTION_ALREADY_EXISTS',
+  'AI_FUNCTION_INVOCATION_FAILED',
+  'VALIDATION_ERROR',
   'INTERNAL_ERROR',
 ]);
 

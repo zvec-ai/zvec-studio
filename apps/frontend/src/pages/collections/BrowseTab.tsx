@@ -55,15 +55,16 @@ export function BrowseTab({ collection }: BrowseTabProps): JSX.Element {
   // Which rows to display
   const displayRows: ReadonlyArray<Record<string, unknown>> = mode === 'id' ? fetchedDocs : browseItems;
 
-  // Derive columns from the actual returned data
+  // Derive columns from actual data + schema-defined fields.
+  // Schema fields are always shown so newly added fields appear even when
+  // existing documents have no value for them yet.
   const columnKeys = useMemo(() => {
-    if (displayRows.length === 0) return [] as string[];
     const seen = new Set<string>();
     const out: string[] = [];
-    if (displayRows.some((r) => 'id' in r)) {
-      seen.add('id');
-      out.push('id');
-    }
+    // id is always first
+    seen.add('id');
+    out.push('id');
+    // Append keys found in returned documents
     for (const row of displayRows) {
       for (const key of Object.keys(row)) {
         if (!seen.has(key)) {
@@ -72,8 +73,15 @@ export function BrowseTab({ collection }: BrowseTabProps): JSX.Element {
         }
       }
     }
+    // Append schema-defined fields that no document contained
+    for (const f of fields) {
+      if (!seen.has(f.name)) {
+        seen.add(f.name);
+        out.push(f.name);
+      }
+    }
     return out;
-  }, [displayRows]);
+  }, [displayRows, fields]);
 
   function handleFilterApply(expr: string): void {
     setSubmittedBody({
@@ -249,5 +257,6 @@ function formatCellValue(value: unknown): string {
   }
   if (typeof value === 'object') return JSON.stringify(value);
   if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'string') return `"${value}"`;
   return String(value);
 }

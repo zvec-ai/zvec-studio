@@ -171,7 +171,7 @@ export function DocumentsPanel({
   }
 
   const columns = useMemo<ReadonlyArray<TableColumn<DocumentRecord>>>(() => {
-    const keys = collectColumnKeys(items);
+    const keys = collectColumnKeys(items, schema.fields);
     const dataColumns: Array<TableColumn<DocumentRecord>> = keys.map((key) => ({
       key,
       header: key,
@@ -233,7 +233,7 @@ export function DocumentsPanel({
       },
     };
     return [selectColumn, ...dataColumns, actionsColumn];
-  }, [items, selectedIds, t]);
+  }, [items, selectedIds, schema.fields, t]);
 
   async function performDelete(): Promise<void> {
     if (!pendingDelete) return;
@@ -657,23 +657,29 @@ function clampLimit(value: number, fallback: number): number {
 
 function collectColumnKeys(
   rows: ReadonlyArray<DocumentRecord>,
+  schemaFields?: ReadonlyArray<{ name: string }>,
 ): ReadonlyArray<string> {
-  if (rows.length === 0) {
-    return [];
-  }
-  // Preserve insertion order from the first row, then append any keys later
-  // rows introduce. ``id`` is always pinned first.
   const seen = new Set<string>();
   const out: string[] = [];
-  if (rows.some((r) => 'id' in r)) {
-    seen.add('id');
-    out.push('id');
-  }
+  // ``id`` is always pinned first.
+  seen.add('id');
+  out.push('id');
+  // Keys from actual document data.
   for (const row of rows) {
     for (const key of Object.keys(row)) {
       if (!seen.has(key)) {
         seen.add(key);
         out.push(key);
+      }
+    }
+  }
+  // Append schema-defined fields that no document contained, so newly
+  // added fields always appear as columns even before any doc has a value.
+  if (schemaFields) {
+    for (const f of schemaFields) {
+      if (!seen.has(f.name)) {
+        seen.add(f.name);
+        out.push(f.name);
       }
     }
   }
@@ -692,6 +698,9 @@ function renderCell(value: unknown): ReactNode {
   }
   if (typeof value === 'boolean') {
     return value ? 'true' : 'false';
+  }
+  if (typeof value === 'string') {
+    return <span className="zv-documents-panel__string">&quot;{value}&quot;</span>;
   }
   return String(value);
 }

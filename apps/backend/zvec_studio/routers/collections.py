@@ -233,9 +233,13 @@ def optimize_collection(
 def destroy_collection(
     name: str,
     backend: SdkBackend = Depends(_get_backend),
+    store: ConfigStore = Depends(_get_config_store),
     path: str | None = Query(default=None),
 ) -> None:
+    record = backend.get(name, path=path)
+    record_path = record.path
     backend.destroy(name, path=path)
+    store.forget_recent(record_path)
 
 
 # ---------------------------------------------------------------------------

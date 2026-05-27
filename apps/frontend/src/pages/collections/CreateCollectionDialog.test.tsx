@@ -208,4 +208,51 @@ describe('<CreateCollectionDialog />', () => {
     await userEvent.type(screen.getByTestId('zv-create-name'), 'beta');
     expect(pathInput.value).toBe('/custom/elsewhere');
   });
+
+  it('rejects duplicate field names between scalar fields', async () => {
+    const state: FakeState = { calls: [] };
+    const apiClient = makeApiClient(state);
+    renderWithProviders(<Harness />, { apiClient });
+
+    await userEvent.type(screen.getByTestId('zv-create-name'), 'myCol');
+    await userEvent.type(screen.getByTestId('zv-create-path'), '/tmp/myCol');
+
+    // Add two scalar fields with the same name.
+    const addBtn = screen.getByText('Add field');
+    await userEvent.click(addBtn);
+    await userEvent.click(addBtn);
+
+    const fieldNameInputs = screen.getAllByLabelText('Name');
+    // fieldNameInputs[0] is the vector "embedding"; [1] and [2] are the new scalars.
+    await userEvent.type(fieldNameInputs[1], 'status');
+    await userEvent.type(fieldNameInputs[2], 'status');
+
+    await userEvent.click(screen.getByTestId('zv-create-submit'));
+
+    expect(
+      await screen.findByText(/"status".*unique|"status".*\u91cd\u590d/),
+    ).toBeInTheDocument();
+    expect(state.calls.some((c) => c.method === 'POST')).toBe(false);
+  });
+
+  it('rejects scalar field name that collides with a vector field name', async () => {
+    const state: FakeState = { calls: [] };
+    const apiClient = makeApiClient(state);
+    renderWithProviders(<Harness />, { apiClient });
+
+    await userEvent.type(screen.getByTestId('zv-create-name'), 'myCol');
+    await userEvent.type(screen.getByTestId('zv-create-path'), '/tmp/myCol');
+
+    // Add a scalar field named "embedding" — same as the default vector field.
+    await userEvent.click(screen.getByText('Add field'));
+    const fieldNameInputs = screen.getAllByLabelText('Name');
+    await userEvent.type(fieldNameInputs[1], 'embedding');
+
+    await userEvent.click(screen.getByTestId('zv-create-submit'));
+
+    expect(
+      await screen.findByText(/"embedding".*unique|"embedding".*\u91cd\u590d/),
+    ).toBeInTheDocument();
+    expect(state.calls.some((c) => c.method === 'POST')).toBe(false);
+  });
 });

@@ -28,6 +28,7 @@ import {
 
 const DEFAULT_TTL: Record<ErrorSeverity, number | null> = {
   info: 3_500,
+  success: 5_000,
   warning: 5_000,
   error: 7_000,
 };

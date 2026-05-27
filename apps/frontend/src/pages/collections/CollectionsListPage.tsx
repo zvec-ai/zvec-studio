@@ -9,6 +9,8 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 
 import { Button } from '@/components/ui';
+import { useToast } from '@/components/ui/toast-context';
+import { ApiError } from '@/lib/api-client';
 import { CreateCollectionDialog } from './CreateCollectionDialog';
 import { OpenCollectionDialog } from './OpenCollectionDialog';
 import {
@@ -33,6 +35,7 @@ export function CollectionsListPage(): JSX.Element {
   const setShowCreateCollection = ctx?.setShowCreateCollection ?? setLocalCreateOpen;
   const setShowOpenCollection = ctx?.setShowOpenCollection ?? setLocalOpenOpen;
 
+  const toast = useToast();
   const collectionsQuery = useCollectionsList();
   const recentQuery = useListRecent();
   const openCollection = useOpenCollection();
@@ -44,7 +47,16 @@ export function CollectionsListPage(): JSX.Element {
   function handleOpenRecent(path: string): void {
     openCollection.mutate(
       { path },
-      { onSuccess: (data) => navigate(`/collections/${encodeURIComponent(data.name)}?path=${encodeURIComponent(data.path)}`) },
+      {
+        onSuccess: (data) => navigate(`/collections/${encodeURIComponent(data.name)}?path=${encodeURIComponent(data.path)}`),
+        onError: (err) => {
+          const title =
+            err instanceof ApiError
+              ? t(err.error.messageKey, { defaultValue: err.error.message })
+              : t('errors.unknown');
+          toast.push({ title, severity: 'error' });
+        },
+      },
     );
   }
 

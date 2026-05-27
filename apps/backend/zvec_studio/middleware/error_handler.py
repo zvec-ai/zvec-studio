@@ -80,11 +80,21 @@ def _handle_http_exception(
 def _handle_validation_error(
     request: Request, exc: RequestValidationError
 ) -> ORJSONResponse:
+    # Extract human-readable messages from Pydantic errors so the frontend
+    # can display them directly in the toast description.
+    messages: list[str] = []
+    for err in exc.errors():
+        msg = err.get("msg", "")
+        # Strip Pydantic's "Value error, " prefix for cleaner output.
+        if msg.startswith("Value error, "):
+            msg = msg[len("Value error, "):]
+        messages.append(msg)
+    detail = "; ".join(messages) if messages else "Request body failed schema validation."
     return _problem_response(
         status=422,
         title="Unprocessable Entity",
         code="VALIDATION_ERROR",
-        detail="Request body failed schema validation.",
+        detail=detail,
         trace_id=getattr(request.state, "trace_id", None),
         extra={"errors": jsonable_encoder(exc.errors())},
     )

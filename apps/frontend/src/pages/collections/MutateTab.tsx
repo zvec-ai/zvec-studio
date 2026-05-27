@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { Button, CloseButton, Dialog } from '@/components/ui';
 import { useToast } from '@/components/ui/toast-context';
+import { ApiError } from '@/lib/api-client';
 import type { CollectionSummary } from '@/features/collections/api';
 import type {
   DocumentDeleteByFilterRequest,
@@ -75,6 +76,61 @@ export function MutateTab({ collection }: MutateTabProps): JSX.Element {
 
 /* ─── Shared types ─── */
 
+const NUMERIC_TYPES = new Set([
+  'INT32', 'INT64', 'UINT32', 'UINT64', 'FLOAT', 'DOUBLE',
+]);
+const ARRAY_TYPES = new Set([
+  'ARRAY_INT32', 'ARRAY_INT64', 'ARRAY_UINT32', 'ARRAY_UINT64',
+  'ARRAY_FLOAT', 'ARRAY_DOUBLE', 'ARRAY_BOOL', 'ARRAY_STRING',
+]);
+
+/**
+ * Coerce a raw string input to the correct JS type based on the schema dataType.
+ * - Numeric scalars → Number (throws if NaN)
+ * - BOOL → boolean
+ * - ARRAY_* → JSON.parse (must be a valid JSON array)
+ * - STRING → string as-is
+ *
+ * Throws an Error with a human-readable message on invalid input.
+ */
+export function coerceFieldValue(
+  raw: string,
+  dataType: string,
+  nullable: boolean,
+  fieldName: string,
+): unknown {
+  // Nullable field with empty input → null
+  if (nullable && raw === '') return null;
+  if (NUMERIC_TYPES.has(dataType)) {
+    if (raw === '') return 0;
+    const n = Number(raw);
+    if (Number.isNaN(n)) {
+      throw new Error(`Field '${fieldName}': expected ${dataType}, got "${raw}"`);
+    }
+    return n;
+  }
+  if (dataType === 'BOOL') {
+    return raw === 'true';
+  }
+  if (ARRAY_TYPES.has(dataType)) {
+    if (!raw) return [];
+    try {
+      const arr = JSON.parse(raw);
+      if (!Array.isArray(arr)) {
+        throw new Error(`Field '${fieldName}': expected a JSON array for ${dataType}`);
+      }
+      return arr;
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        throw new Error(`Field '${fieldName}': invalid JSON for ${dataType}`);
+      }
+      throw err;
+    }
+  }
+  // STRING or unknown
+  return raw;
+}
+
 interface VectorInputState {
   mode: 'raw' | 'embed';
   rawText: string;
@@ -110,7 +166,7 @@ function InsertView({
   vectors,
 }: {
   collectionName: string;
-  fields: ReadonlyArray<{ name: string; dataType: string }>;
+  fields: ReadonlyArray<{ name: string; dataType: string; nullable: boolean }>;
   vectors: ReadonlyArray<{ name: string; dataType: string; dimension: number }>;
 }): JSX.Element {
   const { t } = useTranslation();
@@ -170,18 +226,20 @@ function InsertView({
     const docs: Record<string, unknown>[] = [];
 
     for (const slot of slots) {
-      const doc: Record<string, unknown> = {};
-      if (slot.docId.trim()) doc.id = slot.docId.trim();
+      if (!slot.docId.trim()) {
+        toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.insertIdRequired') });
+        return;
+      }
+      const doc: Record<string, unknown> = { id: slot.docId.trim() };
 
       for (const f of fields) {
         if (f.name === 'id') continue;
         const raw = slot.fieldValues[f.name] ?? '';
-        if (f.dataType === 'INT64' || f.dataType === 'FLOAT' || f.dataType === 'DOUBLE') {
-          doc[f.name] = raw ? Number(raw) : 0;
-        } else if (f.dataType === 'BOOL') {
-          doc[f.name] = raw === 'true';
-        } else {
-          doc[f.name] = raw;
+        try {
+          doc[f.name] = coerceFieldValue(raw, f.dataType, f.nullable, f.name);
+        } catch (err) {
+          toast.push({ severity: 'error', title: err instanceof Error ? err.message : String(err) });
+          return;
         }
       }
 
@@ -210,7 +268,7 @@ function InsertView({
             toast.push({
               severity: 'error',
               title: t('pages.collections.detail.mutate.insertFailed'),
-              description: err instanceof Error ? err.message : String(err),
+              description: err instanceof ApiError ? err.error.message : err instanceof Error ? err.message : String(err),
             });
             return;
           }
@@ -230,7 +288,7 @@ function InsertView({
     mutation.mutate(body, {
       onSuccess: (res) => {
         const count = (res as Record<string, unknown>).inserted ?? docs.length;
-        toast.push({ severity: 'info', title: t('pages.collections.detail.mutate.insertSuccess', { count }) });
+        toast.push({ severity: 'success', title: t('pages.collections.detail.mutate.insertSuccess', { count }) });
         setSlots([makeDocSlot(fields, vectors)]);
       },
       onError: (err) => {
@@ -266,6 +324,7 @@ function InsertView({
                 value={slot.docId}
                 onChange={(e) => updateSlot(slot.id, { docId: e.target.value })}
                 spellCheck={false}
+                required
               />
             </div>
 
@@ -347,7 +406,7 @@ function UpsertView({
   vectors,
 }: {
   collectionName: string;
-  fields: ReadonlyArray<{ name: string; dataType: string }>;
+  fields: ReadonlyArray<{ name: string; dataType: string; nullable: boolean }>;
   vectors: ReadonlyArray<{ name: string; dataType: string; dimension: number }>;
 }): JSX.Element {
   const { t } = useTranslation();
@@ -393,31 +452,33 @@ function UpsertView({
       for (const f of fields) {
         if (f.name === 'id') continue;
         const raw = slot.fieldValues[f.name] ?? '';
-        if (f.dataType === 'INT64' || f.dataType === 'FLOAT' || f.dataType === 'DOUBLE') {
-          doc[f.name] = raw ? Number(raw) : 0;
-        } else if (f.dataType === 'BOOL') {
-          doc[f.name] = raw === 'true';
-        } else {
-          doc[f.name] = raw;
+        if (!raw) continue;
+        try {
+          doc[f.name] = coerceFieldValue(raw, f.dataType, f.nullable, f.name);
+        } catch (err) {
+          toast.push({ severity: 'error', title: err instanceof Error ? err.message : String(err) });
+          return;
         }
       }
       for (const v of vectors) {
         const input = slot.vectorInputs[v.name];
         if (input.mode === 'embed') {
           if (!input.embedding || !input.embedText.trim()) {
-            toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.selectEmbedding') });
-            return;
+            // Skip vector if user didn't configure embedding
+            continue;
           }
           try {
             const res: EmbedResponse = await embedMutation.mutateAsync({ name: input.embedding, body: { texts: [input.embedText], isQuery: false } });
             if (res.kind !== 'dense' || !res.vectors[0]) { toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.upsertFailed') }); return; }
             doc[v.name] = res.vectors[0];
           } catch (err) {
-            toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.upsertFailed'), description: err instanceof Error ? err.message : String(err) });
+            toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.upsertFailed'), description: err instanceof ApiError ? err.error.message : err instanceof Error ? err.message : String(err) });
             return;
           }
         } else {
-          try { doc[v.name] = JSON.parse(input.rawText || '[]'); } catch { toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.invalidJson') }); return; }
+          // Skip vector if user left it as default (empty or all-zeros)
+          if (!input.rawText || input.rawText === '[]') continue;
+          try { doc[v.name] = JSON.parse(input.rawText); } catch { toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.invalidJson') }); return; }
         }
       }
       docs.push(doc);
@@ -426,7 +487,7 @@ function UpsertView({
     mutation.mutate(body, {
       onSuccess: (res) => {
         const count = (res as Record<string, unknown>).upserted ?? docs.length;
-        toast.push({ severity: 'info', title: t('pages.collections.detail.mutate.upsertSuccess', { count }) });
+        toast.push({ severity: 'success', title: t('pages.collections.detail.mutate.upsertSuccess', { count }) });
         setSlots([makeDocSlot(fields, vectors)]);
       },
       onError: (err) => {
@@ -444,7 +505,7 @@ function UpsertView({
     mutation.mutate(upsertBody, {
       onSuccess: (res) => {
         const count = (res as Record<string, unknown>).upserted ?? parsed.length;
-        toast.push({ severity: 'info', title: t('pages.collections.detail.mutate.upsertSuccess', { count }) });
+        toast.push({ severity: 'success', title: t('pages.collections.detail.mutate.upsertSuccess', { count }) });
       },
       onError: (err) => {
         toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.upsertFailed'), description: err instanceof Error ? err.message : String(err) });
@@ -538,7 +599,7 @@ function UpdateView({
   vectors,
 }: {
   collectionName: string;
-  fields: ReadonlyArray<{ name: string; dataType: string }>;
+  fields: ReadonlyArray<{ name: string; dataType: string; nullable: boolean }>;
   vectors: ReadonlyArray<{ name: string; dataType: string; dimension: number }>;
 }): JSX.Element {
   const { t } = useTranslation();
@@ -577,7 +638,7 @@ function UpdateView({
     mutation.mutate(body, {
       onSuccess: (res) => {
         const count = (res as Record<string, unknown>).updated ?? docs.length;
-        toast.push({ severity: 'info', title: t('pages.collections.detail.mutate.updateSuccess', { count }) });
+        toast.push({ severity: 'success', title: t('pages.collections.detail.mutate.updateSuccess', { count }) });
         if (mode === 'form') setSlots([makeDocSlot(fields, vectors)]);
       },
       onError: (err) => {
@@ -599,12 +660,11 @@ function UpdateView({
         if (f.name === 'id') continue;
         const raw = slot.fieldValues[f.name] ?? '';
         if (!raw) continue;
-        if (f.dataType === 'INT64' || f.dataType === 'FLOAT' || f.dataType === 'DOUBLE') {
-          doc[f.name] = Number(raw);
-        } else if (f.dataType === 'BOOL') {
-          doc[f.name] = raw === 'true';
-        } else {
-          doc[f.name] = raw;
+        try {
+          doc[f.name] = coerceFieldValue(raw, f.dataType, f.nullable, f.name);
+        } catch (err) {
+          toast.push({ severity: 'error', title: err instanceof Error ? err.message : String(err) });
+          return;
         }
       }
       for (const v of vectors) {
@@ -616,7 +676,7 @@ function UpdateView({
             if (res.kind !== 'dense' || !res.vectors[0]) continue;
             doc[v.name] = res.vectors[0];
           } catch (err) {
-            toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.updateFailed'), description: err instanceof Error ? err.message : String(err) });
+            toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.updateFailed'), description: err instanceof ApiError ? err.error.message : err instanceof Error ? err.message : String(err) });
             return;
           }
         } else {

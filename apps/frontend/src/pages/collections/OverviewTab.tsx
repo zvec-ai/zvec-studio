@@ -12,6 +12,7 @@ import {
 
 import { Button, Dialog } from '@/components/ui';
 import { useToast } from '@/components/ui/toast-context';
+import { ApiError } from '@/lib/api-client';
 import { SchemaPanelDdl } from './SchemaDdlSection';
 
 interface OverviewTabProps {
@@ -77,7 +78,13 @@ export function OverviewTab({ collection }: OverviewTabProps): JSX.Element {
   function handleDestroy() {
     if (destroyConfirm !== collection.name) return;
     destroy.mutate(collection.name, {
-      onSuccess: () => navigate('/'),
+      onSuccess: () => navigate('/collections'),
+      onError: (err) => {
+        const title = err instanceof ApiError
+          ? t(err.error.messageKey, { defaultValue: err.error.message })
+          : t('errors.unknown');
+        toast.push({ title, severity: 'error' });
+      },
     });
   }
 

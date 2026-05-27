@@ -82,7 +82,7 @@ export function EmbeddingDetailPage(): JSX.Element {
   function confirmDelete() {
     if (!data) return;
     deleteEmbedding.mutate(data.name, {
-      onSuccess: () => navigate('/'),
+      onSuccess: () => navigate('/collections'),
     });
   }
 

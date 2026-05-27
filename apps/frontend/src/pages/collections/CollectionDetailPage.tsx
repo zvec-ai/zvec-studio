@@ -78,7 +78,6 @@ export function CollectionDetailPage(): JSX.Element {
   const shouldShowLoading =
     collectionQuery.isLoading ||
     openCollection.isPending ||
-    collectionQuery.isFetching ||
     (is404 && !!recentMatch && autoOpenAttempted.current !== name);
 
   if (shouldShowLoading) {

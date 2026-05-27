@@ -55,6 +55,11 @@
   color: var(--zv-color-text-muted, #9ca3af);
 }
 
+.zv-documents-panel__string {
+  color: var(--zv-color-text-default, inherit);
+  white-space: pre;
+}
+
 .zv-documents-panel__code,
 .zv-documents-panel__vector {
   font-family: var(--zv-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);

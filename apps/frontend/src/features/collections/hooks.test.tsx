@@ -25,20 +25,24 @@ import {
   useCreateCollection,
   useCloseCollection,
   useOpenCollection,
+  useDestroyCollection,
   collectionsQueryKey,
+  recentCollectionsQueryKey,
 } from '@/features/collections';
 
 interface FakeState {
   collections: Map<string, { name: string; path: string }>;
+  recent: Array<{ name: string; path: string }>;
   listError?: UserFacingError;
   createError?: UserFacingError;
   deleteError?: UserFacingError;
   openError?: UserFacingError;
+  destroyError?: UserFacingError;
   calls: Array<{ method: string; path: string; body?: unknown }>;
 }
 
 function makeFakeState(): FakeState {
-  return { collections: new Map(), calls: [] };
+  return { collections: new Map(), recent: [], calls: [] };
 }
 
 function makeFakeApiClient(state: FakeState): ApiClient {
@@ -64,6 +68,16 @@ function makeFakeApiClient(state: FakeState): ApiClient {
         const name = body.path.split('/').pop() ?? 'opened';
         state.collections.set(name, { name, path: body.path });
         return { name, path: body.path } as unknown as T;
+      }
+      if (path === '/collections/recent' && method === 'GET') {
+        return { items: state.recent } as unknown as T;
+      }
+      if (path.match(/\/collections\/[^/]+:destroy/) && method === 'POST') {
+        if (state.destroyError) throw new ApiError(state.destroyError);
+        const name = decodeURIComponent(path.replace('/collections/', '').replace(':destroy', ''));
+        state.collections.delete(name);
+        state.recent = state.recent.filter((r) => r.name !== name);
+        return undefined as unknown as T;
       }
       if (path.startsWith('/collections/') && method === 'DELETE') {
         if (state.deleteError) throw new ApiError(state.deleteError);
@@ -260,5 +274,31 @@ describe('collections hooks', () => {
       expect(list.result.current.data?.items).toHaveLength(0);
     });
     expect(state.calls.some((c) => c.method === 'DELETE' && c.path === '/collections/delta')).toBe(true);
+  });
+
+  it('destroy removes collection from list cache optimistically', async () => {
+    const state = makeFakeState();
+    state.collections.set('zap', { name: 'zap', path: '/tmp/zap' });
+    state.recent = [{ name: 'zap', path: '/tmp/zap' }];
+    const queryClient = makeQueryClient();
+    const apiClient = makeFakeApiClient(state);
+    const wrapper = makeWrapper(queryClient, apiClient);
+
+    const list = renderHook(() => useCollectionsList(), { wrapper });
+    await waitFor(() => expect(list.result.current.data?.items).toHaveLength(1));
+
+    const destroy = renderHook(() => useDestroyCollection(), { wrapper });
+    await act(async () => {
+      await destroy.result.current.mutateAsync('zap');
+    });
+
+    // List cache should be optimistically cleared.
+    const cached = queryClient.getQueryData<{ items: Array<{ name: string }> }>(collectionsQueryKey);
+    expect(cached?.items.find((i) => i.name === 'zap')).toBeUndefined();
+    // Recent cache should be invalidated (refetched).
+    await waitFor(() => {
+      const recentCached = queryClient.getQueryData<{ items: Array<{ name: string }> }>(recentCollectionsQueryKey);
+      expect(recentCached?.items.find((i) => i.name === 'zap')).toBeUndefined();
+    });
   });
 });

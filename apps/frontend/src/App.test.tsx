@@ -13,7 +13,7 @@ describe('App (integration)', () => {
   it('renders the app shell with sidebar', async () => {
     render(<App initialEntries={['/']} />);
     expect(await screen.findByTestId('app-shell')).toBeInTheDocument();
-    expect(screen.getAllByText('Zvec Studio').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByAltText('Zvec Studio')).toBeInTheDocument();
   });
 
   it('renders the not-found page for unknown paths', async () => {

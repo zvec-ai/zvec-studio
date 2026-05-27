@@ -51,6 +51,6 @@ describe('AppShell', () => {
 
   it('renders the sidebar with app name', () => {
     renderShell('/');
-    expect(screen.getAllByText('Zvec Studio').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByAltText('Zvec Studio')).toBeInTheDocument();
   });
 });

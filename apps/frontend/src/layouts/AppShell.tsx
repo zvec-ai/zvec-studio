@@ -6,12 +6,15 @@ import { SpotlightTour, type TourStep } from '@/features/onboarding';
 import { useHealthz } from '@/features/system';
 import { Button, CloseButton, Dialog } from '@/components/ui';
 import { useToast } from '@/components/ui/toast-context';
+import { ApiError } from '@/lib/api-client';
 import { useTheme } from '@/styles/theme';
 import { setLanguage, type Language } from '@/i18n';
 import { useCollectionsList, useListRecent, useCloseCollection, useOpenCollection, useForgetRecent } from '@/features/collections/hooks';
 import { useListEmbeddings, useListRerankers, useDeleteEmbedding, useDeleteReranker } from '@/features/ai/hooks';
 import type { CollectionListItem, RecentCollectionItem } from '@/features/collections/api';
 import type { EmbeddingFunctionRecord, RerankerFunctionRecord } from '@/features/ai/api';
+import logoLight from '@/assets/logo-light.svg';
+import logoDark from '@/assets/logo-dark.svg';
 import { getEmbeddingTag } from '@/features/ai/utils';
 import { CreateCollectionDialog } from '@/pages/collections/CreateCollectionDialog';
 import { OpenCollectionDialog } from '@/pages/collections/OpenCollectionDialog';
@@ -227,7 +230,14 @@ export function AppShell(): JSX.Element {
   function handleForgetRecent(e: React.MouseEvent, path: string) {
     e.stopPropagation();
     e.preventDefault();
-    forgetRecent.mutate({ path });
+    forgetRecent.mutate({ path }, {
+      onError: (err) => {
+        const title = err instanceof ApiError
+          ? t(err.error.messageKey, { defaultValue: err.error.message })
+          : t('errors.unknown');
+        toast.push({ title, severity: 'error' });
+      },
+    });
   }
 
   function handleDeleteEmbeddingClick(e: React.MouseEvent, name: string) {
@@ -243,7 +253,13 @@ export function AppShell(): JSX.Element {
       onSuccess: () => {
         toast.push({ severity: 'info', title: t('pages.aiFunctions.delete.successTitle') });
         setDeleteEmbeddingTarget(null);
-        if (currentPath === `/embeddings/${encodeURIComponent(name)}`) navigate('/');
+        if (currentPath === `/embeddings/${encodeURIComponent(name)}`) navigate('/collections');
+      },
+      onError: (err) => {
+        const title = err instanceof ApiError
+          ? t(err.error.messageKey, { defaultValue: err.error.message })
+          : t('errors.unknown');
+        toast.push({ title, severity: 'error' });
       },
     });
   }
@@ -261,7 +277,13 @@ export function AppShell(): JSX.Element {
       onSuccess: () => {
         toast.push({ severity: 'info', title: t('pages.aiFunctions.delete.successTitle') });
         setDeleteRerankerTarget(null);
-        if (currentPath === `/rerankers/${encodeURIComponent(name)}`) navigate('/');
+        if (currentPath === `/rerankers/${encodeURIComponent(name)}`) navigate('/collections');
+      },
+      onError: (err) => {
+        const title = err instanceof ApiError
+          ? t(err.error.messageKey, { defaultValue: err.error.message })
+          : t('errors.unknown');
+        toast.push({ title, severity: 'error' });
       },
     });
   }
@@ -271,29 +293,11 @@ export function AppShell(): JSX.Element {
       {/* ── Sidebar ── */}
       <aside className={`zv-sidebar${!pageTitle ? ' zv-sidebar--hidden' : sidebarCollapsed ? ' zv-sidebar--hidden' : ''}`}>
         <div className="zv-sidebar__header" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
-          <div className="zv-sidebar__logo">
-            <svg width="24" height="24" viewBox="0 0 512 512" fill="none">
-              <defs>
-                <linearGradient id="zvec-g1" x1="0.392" y1="0.733" x2="0.280" y2="0.495">
-                  <stop offset="4.3%" stopColor="#B5F1FF" />
-                  <stop offset="100%" stopColor="#E8FBFF" />
-                </linearGradient>
-                <linearGradient id="zvec-g2" x1="0.392" y1="0.733" x2="0.280" y2="0.495">
-                  <stop offset="8.6%" stopColor="#C9DDFF" />
-                  <stop offset="100%" stopColor="#EFF5FF" />
-                </linearGradient>
-              </defs>
-              <path d="M93,169.507C93,189.731,104.912,208.058,123.395,216.272L228.316,262.9C262.161,277.941,300.283,253.168,300.283,216.134V200.2C300.283,179.975,288.372,161.648,269.889,153.434L164.968,106.807C131.122,91.766,93,116.538,93,153.572V169.507Z" fill="url(#zvec-g1)" />
-              <g transform="matrix(-1,0,0,-1,836,876.352)">
-                <path d="M418,532.859C418,553.083,429.912,571.41,448.395,579.624L553.316,626.252C587.161,641.293,625.283,616.52,625.283,579.486V563.552C625.283,543.327,613.372,525,594.889,516.786L489.968,470.159C456.122,455.118,418,479.89,418,516.924V532.859Z" fill="url(#zvec-g2)" />
-              </g>
-              <path d="M418,189.298L93,323.307V328.147C93,347.071,105.841,362.997,123.285,367.687L353.662,467.943C360.093,471.784,367.667,474,375.776,474C399.095,474,418,455.67,418,433.059V343.5L417.981,343.5C417.289,366.309,398.597,384.441,375.776,384.441C369.103,384.441,362.526,382.86,356.583,379.828V380.001L258.599,337.426C258.068,337.252,257.553,337.029,257.063,336.759L256.78,336.635V336.596C254.08,334.977,252.429,332.061,252.429,328.914C252.429,325.768,254.08,322.852,256.78,321.233V321.178L257.159,321.018C257.656,320.753,258.177,320.534,258.714,320.366L395.079,263.18C408.268,259.734,418,247.739,418,233.471V189.298Z" fillRule="evenodd" fill="#4000FF" />
-              <g transform="matrix(-1,0,0,-1,836,647.403)">
-                <path d="M743,323.701L418,457.709V462.549C418,481.473,430.841,497.399,448.285,502.089L678.662,602.345C685.093,606.186,692.667,608.402,700.776,608.402C724.095,608.402,743,590.072,743,567.461V477.902L742.981,477.902C742.289,500.711,723.597,518.843,700.776,518.843C694.103,518.843,687.526,517.262,681.583,514.23V514.403L583.599,471.828C583.068,471.654,582.553,471.431,582.063,471.161L581.78,471.037V470.998C579.08,469.379,577.429,466.463,577.429,463.316C577.429,460.17,579.08,457.254,581.78,455.635V455.58L582.159,455.42C582.656,455.155,583.177,454.936,583.714,454.768L720.079,397.583C733.268,394.136,743,382.141,743,367.874V323.701Z" fillRule="evenodd" fill="#149BFB" />
-              </g>
-            </svg>
-          </div>
-          <span className="zv-sidebar__title">{t('app.name')}</span>
+          <img
+            className="zv-sidebar__logo-img"
+            src={theme.resolved === 'dark' ? logoDark : logoLight}
+            alt={t('app.name')}
+          />
         </div>
 
         {/* Collections */}
@@ -443,7 +447,7 @@ export function AppShell(): JSX.Element {
           </div>
           <div className="zv-sidebar__footer-row">
             <a
-              href="https://github.com/zvec/zvec-studio"
+              href="https://github.com/alibaba/zvec"
               target="_blank"
               rel="noopener noreferrer"
               className="zv-sidebar__footer-icon-link"
@@ -454,7 +458,7 @@ export function AppShell(): JSX.Element {
               </svg>
             </a>
             <a
-              href="https://github.com/zvec/zvec-studio#readme"
+              href="https://zvec.org/en/"
               target="_blank"
               rel="noopener noreferrer"
               className="zv-sidebar__footer-icon-link"

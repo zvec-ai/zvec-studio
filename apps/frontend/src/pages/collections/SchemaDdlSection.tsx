@@ -16,7 +16,7 @@
  * ``features/collections``. On success a toast confirms; on failure the
  * structured ApiError is surfaced via the i18n message key.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -234,6 +234,12 @@ export function SchemaPanelDdl({ summary, indexCompleteness, completenessColor }
           <span className="zv-index-status">
             <span className="zv-index-dot zv-index-dot--active" />
             {row.indexParam.indexType}
+            {row.indexParam.enableRangeOptimization && (
+              <span className="zv-index-tag">Range</span>
+            )}
+            {row.indexParam.enableExtendedWildcard && (
+              <span className="zv-index-tag">Wildcard</span>
+            )}
           </span>
         ) : (
           <span className="zv-index-status">
@@ -900,6 +906,17 @@ function CreateScalarIndexDialog({ target, onClose, collection, toast }: CreateS
   const mutation = useCreateScalarIndex();
   const [rangeOpt, setRangeOpt] = useState(false);
   const [wildcard, setWildcard] = useState(false);
+
+  // Pre-populate with current index values when editing an existing index.
+  useEffect(() => {
+    if (target?.indexParam) {
+      setRangeOpt(target.indexParam.enableRangeOptimization);
+      setWildcard(target.indexParam.enableExtendedWildcard);
+    } else {
+      setRangeOpt(false);
+      setWildcard(false);
+    }
+  }, [target]);
 
   function reset(): void {
     setRangeOpt(false);

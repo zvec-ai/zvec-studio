@@ -66,6 +66,7 @@ function renderPage(state: FakeState, rerName = 'my-rrf') {
   return renderWithProviders(
     <Routes>
       <Route path="/rerankers/:name" element={<RerankerDetailPage />} />
+      <Route path="/collections" element={<div data-testid="collections-page">Collections</div>} />
     </Routes>,
     {
       initialEntries: [`/rerankers/${rerName}`],
@@ -145,6 +146,50 @@ describe('RerankerDetailPage', () => {
     await waitFor(() => {
       expect(state.deleted).toBe('my-rrf');
     });
+  });
+
+  it('navigates to /collections after delete', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = {
+      reranker: { name: 'my-rrf', description: null, config: { type: 'rrf', rankConstant: 60 } },
+      updated: null,
+      deleted: null,
+      calls: [],
+    };
+    renderPage(state);
+
+    await screen.findByText('my-rrf');
+    await user.click(screen.getByRole('button', { name: /^delete$/i }));
+    const deleteBtns = screen.getAllByRole('button', { name: /^delete$/i });
+    await user.click(deleteBtns[deleteBtns.length - 1]);
+
+    expect(await screen.findByTestId('collections-page')).toBeInTheDocument();
+  });
+
+  it('does not refetch detail after delete (removeQueries, not invalidate)', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = {
+      reranker: { name: 'my-rrf', description: null, config: { type: 'rrf', rankConstant: 60 } },
+      updated: null,
+      deleted: null,
+      calls: [],
+    };
+    renderPage(state);
+
+    await screen.findByText('my-rrf');
+    state.calls.length = 0;
+    await user.click(screen.getByRole('button', { name: /^delete$/i }));
+    const deleteBtns = screen.getAllByRole('button', { name: /^delete$/i });
+    await user.click(deleteBtns[deleteBtns.length - 1]);
+
+    await waitFor(() => {
+      expect(state.deleted).toBe('my-rrf');
+    });
+
+    const getAfterDelete = state.calls.filter(
+      (c) => c.method === 'GET' && c.path.includes('/ai/rerankers/my-rrf'),
+    );
+    expect(getAfterDelete).toHaveLength(0);
   });
 
   it('shows correct icon label for rrf type', async () => {

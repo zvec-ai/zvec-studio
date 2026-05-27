@@ -31,9 +31,13 @@
   height: var(--zv-header-height);
   display: flex;
   align-items: center;
-  padding: 10px 16px 0;
-  gap: 10px;
+  padding: 0 20px;
   flex-shrink: 0;
+}
+.zv-sidebar__logo-img {
+  height: 48px;
+  width: auto;
+  margin-top: 10px;
 }
 .zv-sidebar__logo {
   width: 36px;

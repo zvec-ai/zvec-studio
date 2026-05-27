@@ -12,7 +12,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { renderWithProviders } from '@/test-utils/render';
 import type { ApiClient } from '@/lib/api-client';
 
-import { MutateTab } from './MutateTab';
+import { MutateTab, coerceFieldValue } from './MutateTab';
 
 interface FakeState {
   inserted: unknown[];
@@ -136,6 +136,10 @@ describe('MutateTab', () => {
     const state = freshState();
     renderTab(state);
 
+    // Fill document ID (required)
+    const idInput = screen.getByPlaceholderText('Document ID (required)');
+    await user.type(idInput, 'doc-001');
+
     // Fill title field
     const titleInput = screen.getByPlaceholderText('STRING');
     await user.type(titleInput, 'My Doc');
@@ -147,6 +151,12 @@ describe('MutateTab', () => {
     await waitFor(() => {
       expect(state.inserted).toHaveLength(1);
       expect((state.inserted[0] as any).title).toBe('My Doc');
+    });
+
+    // Verify success toast is shown
+    await waitFor(() => {
+      const toast = screen.getByTestId('zv-toast');
+      expect(toast).toHaveTextContent(/inserted/i);
     });
   });
 
@@ -233,5 +243,100 @@ describe('MutateTab', () => {
 
     // Submit button now shows (2)
     expect(screen.getByRole('button', { name: /insert.*\(2\)/i })).toBeInTheDocument();
+  });
+
+  it('shows a toast error when inserting invalid numeric value', async () => {
+    const user = userEvent.setup();
+    const state = freshState();
+    renderTab(state);
+
+    // Type a non-numeric value into the INT64 field (score)
+    const scoreInput = screen.getByPlaceholderText('INT64');
+    await user.type(scoreInput, 'not-a-number');
+
+    const submitBtn = document.querySelector('button[type="submit"]') as HTMLButtonElement;
+    await user.click(submitBtn);
+
+    // Should NOT have inserted (error path)
+    await waitFor(() => {
+      expect(state.inserted).toHaveLength(0);
+    });
+  });
+});
+
+/* ─── coerceFieldValue unit tests ─── */
+
+describe('coerceFieldValue', () => {
+  // --- Numeric types ---
+  it.each(['INT32', 'INT64', 'UINT32', 'UINT64', 'FLOAT', 'DOUBLE'])(
+    'converts valid number string to number for %s',
+    (dataType) => {
+      expect(coerceFieldValue('42', dataType, false, 'f')).toBe(42);
+      expect(coerceFieldValue('3.14', dataType, false, 'f')).toBeCloseTo(3.14);
+      expect(coerceFieldValue('-1', dataType, false, 'f')).toBe(-1);
+    },
+  );
+
+  it.each(['INT32', 'INT64', 'UINT32', 'UINT64', 'FLOAT', 'DOUBLE'])(
+    'returns 0 for empty string on %s',
+    (dataType) => {
+      expect(coerceFieldValue('', dataType, false, 'f')).toBe(0);
+    },
+  );
+
+  it.each(['INT32', 'INT64', 'UINT32', 'UINT64', 'FLOAT', 'DOUBLE'])(
+    'throws on NaN input for %s',
+    (dataType) => {
+      expect(() => coerceFieldValue('abc', dataType, false, 'age')).toThrow(
+        /Field 'age': expected/,
+      );
+      expect(() => coerceFieldValue('12ab', dataType, false, 'x')).toThrow();
+    },
+  );
+
+  // --- Nullable ---
+  it('returns null for empty string when nullable', () => {
+    expect(coerceFieldValue('', 'INT32', true, 'f')).toBeNull();
+    expect(coerceFieldValue('', 'STRING', true, 'f')).toBeNull();
+    expect(coerceFieldValue('', 'BOOL', true, 'f')).toBeNull();
+  });
+
+  it('returns 0 (not null) for empty string when NOT nullable numeric', () => {
+    expect(coerceFieldValue('', 'INT32', false, 'f')).toBe(0);
+  });
+
+  // --- BOOL ---
+  it('converts "true" to true and anything else to false', () => {
+    expect(coerceFieldValue('true', 'BOOL', false, 'f')).toBe(true);
+    expect(coerceFieldValue('false', 'BOOL', false, 'f')).toBe(false);
+    expect(coerceFieldValue('', 'BOOL', false, 'f')).toBe(false);
+    expect(coerceFieldValue('1', 'BOOL', false, 'f')).toBe(false);
+  });
+
+  // --- STRING ---
+  it('returns raw string for STRING type', () => {
+    expect(coerceFieldValue('hello', 'STRING', false, 'f')).toBe('hello');
+    expect(coerceFieldValue('', 'STRING', false, 'f')).toBe('');
+  });
+
+  // --- ARRAY types ---
+  it('parses valid JSON array for ARRAY_STRING', () => {
+    expect(coerceFieldValue('["a","b"]', 'ARRAY_STRING', false, 'f')).toEqual(['a', 'b']);
+  });
+
+  it('returns [] for empty string on ARRAY type', () => {
+    expect(coerceFieldValue('', 'ARRAY_INT32', false, 'f')).toEqual([]);
+  });
+
+  it('throws on invalid JSON for ARRAY type', () => {
+    expect(() => coerceFieldValue('not json', 'ARRAY_INT32', false, 'tags')).toThrow(
+      /Field 'tags': invalid JSON/,
+    );
+  });
+
+  it('throws when JSON is not an array for ARRAY type', () => {
+    expect(() => coerceFieldValue('{"x":1}', 'ARRAY_INT32', false, 'tags')).toThrow(
+      /Field 'tags': expected a JSON array/,
+    );
   });
 });

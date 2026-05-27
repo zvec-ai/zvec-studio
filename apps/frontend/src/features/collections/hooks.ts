@@ -109,6 +109,7 @@ export function useCloseCollection(): UseMutationResult<void, unknown, CloseColl
     mutationFn: ({ name, path }: CloseCollectionVariables) => api.remove(name, undefined, path),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: collectionsQueryKey });
+      void qc.invalidateQueries({ queryKey: recentCollectionsQueryKey });
     },
   });
 }
@@ -160,7 +161,12 @@ export function useDestroyCollection(): UseMutationResult<void, unknown, string>
     mutationFn: (name: string) => api.destroy(name),
     onSuccess: (_data, name) => {
       qc.removeQueries({ queryKey: collectionDetailQueryKey(name) });
+      // Optimistically remove from list cache so navigation shows updated data immediately.
+      qc.setQueryData<CollectionListResponse | undefined>(collectionsQueryKey, (old) =>
+        old ? { ...old, items: old.items.filter((c) => c.name !== name) } : old,
+      );
       void qc.invalidateQueries({ queryKey: collectionsQueryKey });
+      void qc.invalidateQueries({ queryKey: recentCollectionsQueryKey });
     },
   });
 }

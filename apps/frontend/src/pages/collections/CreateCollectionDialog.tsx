@@ -29,6 +29,19 @@ function isVectorType(dt: string): boolean {
   return (VECTOR_TYPES as readonly string[]).includes(dt);
 }
 
+/**
+ * Infer the path separator from an existing path string.
+ * If the path contains backslash (Windows-style), return `\`; otherwise `/`.
+ */
+function inferSep(path: string): string {
+  return path.includes('\\') ? '\\' : '/';
+}
+
+/** Strip trailing path separators (both `/` and `\`). */
+function stripTrailingSep(path: string): string {
+  return path.replace(/[\\/]+$/, '');
+}
+
 interface FieldDraft {
   id: string;
   name: string;
@@ -143,7 +156,7 @@ export function CreateCollectionDialog({
 
   useEffect(() => {
     if (!parentDir) return;
-    const next = name.trim() ? `${parentDir.replace(/\/+$/, '')}/${name.trim()}` : parentDir;
+    const next = name.trim() ? `${stripTrailingSep(parentDir)}${inferSep(parentDir)}${name.trim()}` : parentDir;
     setPath(next);
     if (next.trim()) clearError('path');
   }, [parentDir, name]);
@@ -161,8 +174,8 @@ export function CreateCollectionDialog({
 
   function onParentPicked(picked: string): void {
     setParentDir(picked);
-    const sanitized = picked.replace(/\/+$/, '');
-    const next = name.trim() ? `${sanitized}/${name.trim()}` : sanitized;
+    const sanitized = stripTrailingSep(picked);
+    const next = name.trim() ? `${sanitized}${inferSep(picked)}${name.trim()}` : sanitized;
     setPath(next);
     if (next.trim()) clearError('path');
   }
@@ -210,6 +223,19 @@ export function CreateCollectionDialog({
           next.fields = t('pages.collections.create.errors.reservedName', { name: f.name });
           break;
         }
+      }
+    }
+    // Check duplicate field names across all fields (vector + scalar)
+    if (!next.fields) {
+      const seen = new Set<string>();
+      for (const f of fields) {
+        const n = f.name.trim();
+        if (!n) continue;
+        if (seen.has(n)) {
+          next.fields = t('pages.collections.create.errors.duplicateField', { name: n });
+          break;
+        }
+        seen.add(n);
       }
     }
     return next;
@@ -263,11 +289,15 @@ export function CreateCollectionDialog({
       onClose();
       navigate(`/collections/${encodeURIComponent(name)}`);
     } catch (err) {
-      const title =
-        err instanceof ApiError
-          ? t(err.error.messageKey, { defaultValue: err.error.message })
-          : t('errors.unknown');
-      toast.push({ title, severity: 'error' });
+      if (err instanceof ApiError) {
+        toast.push({
+          severity: err.error.severity,
+          title: t(err.error.messageKey, { defaultValue: err.error.code }),
+          description: err.error.message,
+        });
+      } else {
+        toast.push({ title: t('errors.unknown'), severity: 'error' });
+      }
     }
   }
 

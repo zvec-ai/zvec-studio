@@ -118,6 +118,22 @@ class TestCreate:
         )
         assert resp.status_code == 422
 
+    async def test_validation_error_detail_contains_specific_message(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        """Validation errors expose specific Pydantic messages in 'detail'."""
+        bad = _payload("testcol")
+        bad["fields"] = [{"name": "", "dataType": "STRING"}]
+        resp = await client.post(
+            f"{API}/collections",
+            json={"path": str(tmp_path / "bad2"), "schema": bad},
+        )
+        assert resp.status_code == 422
+        body = resp.json()
+        assert body["code"] == "VALIDATION_ERROR"
+        # detail should contain the actual validation message, not a generic one.
+        assert "field name must match" in body["detail"]
+
     async def test_rejects_unknown_top_level_key_422(
         self, client: AsyncClient, tmp_path: Path
     ) -> None:
@@ -322,6 +338,23 @@ class TestMaintenance:
         missing = await client.get(f"{API}/collections/dest1")
         assert missing.status_code == 404
 
+    async def test_destroy_clears_recent_entry(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        """Destroying a collection also removes it from the recent list."""
+        await _create(client, tmp_path / "c", "destrec")
+        # Confirm it appears in recent.
+        recent_before = await client.get(f"{API}/collections/recent")
+        paths_before = [it["path"] for it in recent_before.json()["items"]]
+        assert any(p.endswith("c") for p in paths_before)
+        # Destroy.
+        resp = await client.post(f"{API}/collections/destrec:destroy")
+        assert resp.status_code == 204
+        # Recent no longer contains the destroyed path.
+        recent_after = await client.get(f"{API}/collections/recent")
+        paths_after = [it["path"] for it in recent_after.json()["items"]]
+        assert all(not p.endswith("c") for p in paths_after)
+
     async def test_destroy_unknown_returns_404(
         self, client: AsyncClient
     ) -> None:
@@ -471,6 +504,31 @@ class TestScalarIndexDDL:
         await _create(client, tmp_path / "c", "sidx3")
         resp = await client.delete(f"{API}/collections/sidx3/fields/ghost/index")
         assert resp.status_code == 400
+
+    async def test_edit_scalar_index_updates_params(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        """POST on a field that already has an index should drop+recreate (edit)."""
+        await _create(client, tmp_path / "c", "sidx_edit")
+        # Create initial index with defaults
+        create = await client.post(
+            f"{API}/collections/sidx_edit/fields/title/index",
+            json={"enableRangeOptimization": False, "enableExtendedWildcard": False},
+        )
+        assert create.status_code == 201
+        field = next(f for f in create.json()["schema"]["fields"] if f["name"] == "title")
+        assert field["indexParam"]["enableRangeOptimization"] is False
+        assert field["indexParam"]["enableExtendedWildcard"] is False
+
+        # Edit: POST again with different params
+        edit = await client.post(
+            f"{API}/collections/sidx_edit/fields/title/index",
+            json={"enableRangeOptimization": True, "enableExtendedWildcard": True},
+        )
+        assert edit.status_code == 201
+        field2 = next(f for f in edit.json()["schema"]["fields"] if f["name"] == "title")
+        assert field2["indexParam"]["enableRangeOptimization"] is True
+        assert field2["indexParam"]["enableExtendedWildcard"] is True
 
 
 class TestCloseEdgeCases:

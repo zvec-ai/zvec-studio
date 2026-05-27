@@ -487,3 +487,199 @@ class TestGetDocumentEdgeCases:
             f"{API}/collections/nonexistent/documents/any-id",
         )
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Field type validation
+# ---------------------------------------------------------------------------
+
+
+def _typed_collection_payload(name: str) -> dict:
+    """Schema with multiple scalar types for type-validation tests."""
+    return {
+        "name": name,
+        "vectors": [
+            {
+                "name": "embedding",
+                "dataType": "VECTOR_FP32",
+                "dimension": VEC_DIM,
+                "indexParam": {
+                    "indexType": "HNSW",
+                    "metric": "COSINE",
+                    "params": {"M": 16},
+                },
+            }
+        ],
+        "fields": [
+            {"name": "age", "dataType": "INT32", "nullable": False},
+            {"name": "name", "dataType": "STRING", "nullable": False},
+            {"name": "active", "dataType": "BOOL", "nullable": False},
+            {"name": "rating", "dataType": "FLOAT", "nullable": True},
+            {"name": "tags", "dataType": "ARRAY_STRING", "nullable": False},
+        ],
+    }
+
+
+async def _make_typed_collection(
+    client: AsyncClient, tmp_path: Path, name: str = "typed"
+) -> str:
+    path = tmp_path / name
+    resp = await client.post(
+        f"{API}/collections",
+        json={"path": str(path), "schema": _typed_collection_payload(name)},
+    )
+    assert resp.status_code == 201, resp.text
+    return name
+
+
+def _typed_doc(**overrides: object) -> dict:
+    base: dict = {
+        "id": "t-001",
+        "age": 25,
+        "name": "Alice",
+        "active": True,
+        "rating": 4.5,
+        "tags": ["python", "rust"],
+        "embedding": [1.0, 0.0, 0.0, 0.0],
+    }
+    base.update(overrides)
+    return base
+
+
+class TestFieldTypeValidation:
+    """Verify that _validate_field_value rejects type mismatches with clear errors."""
+
+    async def test_string_for_int32_returns_400(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        name = await _make_typed_collection(client, tmp_path, "tv1")
+        resp = await client.post(
+            f"{API}/collections/{name}/documents",
+            json={"documents": [_typed_doc(age="not a number")]},
+        )
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["code"] == "INVALID_SCHEMA"
+        assert "age" in body["detail"]
+        assert "INT32" in body["detail"]
+        assert "str" in body["detail"]
+
+    async def test_null_for_non_nullable_returns_400(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        name = await _make_typed_collection(client, tmp_path, "tv2")
+        resp = await client.post(
+            f"{API}/collections/{name}/documents",
+            json={"documents": [_typed_doc(age=None)]},
+        )
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["code"] == "INVALID_SCHEMA"
+        assert "age" in body["detail"]
+        assert "not nullable" in body["detail"]
+
+    async def test_null_for_nullable_field_accepted(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        name = await _make_typed_collection(client, tmp_path, "tv3")
+        resp = await client.post(
+            f"{API}/collections/{name}/documents",
+            json={"documents": [_typed_doc(rating=None)]},
+        )
+        assert resp.status_code == 201
+
+    async def test_int_for_string_returns_400(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        name = await _make_typed_collection(client, tmp_path, "tv4")
+        resp = await client.post(
+            f"{API}/collections/{name}/documents",
+            json={"documents": [_typed_doc(name=123)]},
+        )
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["code"] == "INVALID_SCHEMA"
+        assert "name" in body["detail"]
+        assert "STRING" in body["detail"]
+
+    async def test_string_for_bool_returns_400(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        name = await _make_typed_collection(client, tmp_path, "tv5")
+        resp = await client.post(
+            f"{API}/collections/{name}/documents",
+            json={"documents": [_typed_doc(active="true")]},
+        )
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["code"] == "INVALID_SCHEMA"
+        assert "active" in body["detail"]
+        assert "BOOL" in body["detail"]
+
+    async def test_string_for_array_returns_400(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        name = await _make_typed_collection(client, tmp_path, "tv6")
+        resp = await client.post(
+            f"{API}/collections/{name}/documents",
+            json={"documents": [_typed_doc(tags="not an array")]},
+        )
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["code"] == "INVALID_SCHEMA"
+        assert "tags" in body["detail"]
+        assert "ARRAY_STRING" in body["detail"]
+
+    async def test_bool_for_int_returns_400(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        """Boolean should NOT be accepted as numeric (Python bool is int subclass)."""
+        name = await _make_typed_collection(client, tmp_path, "tv7")
+        resp = await client.post(
+            f"{API}/collections/{name}/documents",
+            json={"documents": [_typed_doc(age=True)]},
+        )
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["code"] == "INVALID_SCHEMA"
+        assert "age" in body["detail"]
+
+    async def test_valid_types_accepted(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        """All fields with correct types should insert successfully."""
+        name = await _make_typed_collection(client, tmp_path, "tv8")
+        resp = await client.post(
+            f"{API}/collections/{name}/documents",
+            json={"documents": [_typed_doc()]},
+        )
+        assert resp.status_code == 201
+        assert resp.json()["inserted"] == 1
+
+    async def test_upsert_type_mismatch_returns_400(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        name = await _make_typed_collection(client, tmp_path, "tv9")
+        resp = await client.post(
+            f"{API}/collections/{name}/documents:upsert",
+            json={"documents": [_typed_doc(age="old")]},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "INVALID_SCHEMA"
+
+    async def test_update_type_mismatch_returns_400(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        name = await _make_typed_collection(client, tmp_path, "tv10")
+        # First insert a valid doc
+        await client.post(
+            f"{API}/collections/{name}/documents",
+            json={"documents": [_typed_doc()]},
+        )
+        # Now try to update with wrong type
+        resp = await client.patch(
+            f"{API}/collections/{name}/documents",
+            json={"documents": [{"id": "t-001", "age": "twenty-five"}]},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "INVALID_SCHEMA"

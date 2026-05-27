@@ -112,7 +112,12 @@ export function useDeleteEmbedding(): UseMutationResult<void, unknown, string> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (name: string) => api.deleteEmbedding(name),
-    onSuccess: (_data, name) => invalidateEmbedding(qc, name),
+    onSuccess: (_data, name) => {
+      // Remove (not invalidate) the detail query — the resource no longer exists,
+      // so a refetch would 404 and flash an error toast before navigate('/') fires.
+      qc.removeQueries({ queryKey: embeddingDetailQueryKey(name) });
+      return qc.invalidateQueries({ queryKey: embeddingsListQueryKey });
+    },
   });
 }
 
@@ -201,7 +206,12 @@ export function useDeleteReranker(): UseMutationResult<void, unknown, string> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (name: string) => api.deleteReranker(name),
-    onSuccess: (_data, name) => invalidateReranker(qc, name),
+    onSuccess: (_data, name) => {
+      // Remove (not invalidate) the detail query — the resource no longer exists,
+      // so a refetch would 404 and flash an error toast before navigate('/') fires.
+      qc.removeQueries({ queryKey: rerankerDetailQueryKey(name) });
+      return qc.invalidateQueries({ queryKey: rerankersListQueryKey });
+    },
   });
 }
 

@@ -122,12 +122,12 @@ function makeQueryClient(): QueryClient {
 }
 
 function renderDetail(name: string, apiClient: ApiClient) {
-  function Landing(): JSX.Element {
-    return <div data-testid="landing-home">HOME</div>;
+  function CollectionsLanding(): JSX.Element {
+    return <div data-testid="collections-page">Collections List</div>;
   }
   return renderWithProviders(
     <Routes>
-      <Route path="/" element={<Landing />} />
+      <Route path="/collections" element={<CollectionsLanding />} />
       <Route path="/collections/:name" element={<CollectionDetailPage />} />
     </Routes>,
     {
@@ -193,7 +193,7 @@ describe('CollectionDetailPage', () => {
     spy.mockRestore();
   });
 
-  it('destroy is gated by typing the Collection name and navigates home', async () => {
+  it('destroy is gated by typing the Collection name and navigates to /collections', async () => {
     const user = userEvent.setup();
     const state: FakeState = {
       collections: new Map([['demo', { summary: fakeSummary('demo') }]]),
@@ -216,7 +216,36 @@ describe('CollectionDetailPage', () => {
     expect(confirmBtn).toBeEnabled();
     await user.click(confirmBtn);
 
-    expect(await screen.findByTestId('landing-home')).toBeInTheDocument();
+    expect(await screen.findByTestId('collections-page')).toBeInTheDocument();
     expect(state.calls.some((c) => c.method === 'POST' && c.path.endsWith(':destroy'))).toBe(true);
+  });
+
+  it('does not refetch detail after destroy (removeQueries, not invalidate)', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = {
+      collections: new Map([['demo', { summary: fakeSummary('demo') }]]),
+      calls: [],
+    };
+    renderDetail('demo', makeApiClient(state));
+    await screen.findByText(/\/tmp\/demo/);
+
+    // Clear call log before destroy
+    state.calls.length = 0;
+
+    const openBtn = screen.getByRole('button', { name: /destroy/i });
+    await user.click(openBtn);
+    const confirmBtns = screen.getAllByRole('button', { name: /destroy/i });
+    const confirmBtn = confirmBtns[confirmBtns.length - 1];
+    const confirmInput = screen.getByPlaceholderText('demo');
+    await user.type(confirmInput, 'demo');
+    await user.click(confirmBtn);
+
+    expect(await screen.findByTestId('collections-page')).toBeInTheDocument();
+
+    // After destroy, no GET to the destroyed collection should have been issued
+    const getAfterDestroy = state.calls.filter(
+      (c) => c.method === 'GET' && c.path.includes('/collections/demo'),
+    );
+    expect(getAfterDestroy).toHaveLength(0);
   });
 });

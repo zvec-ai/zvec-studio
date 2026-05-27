@@ -67,6 +67,7 @@ function renderPage(state: FakeState, embName = 'test-emb') {
   return renderWithProviders(
     <Routes>
       <Route path="/embeddings/:name" element={<EmbeddingDetailPage />} />
+      <Route path="/collections" element={<div data-testid="collections-page">Collections</div>} />
     </Routes>,
     {
       initialEntries: [`/embeddings/${embName}`],
@@ -161,5 +162,51 @@ describe('EmbeddingDetailPage', () => {
     await waitFor(() => {
       expect(state.deleted).toBe('test-emb');
     });
+  });
+
+  it('navigates to /collections after delete (not Welcome page)', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = {
+      embedding: { name: 'test-emb', description: null, config: { type: 'default_local_dense' } },
+      updated: null,
+      deleted: null,
+      calls: [],
+    };
+    renderPage(state);
+
+    await screen.findByText('test-emb');
+    await user.click(screen.getByRole('button', { name: /^delete$/i }));
+    const deleteBtns = screen.getAllByRole('button', { name: /^delete$/i });
+    await user.click(deleteBtns[deleteBtns.length - 1]);
+
+    expect(await screen.findByTestId('collections-page')).toBeInTheDocument();
+  });
+
+  it('does not refetch detail after delete (removeQueries, not invalidate)', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = {
+      embedding: { name: 'test-emb', description: null, config: { type: 'default_local_dense' } },
+      updated: null,
+      deleted: null,
+      calls: [],
+    };
+    renderPage(state);
+
+    await screen.findByText('test-emb');
+    // Clear call log before delete
+    state.calls.length = 0;
+    await user.click(screen.getByRole('button', { name: /^delete$/i }));
+    const deleteBtns = screen.getAllByRole('button', { name: /^delete$/i });
+    await user.click(deleteBtns[deleteBtns.length - 1]);
+
+    await waitFor(() => {
+      expect(state.deleted).toBe('test-emb');
+    });
+
+    // After delete, no GET to the deleted resource should have been issued
+    const getAfterDelete = state.calls.filter(
+      (c) => c.method === 'GET' && c.path.includes('/ai/embeddings/test-emb'),
+    );
+    expect(getAfterDelete).toHaveLength(0);
   });
 });
