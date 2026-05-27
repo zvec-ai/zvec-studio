@@ -186,8 +186,11 @@ describe('RerankerDetailPage', () => {
       expect(state.deleted).toBe('my-rrf');
     });
 
+    // Only count GETs that occur AFTER the DELETE call (ignore stale refetches
+    // that may fire during the click interaction on slower runtimes like Node 20).
+    const deleteIdx = state.calls.findIndex((c) => c.method === 'DELETE');
     const getAfterDelete = state.calls.filter(
-      (c) => c.method === 'GET' && c.path.includes('/ai/rerankers/my-rrf'),
+      (c, i) => i > deleteIdx && c.method === 'GET' && c.path.includes('/ai/rerankers/my-rrf'),
     );
     expect(getAfterDelete).toHaveLength(0);
   });
