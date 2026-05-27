@@ -31,6 +31,8 @@
 
 ### 方式一：pip 安装（开发者推荐）
 
+需要 Python 3.10 – 3.14。
+
 ```bash
 pip install zvec-studio
 zvec-studio
@@ -38,7 +40,13 @@ zvec-studio
 
 浏览器自动打开 http://127.0.0.1:7860。
 
-### 方式二：桌面应用下载
+> **需要 Embedding / Reranking？** 加上 `[ai]` extra 即可启用内置的 embedding 和 reranking 函数：
+>
+> ```bash
+> pip install zvec-studio[ai]
+> ```
+
+### 方式二：桌面应用下载（实验性）
 
 从 [GitHub Releases](../../releases) 下载适合你平台的安装包：
 
@@ -59,9 +67,9 @@ make install    # 安装 Node + Python 依赖
 make dev        # 同时启动后端 + 前端开发服务器
 ```
 
-> **需要本地调用 Embedding 模型？** 为了避免不必要的重依赖拖慢 CI，`make install`
+> **需要 Embedding / Reranking？** 为了避免不必要的重依赖拖慢 CI，`make install`
 > **不会**安装 AI 运行时依赖（`sentence-transformers` / `dashscope` 等）。
-> 如果需要调用 `local-dense` / `bm25` 等内置函数的 `:embed` / `:rerank`，
+> 如果需要使用 `local-dense` / `bm25` / `dashscope` 等内置函数，
 > 改为执行 `make install.ai`。
 
 > 环境要求：**Node.js ≥ 20**、**pnpm ≥ 9**、**Python ≥ 3.10**、**Rust**（桌面版需要）。

@@ -31,6 +31,8 @@
 
 ### Option 1: pip (recommended for developers)
 
+Requires Python 3.10 – 3.14.
+
 ```bash
 pip install zvec-studio
 zvec-studio
@@ -38,7 +40,13 @@ zvec-studio
 
 Opens http://127.0.0.1:7860 in your browser.
 
-### Option 2: Desktop download
+> **Need embedding & reranking?** Install with the `[ai]` extra to enable built-in embedding & reranking functions:
+>
+> ```bash
+> pip install zvec-studio[ai]
+> ```
+
+### Option 2: Desktop download (experimental)
 
 Grab the installer for your platform from [GitHub Releases](https://github.com/zvec-ai/zvec-studio/releases):
 
@@ -59,10 +67,10 @@ make install    # install Node + Python dependencies
 make dev        # starts backend + frontend dev servers
 ```
 
-> **Trying embedding models locally?** `make install` does NOT install AI runtime
+> **Need embedding & reranking?** `make install` does NOT install AI runtime
 > dependencies (`sentence-transformers`, `dashscope`, etc.) to keep CI fast. Run
-> `make install.ai` instead if you want to call `:embed` / `:rerank` against
-> built-in functions like `local-dense` or `bm25`.
+> `make install.ai` instead if you want to use built-in functions like
+> `local-dense`, `bm25`, or `dashscope`.
 
 > Prerequisites: **Node.js ≥ 20**, **pnpm ≥ 9**, **Python ≥ 3.10**, **Rust** (desktop only).
 > See [Contributing](https://github.com/zvec-ai/zvec-studio/blob/main/CONTRIBUTING.md) for the full dev setup guide.

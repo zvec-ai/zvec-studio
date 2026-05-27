@@ -131,18 +131,28 @@ export function SchemaPanelDdl({ summary, indexCompleteness, completenessColor }
     {
       key: 'index',
       header: t('pages.collections.detail.schema.columnIndex'),
-      render: (row) =>
-        row.indexParam ? (
+      render: (row) => {
+        if (!row.indexParam) {
+          return (
+            <span className="zv-index-status">
+              <span className="zv-index-dot zv-index-dot--none" />
+              {t('pages.collections.detail.schema.noIndex')}
+            </span>
+          );
+        }
+        const entry = indexCompleteness?.find(([n]) => n === row.name);
+        const pct = entry ? Math.round(entry[1] * 100) : null;
+        const pctColor = entry && completenessColor ? completenessColor(entry[1]) : undefined;
+        return (
           <span className="zv-index-status">
             <span className="zv-index-dot zv-index-dot--active" />
             {row.indexParam.indexType}
+            {pct != null && (
+              <span style={{ marginLeft: 4, fontWeight: 700, color: pctColor }}>({pct}%)</span>
+            )}
           </span>
-        ) : (
-          <span className="zv-index-status">
-            <span className="zv-index-dot zv-index-dot--none" />
-            {t('pages.collections.detail.schema.noIndex')}
-          </span>
-        ),
+        );
+      },
     },
     {
       key: 'metric',
@@ -162,18 +172,7 @@ export function SchemaPanelDdl({ summary, indexCompleteness, completenessColor }
         );
       },
     },
-    ...(indexCompleteness && indexCompleteness.length > 0 && completenessColor ? [{
-      key: '__completeness' as const,
-      header: t('pages.collections.detail.overview.indexCompleteness'),
-      render: (row: VectorRow) => {
-        const entry = indexCompleteness.find(([n]) => n === row.name);
-        if (!entry) return <span style={{ color: 'var(--zv-color-text-subtle)' }}>—</span>;
-        const percent = Math.round(entry[1] * 100);
-        return (
-          <span style={{ fontWeight: 700, color: completenessColor(entry[1]) }}>{percent}%</span>
-        );
-      },
-    }] : []),
+
     {
       key: '__actions',
       header: t('pages.collections.detail.schema.columnActions'),

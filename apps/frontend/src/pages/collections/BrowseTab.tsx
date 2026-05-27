@@ -26,7 +26,7 @@ export function BrowseTab({ collection }: BrowseTabProps): JSX.Element {
   const { t } = useTranslation();
   const toast = useToast();
   const { schema, stats } = collection;
-  const fields = schema.fields ?? [];
+  const fields = useMemo(() => schema.fields ?? [], [schema.fields]);
 
   const [mode, setMode] = useState<BrowseMode>('filter');
   const [idInput, setIdInput] = useState('');

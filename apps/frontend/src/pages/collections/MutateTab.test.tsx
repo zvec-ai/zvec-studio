@@ -12,7 +12,8 @@ import { QueryClient } from '@tanstack/react-query';
 import { renderWithProviders } from '@/test-utils/render';
 import type { ApiClient } from '@/lib/api-client';
 
-import { MutateTab, coerceFieldValue } from './MutateTab';
+import { MutateTab } from './MutateTab';
+import { coerceFieldValue } from './coerce-field-value';
 
 interface FakeState {
   inserted: unknown[];

@@ -407,7 +407,7 @@ def _validate_field_value(name: str, value: Any, field: FieldSchema) -> None:
 
     # Numeric scalars: must be int or float, not str/bool
     if dt in _NUMERIC_SCALAR_TYPES:
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
+        if isinstance(value, bool) or not isinstance(value, int | float):
             raise InvalidSchemaError(
                 f"Field '{name}': expected {dt.value}, got {type(value).__name__}.",
                 extra={"field": name, "expectedType": dt.value, "actualType": type(value).__name__},
