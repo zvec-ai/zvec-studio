@@ -27,8 +27,11 @@ import {
   isDenseVectorType,
   isSparseVectorType,
   parseRawVector,
+  randomVectorText,
   vectorDimensionLabel,
+  vectorPlaceholder,
   vectorRawTextTemplate,
+  type VectorLike,
 } from './vector-utils';
 
 type SubView = 'insert' | 'upsert' | 'update' | 'delete';
@@ -92,11 +95,7 @@ interface VectorInputState {
   embedText: string;
 }
 
-interface VectorFieldLike {
-  name: string;
-  dataType: string;
-  dimension: number;
-}
+type VectorFieldLike = VectorLike & { dimension: number };
 
 interface DocSlot {
   id: string;
@@ -107,13 +106,13 @@ interface DocSlot {
 
 function makeDocSlot(
   fields: ReadonlyArray<{ name: string }>,
-  vectors: ReadonlyArray<{ name: string; dataType: string; dimension: number }>,
+  vectors: ReadonlyArray<VectorFieldLike>,
 ): DocSlot {
   const fv: Record<string, string> = {};
   for (const f of fields) if (f.name !== 'id') fv[f.name] = '';
   const vi: Record<string, VectorInputState> = {};
   for (const v of vectors) {
-    vi[v.name] = { mode: 'raw', rawText: vectorRawTextTemplate(v), embedding: '', embedText: '' };
+    vi[v.name] = { mode: 'raw', rawText: '', embedding: '', embedText: '' };
   }
   return { id: `doc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`, docId: '', fieldValues: fv, vectorInputs: vi };
 }
@@ -196,12 +195,25 @@ function VectorFieldInput({
           />
         </>
       ) : (
-        <textarea
-          className="zv-form-textarea"
-          value={input.rawText}
-          onChange={(e) => onPatch({ rawText: e.target.value })}
-          spellCheck={false}
-        />
+        <div className="zv-vector-editor">
+          <div className="zv-vector-editor__toolbar">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => onPatch({ rawText: randomVectorText(vector) })}
+            >
+              {t('pages.collections.detail.mutate.randomVector')}
+            </Button>
+          </div>
+          <textarea
+            className="zv-form-textarea"
+            placeholder={vectorPlaceholder(vector)}
+            value={input.rawText}
+            onChange={(e) => onPatch({ rawText: e.target.value })}
+            spellCheck={false}
+          />
+        </div>
       )}
     </div>
   );
@@ -216,7 +228,7 @@ function InsertView({
 }: {
   collectionName: string;
   fields: ReadonlyArray<{ name: string; dataType: string; nullable: boolean }>;
-  vectors: ReadonlyArray<{ name: string; dataType: string; dimension: number }>;
+  vectors: ReadonlyArray<VectorFieldLike>;
 }): JSX.Element {
   const { t } = useTranslation();
   const toast = useToast();
@@ -432,7 +444,7 @@ function UpsertView({
 }: {
   collectionName: string;
   fields: ReadonlyArray<{ name: string; dataType: string; nullable: boolean }>;
-  vectors: ReadonlyArray<{ name: string; dataType: string; dimension: number }>;
+  vectors: ReadonlyArray<VectorFieldLike>;
 }): JSX.Element {
   const { t } = useTranslation();
   const toast = useToast();
@@ -612,7 +624,7 @@ function UpdateView({
 }: {
   collectionName: string;
   fields: ReadonlyArray<{ name: string; dataType: string; nullable: boolean }>;
-  vectors: ReadonlyArray<{ name: string; dataType: string; dimension: number }>;
+  vectors: ReadonlyArray<VectorFieldLike>;
 }): JSX.Element {
   const { t } = useTranslation();
   const toast = useToast();

@@ -760,6 +760,15 @@
   height: 120px;
   resize: vertical;
 }
+.zv-vector-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.zv-vector-editor__toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
 .zv-form-input:focus,
 .zv-form-textarea:focus,
 .zv-form-select:focus {

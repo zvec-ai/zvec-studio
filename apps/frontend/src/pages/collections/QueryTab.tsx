@@ -15,6 +15,7 @@ import {
   isDenseVectorType,
   isSparseVectorType,
   parseRawVector,
+  randomVectorText,
   vectorPlaceholder,
   vectorTagLabel,
   type RawVectorValue,
@@ -314,13 +315,28 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
 
                   {q.mode === 'vector' ? (
                     <div className="zv-form-group" style={{ marginTop: 10 }}>
-                      <textarea
-                        className="zv-form-textarea"
-                        placeholder={vectorPlaceholder(vecSchema)}
-                        value={q.vectorText}
-                        spellCheck={false}
-                        onChange={(e) => updateQuery(idx, { vectorText: e.target.value })}
-                      />
+                      <div className="zv-vector-editor">
+                        <div className="zv-vector-editor__toolbar">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            disabled={!vecSchema}
+                            onClick={() => {
+                              if (vecSchema) updateQuery(idx, { vectorText: randomVectorText(vecSchema) });
+                            }}
+                          >
+                            {t('pages.collections.detail.query.randomVector')}
+                          </Button>
+                        </div>
+                        <textarea
+                          className="zv-form-textarea"
+                          placeholder={vectorPlaceholder(vecSchema)}
+                          value={q.vectorText}
+                          spellCheck={false}
+                          onChange={(e) => updateQuery(idx, { vectorText: e.target.value })}
+                        />
+                      </div>
                     </div>
                   ) : (
                     <div className="zv-form-group" style={{ marginTop: 10 }}>

@@ -191,6 +191,7 @@ describe('MutateTab', () => {
     // Fill title field
     const titleInput = screen.getByPlaceholderText('STRING');
     await user.type(titleInput, 'My Doc');
+    await user.click(screen.getByRole('button', { name: /random vector/i }));
 
     // Click the submit button (type=submit)
     const submitBtn = document.querySelector('button[type="submit"]') as HTMLButtonElement;
@@ -199,6 +200,7 @@ describe('MutateTab', () => {
     await waitFor(() => {
       expect(state.inserted).toHaveLength(1);
       expect((state.inserted[0] as any).title).toBe('My Doc');
+      expect((state.inserted[0] as any).embedding).toHaveLength(4);
     });
 
     // Verify success toast is shown
@@ -206,6 +208,21 @@ describe('MutateTab', () => {
       const toast = screen.getByTestId('zv-toast');
       expect(toast).toHaveTextContent(/inserted/i);
     });
+  });
+
+  it('generates a dense random vector from the field dimension', async () => {
+    const user = userEvent.setup();
+    renderTab(freshState());
+
+    await user.click(screen.getByRole('button', { name: /random vector/i }));
+
+    const vectorInput = screen.getByPlaceholderText(/\[0\.1/) as HTMLTextAreaElement;
+    const vector = JSON.parse(vectorInput.value) as number[];
+    expect(vector).toHaveLength(4);
+    expect(vector.some((value) => value !== 0)).toBe(true);
+    const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+    expect(norm).toBeGreaterThan(0.99);
+    expect(norm).toBeLessThan(1.01);
   });
 
   it('submits unquoted sparse raw vectors from the insert form', async () => {
@@ -216,8 +233,7 @@ describe('MutateTab', () => {
     await user.type(screen.getByPlaceholderText('Document ID (required)'), 'doc-sparse');
     await user.type(screen.getByPlaceholderText('STRING'), 'Sparse Doc');
 
-    const vectorInput = screen.getByDisplayValue('{42: 1.0}') as HTMLTextAreaElement;
-    await user.clear(vectorInput);
+    const vectorInput = screen.getByPlaceholderText(/\{42/) as HTMLTextAreaElement;
     await user.click(vectorInput);
     await user.paste('{42: 1.0, 314: 0.5}');
 
@@ -228,6 +244,29 @@ describe('MutateTab', () => {
       expect(state.inserted).toHaveLength(1);
     });
     expect((state.inserted[0] as any).embedding).toEqual({ '42': 1, '314': 0.5 });
+  });
+
+  it('generates a sparse random vector with uint32 keys', async () => {
+    const user = userEvent.setup();
+    const state = freshState();
+    renderTab(state, SPARSE_COLLECTION);
+
+    await user.type(screen.getByPlaceholderText('Document ID (required)'), 'doc-sparse-random');
+    await user.type(screen.getByPlaceholderText('STRING'), 'Sparse Random Doc');
+    await user.click(screen.getByRole('button', { name: /random vector/i }));
+
+    const vectorInput = screen.getByPlaceholderText(/\{42/) as HTMLTextAreaElement;
+    expect(vectorInput.value).toMatch(/^\{\d+: /);
+
+    const submitBtn = document.querySelector('button[type="submit"]') as HTMLButtonElement;
+    await user.click(submitBtn);
+
+    await waitFor(() => {
+      expect(state.inserted).toHaveLength(1);
+    });
+    const vector = (state.inserted[0] as any).embedding as Record<string, number>;
+    expect(Object.keys(vector)).toHaveLength(6);
+    expect(Object.entries(vector).every(([key, value]) => /^\d+$/.test(key) && typeof value === 'number')).toBe(true);
   });
 
   it('submits dense embedding output from the insert form', async () => {

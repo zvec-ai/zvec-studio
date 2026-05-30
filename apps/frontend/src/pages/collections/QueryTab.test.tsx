@@ -152,6 +152,34 @@ describe('QueryTab', () => {
     expect(screen.getByText('0.8500')).toBeInTheDocument();
   });
 
+  it('generates and submits a dense random vector from the field dimension', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = {
+      searchResults: [{ id: 'doc-random', score: 0.91, fields: {} }],
+      embeddings: [],
+      rerankers: [],
+      calls: [],
+    };
+    renderTab(state);
+
+    await user.click(screen.getByRole('button', { name: /random vector/i }));
+    const vectorInput = screen.getByPlaceholderText(/\[0\.1/) as HTMLTextAreaElement;
+    const vector = JSON.parse(vectorInput.value) as number[];
+    expect(vector).toHaveLength(4);
+    expect(vector.some((value) => value !== 0)).toBe(true);
+    const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+    expect(norm).toBeGreaterThan(0.99);
+    expect(norm).toBeLessThan(1.01);
+
+    await user.click(screen.getByRole('button', { name: /search/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('doc-random')).toBeInTheDocument();
+    });
+    const searchCall = state.calls.find((c) => c.path.includes('/searches'))!;
+    expect((searchCall.body as any).queries[0].vector).toEqual(vector);
+  });
+
   it('submits sparse vector objects without using schema dimension', async () => {
     const user = userEvent.setup();
     const state: FakeState = {
@@ -189,6 +217,44 @@ describe('QueryTab', () => {
     });
     const call = state.calls.find((c) => c.path.includes('/searches'))!;
     expect((call.body as any).queries[0].vector).toEqual({ '42': 1, '314': 0.5 });
+  });
+
+  it('generates and submits a sparse random vector with numeric weights', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = {
+      searchResults: [{ id: 'doc-sparse-random', score: 0.7, fields: {} }],
+      embeddings: [],
+      rerankers: [],
+      calls: [],
+    };
+    renderTab(state, {
+      collection: {
+        schema: {
+          ...COLLECTION.schema,
+          vectors: [
+            {
+              name: 'sparse',
+              dataType: 'SPARSE_VECTOR_FP32' as const,
+              dimension: 768,
+              indexParam: { indexType: 'HNSW', metric: 'IP', params: {} },
+            },
+          ],
+        },
+      },
+    });
+
+    await user.click(screen.getByRole('button', { name: /random vector/i }));
+    const vectorInput = screen.getByPlaceholderText(/\{42/) as HTMLTextAreaElement;
+    expect(vectorInput.value).toMatch(/^\{\d+: /);
+    await user.click(screen.getByRole('button', { name: /search/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('doc-sparse-random')).toBeInTheDocument();
+    });
+    const searchCall = state.calls.find((c) => c.path.includes('/searches'))!;
+    const vector = (searchCall.body as any).queries[0].vector as Record<string, number>;
+    expect(Object.keys(vector)).toHaveLength(6);
+    expect(Object.entries(vector).every(([key, value]) => /^\d+$/.test(key) && typeof value === 'number')).toBe(true);
   });
 
   it('shows results meta with hit count and timing', async () => {

@@ -5,7 +5,7 @@ export interface VectorLike {
   name: string;
   dataType: string;
   dimension?: number | null;
-  indexParam?: { indexType?: string | null } | null;
+  indexParam?: { indexType?: string | null; metric?: string | null } | null;
 }
 
 export type RawVectorValue = number[] | Record<string, number>;
@@ -45,6 +45,41 @@ export function vectorPlaceholder(vector?: VectorLike | null): string {
   return isSparseVectorType(vector.dataType)
     ? '{42: 1.0, 314: 0.5}'
     : `[0.1, 0.2, ...] (${vector.dimension ?? '?'}d)`;
+}
+
+export function randomVectorText(vector: VectorLike): string {
+  if (isSparseVectorType(vector.dataType)) {
+    return randomSparseVectorText();
+  }
+  return JSON.stringify(randomDenseVector(vector));
+}
+
+function randomDenseVector(vector: VectorLike): number[] {
+  const dimension = Math.max(1, Math.floor(vector.dimension ?? 3));
+  const values = Array.from({ length: dimension }, () => Math.random() * 2 - 1);
+  if ((vector.indexParam?.metric ?? '').toUpperCase() === 'COSINE') {
+    const norm = Math.sqrt(values.reduce((sum, value) => sum + value * value, 0)) || 1;
+    return values.map((value) => formatDenseNumber(value / norm));
+  }
+  return values.map(formatDenseNumber);
+}
+
+function randomSparseVectorText(): string {
+  const entryCount = 6;
+  const used = new Set<number>();
+  const entries: string[] = [];
+  while (entries.length < entryCount) {
+    const key = Math.floor(Math.random() * 100_000) + 1;
+    if (used.has(key)) continue;
+    used.add(key);
+    const weight = formatDenseNumber(Math.random() * 0.9 + 0.1);
+    entries.push(`${key}: ${weight}`);
+  }
+  return `{${entries.join(', ')}}`;
+}
+
+function formatDenseNumber(value: number): number {
+  return Number(value.toFixed(6));
 }
 
 export function parseRawVector(text: string, vector?: VectorLike | null): RawVectorValue | null {
