@@ -171,7 +171,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.config_store = ConfigStore(effective.data_dir)
     app.state.ai_registry = AIFunctionRegistry(effective.data_dir)
     _seed_builtins(app.state.ai_registry)
-    app.state.ai_service = AIService(app.state.ai_registry)
+    app.state.ai_service = AIService(
+        app.state.ai_registry, cache_dir=effective.data_dir / "cache" / "ai"
+    )
 
     # Middleware order matters: CORS is outermost, then logging, then traceId
     # (so logging can read the generated traceId via ContextVar).

@@ -311,3 +311,229 @@ class TestEmbedSuccessPath:
         svc.embed("bm25", EmbedRequest(texts=["q"], isQuery=True))
         svc.embed("bm25", EmbedRequest(texts=["d"], isQuery=False))
         assert captured == ["query", "document"]
+
+    def test_embed_reuses_cached_sparse_instance_for_same_mode(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import zvec
+
+        created = 0
+
+        class FakeEmbedding:
+            def __init__(self, **kwargs):
+                nonlocal created
+                created += 1
+
+            def embed(self, text):
+                return {1: 1.0}
+
+        monkeypatch.setattr(zvec, "BM25EmbeddingFunction", FakeEmbedding, raising=True)
+        reg, svc = _svc(tmp_path)
+        reg.create_embedding(
+            EmbeddingFunctionRecord.model_validate(
+                {"name": "bm25", "config": {"type": "bm25"}}
+            )
+        )
+        svc.embed("bm25", EmbedRequest(texts=["first"], isQuery=True))
+        svc.embed("bm25", EmbedRequest(texts=["second"], isQuery=True))
+        assert created == 1
+
+    def test_embed_uses_separate_sparse_cache_entries_for_query_and_document(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import zvec
+
+        captured: list[str] = []
+
+        class FakeEmbedding:
+            def __init__(self, **kwargs):
+                captured.append(kwargs.get("encoding_type", ""))
+
+            def embed(self, text):
+                return {1: 1.0}
+
+        monkeypatch.setattr(zvec, "BM25EmbeddingFunction", FakeEmbedding, raising=True)
+        reg, svc = _svc(tmp_path)
+        reg.create_embedding(
+            EmbeddingFunctionRecord.model_validate(
+                {"name": "bm25", "config": {"type": "bm25"}}
+            )
+        )
+        svc.embed("bm25", EmbedRequest(texts=["query"], isQuery=True))
+        svc.embed("bm25", EmbedRequest(texts=["document"], isQuery=False))
+        svc.embed("bm25", EmbedRequest(texts=["query again"], isQuery=True))
+        assert captured == ["query", "document"]
+
+    def test_bm25_query_and_document_share_loaded_default_encoder(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import zvec
+
+        constructed: list[str] = []
+
+        class FakeBM25:
+            def __init__(self, **kwargs):
+                constructed.append(kwargs.get("encoding_type", ""))
+                self._dashtext = object()
+                self._encoder = object()
+                self._encoding_type = kwargs.get("encoding_type", "")
+
+            def embed(self, text):
+                return {1: 1.0 if self._encoding_type == "query" else 2.0}
+
+        monkeypatch.setattr(zvec, "BM25EmbeddingFunction", FakeBM25, raising=True)
+        reg, svc = _svc(tmp_path)
+        reg.create_embedding(
+            EmbeddingFunctionRecord.model_validate(
+                {"name": "bm25", "config": {"type": "bm25"}}
+            )
+        )
+        query = svc.embed("bm25", EmbedRequest(texts=["query"], isQuery=True))
+        document = svc.embed("bm25", EmbedRequest(texts=["document"], isQuery=False))
+
+        assert constructed == ["query"]
+        assert query.vectors[0] == {"1": 1.0}
+        assert document.vectors[0] == {"1": 2.0}
+
+    def test_bm25_model_file_is_downloaded_once_and_reused(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import zvec
+
+        from zvec_studio import ai_service as ai_service_module
+
+        downloaded: list[tuple[str, Path]] = []
+        loaded_paths: list[str] = []
+
+        class FakeSparseVectorEncoder:
+            def load(self, path):
+                loaded_paths.append(path)
+
+        class FakeDashtext:
+            SparseVectorEncoder = FakeSparseVectorEncoder
+
+        class FakeBM25:
+            def embed(self, text):
+                return {1: 1.0 if self._encoding_type == "query" else 2.0}
+
+        monkeypatch.setattr(zvec, "BM25EmbeddingFunction", FakeBM25, raising=True)
+
+        original_import_module = ai_service_module.importlib.import_module
+
+        def fake_import_module(name: str):
+            if name == "dashtext":
+                return FakeDashtext
+            return original_import_module(name)
+
+        monkeypatch.setattr(ai_service_module.importlib, "import_module", fake_import_module)
+
+        reg = AIFunctionRegistry(tmp_path)
+        svc = AIService(reg, cache_dir=tmp_path / "cache")
+
+        def fake_download(language: str, target: Path) -> None:
+            downloaded.append((language, target))
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("{}", encoding="utf-8")
+
+        monkeypatch.setattr(svc, "_download_bm25_model", fake_download)
+        reg.create_embedding(
+            EmbeddingFunctionRecord.model_validate(
+                {"name": "bm25", "config": {"type": "bm25"}}
+            )
+        )
+
+        query = svc.embed("bm25", EmbedRequest(texts=["query"], isQuery=True))
+        document = svc.embed("bm25", EmbedRequest(texts=["document"], isQuery=False))
+
+        expected_path = tmp_path / "cache" / "bm25" / "bm25_zh_default.json"
+        assert downloaded == [("zh", expected_path)]
+        assert loaded_paths == [str(expected_path)]
+        assert query.vectors[0] == {"1": 1.0}
+        assert document.vectors[0] == {"1": 2.0}
+
+    def test_dense_embedding_cache_ignores_query_mode(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import zvec
+
+        created = 0
+
+        class FakeEmbedding:
+            def __init__(self, **kwargs):
+                nonlocal created
+                created += 1
+
+            def embed(self, text):
+                return np.array([0.1, 0.2, 0.3])
+
+        monkeypatch.setattr(zvec, "DefaultLocalDenseEmbedding", FakeEmbedding, raising=True)
+        reg, svc = _svc(tmp_path)
+        reg.create_embedding(
+            EmbeddingFunctionRecord.model_validate(
+                {"name": "local", "config": {"type": "default_local_dense"}}
+            )
+        )
+        svc.embed("local", EmbedRequest(texts=["query"], isQuery=True))
+        svc.embed("local", EmbedRequest(texts=["document"], isQuery=False))
+        assert created == 1
+
+    def test_embedding_cache_refreshes_when_config_changes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import zvec
+
+        captured: list[str] = []
+
+        class FakeEmbedding:
+            def __init__(self, **kwargs):
+                captured.append(kwargs.get("language", ""))
+
+            def embed(self, text):
+                return {1: 1.0}
+
+        monkeypatch.setattr(zvec, "BM25EmbeddingFunction", FakeEmbedding, raising=True)
+        reg, svc = _svc(tmp_path)
+        reg.create_embedding(
+            EmbeddingFunctionRecord.model_validate(
+                {"name": "bm25", "config": {"type": "bm25", "language": "zh"}}
+            )
+        )
+        svc.embed("bm25", EmbedRequest(texts=["first"], isQuery=True))
+
+        reg.update_embedding(
+            "bm25",
+            EmbeddingFunctionRecord.model_validate(
+                {"name": "bm25", "config": {"type": "bm25", "language": "en"}}
+            ),
+        )
+        svc.embed("bm25", EmbedRequest(texts=["second"], isQuery=True))
+        assert captured == ["zh", "en"]
+
+    def test_embed_wraps_initialization_errors(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import zvec
+
+        created = 0
+
+        class FakeEmbedding:
+            def __init__(self, **kwargs):
+                nonlocal created
+                created += 1
+                raise RuntimeError("load url failed")
+
+        monkeypatch.setattr(zvec, "BM25EmbeddingFunction", FakeEmbedding, raising=True)
+        reg, svc = _svc(tmp_path)
+        reg.create_embedding(
+            EmbeddingFunctionRecord.model_validate(
+                {"name": "bm25", "config": {"type": "bm25"}}
+            )
+        )
+        with pytest.raises(AIFunctionInvocationError) as exc:
+            svc.embed("bm25", EmbedRequest(texts=["query"], isQuery=True))
+        assert "failed to initialize" in str(exc.value)
+        assert exc.value.extra["name"] == "bm25"
+
+        with pytest.raises(AIFunctionInvocationError):
+            svc.embed("bm25", EmbedRequest(texts=["query again"], isQuery=True))
+        assert created == 1

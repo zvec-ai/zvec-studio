@@ -16,7 +16,16 @@ The persistence side (``ai_functions.json``) lives in
 
 from __future__ import annotations
 
+import importlib
 import os
+import tempfile
+import time
+import urllib.request
+from collections import OrderedDict
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
+from pathlib import Path
+from threading import RLock
 from typing import TYPE_CHECKING, Any
 
 # Default the HuggingFace download endpoint to the community mirror unless the
@@ -69,6 +78,49 @@ _KNOWN_DEPS: dict[type, str] = {
     QwenRerankerConfig: "dashscope",
 }
 
+_EMBEDDING_CACHE_MAX_SIZE = 16
+_EMBEDDING_FAILURE_CACHE_TTL_SECONDS = 60.0
+_BM25_DEFAULT_LOAD_TIMEOUT_SECONDS = float(
+    os.environ.get("ZVEC_STUDIO_BM25_LOAD_TIMEOUT_SECONDS", "5")
+)
+_BM25_DEFAULT_MODEL_URLS = {
+    "zh": "http://dashvector-data.oss-cn-beijing.aliyuncs.com/public/sparsevector/bm25_zh_default.json",
+    "en": "http://dashvector-data.oss-cn-beijing.aliyuncs.com/public/sparsevector/bm25_en_default.json",
+}
+EmbeddingCacheKey = tuple[str, str, str]
+EmbeddingFailureCacheValue = tuple[float, Exception]
+Bm25EncoderCacheKey = tuple[str, float, float]
+Bm25EncoderCacheValue = tuple[Any, Any]
+
+
+@contextmanager
+def _short_urlopen_timeout(seconds: float) -> Iterator[None]:
+    """Temporarily cap urllib URL open timeout while dashtext loads BM25 data."""
+    if seconds <= 0:
+        yield
+        return
+
+    original: Any = urllib.request.urlopen
+
+    def _urlopen_with_short_timeout(
+        url: Any,
+        data: Any = None,
+        timeout: Any = None,
+        **kwargs: Any,
+    ) -> Any:
+        effective_timeout = (
+            min(float(timeout), seconds)
+            if isinstance(timeout, int | float)
+            else seconds
+        )
+        return original(url, data, effective_timeout, **kwargs)
+
+    urllib.request.urlopen = _urlopen_with_short_timeout
+    try:
+        yield
+    finally:
+        urllib.request.urlopen = original
+
 
 def _wrap_import_error(exc: ImportError, *, feature: str, cfg: Any = None) -> AIDependencyMissingError:
     # Try exc.name first; fall back to known mapping; last resort is "unknown".
@@ -91,10 +143,182 @@ def _wrap_import_error(exc: ImportError, *, feature: str, cfg: Any = None) -> AI
 class AIService:
     """Facade over :class:`AIFunctionRegistry` + Zvec extension classes."""
 
-    def __init__(self, registry: AIFunctionRegistry) -> None:
+    def __init__(
+        self, registry: AIFunctionRegistry, *, cache_dir: Path | None = None
+    ) -> None:
         self._registry = registry
+        self._cache_dir = cache_dir
+        self._embedding_cache: OrderedDict[EmbeddingCacheKey, Any] = OrderedDict()
+        self._embedding_failure_cache: OrderedDict[
+            EmbeddingCacheKey, EmbeddingFailureCacheValue
+        ] = OrderedDict()
+        self._bm25_encoder_cache: OrderedDict[
+            Bm25EncoderCacheKey, Bm25EncoderCacheValue
+        ] = OrderedDict()
+        self._embedding_cache_lock = RLock()
 
     # ------------------------------------------------------------- factories
+
+    def _embedding_cache_mode(
+        self, cfg: EmbeddingConfig, *, is_query: bool | None = None
+    ) -> str:
+        if isinstance(cfg, DefaultLocalSparseConfig | BM25Config):
+            if is_query is None:
+                return cfg.encodingType.value
+            return "query" if is_query else "document"
+        return "default"
+
+    def _embedding_cache_key(
+        self, name: str, cfg: EmbeddingConfig, *, is_query: bool | None = None
+    ) -> EmbeddingCacheKey:
+        return (
+            name,
+            cfg.model_dump_json(),
+            self._embedding_cache_mode(cfg, is_query=is_query),
+        )
+
+    def _get_embedding_instance(
+        self, name: str, cfg: EmbeddingConfig, *, is_query: bool | None = None
+    ) -> Any:
+        key = self._embedding_cache_key(name, cfg, is_query=is_query)
+        with self._embedding_cache_lock:
+            cached = self._embedding_cache.get(key)
+            if cached is not None:
+                self._embedding_cache.move_to_end(key)
+                return cached
+
+            failed = self._embedding_failure_cache.get(key)
+            if failed is not None:
+                failed_at, exc = failed
+                if time.monotonic() - failed_at < _EMBEDDING_FAILURE_CACHE_TTL_SECONDS:
+                    self._embedding_failure_cache.move_to_end(key)
+                    raise exc
+                self._embedding_failure_cache.pop(key, None)
+
+            try:
+                instance = self._build_embedding(cfg, is_query=is_query)
+            except Exception as exc:
+                self._embedding_failure_cache[key] = (time.monotonic(), exc)
+                if len(self._embedding_failure_cache) > _EMBEDDING_CACHE_MAX_SIZE:
+                    self._embedding_failure_cache.popitem(last=False)
+                raise
+            self._embedding_cache[key] = instance
+            self._embedding_failure_cache.pop(key, None)
+            if len(self._embedding_cache) > _EMBEDDING_CACHE_MAX_SIZE:
+                self._embedding_cache.popitem(last=False)
+            return instance
+
+    def _build_bm25_embedding(
+        self, cfg: BM25Config, *, encoding_type: str
+    ) -> Any:
+        from zvec import BM25EmbeddingFunction  # type: ignore[attr-defined]
+
+        key: Bm25EncoderCacheKey = (cfg.language.value, cfg.b, cfg.k1)
+        cached = self._bm25_encoder_cache.get(key)
+        if cached is not None:
+            self._bm25_encoder_cache.move_to_end(key)
+            dashtext_module, encoder = cached
+            return self._clone_bm25_embedding(
+                BM25EmbeddingFunction,
+                cfg,
+                encoding_type=encoding_type,
+                dashtext_module=dashtext_module,
+                encoder=encoder,
+            )
+
+        if self._cache_dir is not None:
+            dashtext = importlib.import_module("dashtext")
+
+            encoder = self._load_cached_bm25_encoder(dashtext, cfg)
+            self._bm25_encoder_cache[key] = (dashtext, encoder)
+            if len(self._bm25_encoder_cache) > _EMBEDDING_CACHE_MAX_SIZE:
+                self._bm25_encoder_cache.popitem(last=False)
+            return self._clone_bm25_embedding(
+                BM25EmbeddingFunction,
+                cfg,
+                encoding_type=encoding_type,
+                dashtext_module=dashtext,
+                encoder=encoder,
+            )
+
+        with _short_urlopen_timeout(_BM25_DEFAULT_LOAD_TIMEOUT_SECONDS):
+            instance = BM25EmbeddingFunction(
+                encoding_type=encoding_type,
+                language=cfg.language.value,
+                b=cfg.b,
+                k1=cfg.k1,
+            )
+        dashtext_module = getattr(instance, "_dashtext", None)
+        encoder = getattr(instance, "_encoder", None)
+        if dashtext_module is not None and encoder is not None:
+            self._bm25_encoder_cache[key] = (dashtext_module, encoder)
+            if len(self._bm25_encoder_cache) > _EMBEDDING_CACHE_MAX_SIZE:
+                self._bm25_encoder_cache.popitem(last=False)
+        return instance
+
+    def _load_cached_bm25_encoder(self, dashtext_module: Any, cfg: BM25Config) -> Any:
+        model_path = self._bm25_model_cache_path(cfg.language.value)
+        if not model_path.exists() or model_path.stat().st_size <= 0:
+            self._download_bm25_model(cfg.language.value, model_path)
+
+        try:
+            return self._load_bm25_encoder_file(dashtext_module, model_path)
+        except Exception:
+            with suppress(FileNotFoundError):
+                model_path.unlink()
+            self._download_bm25_model(cfg.language.value, model_path)
+            return self._load_bm25_encoder_file(dashtext_module, model_path)
+
+    def _bm25_model_cache_path(self, language: str) -> Path:
+        if self._cache_dir is None:  # pragma: no cover - guarded by caller
+            raise RuntimeError("BM25 cache directory is not configured.")
+        return self._cache_dir / "bm25" / f"bm25_{language}_default.json"
+
+    def _download_bm25_model(self, language: str, target: Path) -> None:
+        url = _BM25_DEFAULT_MODEL_URLS[language]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(
+            prefix=f".{target.name}.", suffix=".tmp", dir=str(target.parent)
+        )
+        try:
+            with os.fdopen(fd, "wb") as out, urllib.request.urlopen(
+                url, timeout=_BM25_DEFAULT_LOAD_TIMEOUT_SECONDS
+            ) as response:
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+            os.replace(tmp, target)
+        except Exception:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+            raise
+
+    def _load_bm25_encoder_file(self, dashtext_module: Any, path: Path) -> Any:
+        encoder = dashtext_module.SparseVectorEncoder()
+        encoder.load(str(path))
+        return encoder
+
+    def _clone_bm25_embedding(
+        self,
+        bm25_cls: type[Any],
+        cfg: BM25Config,
+        *,
+        encoding_type: str,
+        dashtext_module: Any,
+        encoder: Any,
+    ) -> Any:
+        instance = object.__new__(bm25_cls)
+        instance._dashtext = dashtext_module
+        instance._corpus = None
+        instance._encoding_type = encoding_type
+        instance._language = cfg.language.value
+        instance._b = cfg.b
+        instance._k1 = cfg.k1
+        instance._extra_params = {}
+        instance._encoder = encoder
+        return instance
 
     def _build_embedding(
         self, cfg: EmbeddingConfig, *, is_query: bool | None = None
@@ -108,9 +332,9 @@ class AIService:
         ``encoding_type`` of sparse encoders (``DefaultLocalSparse`` /
         ``BM25``) between ``"query"`` and ``"document"``. The Zvec 0.4 SDK
         binds ``encoding_type`` at instantiation (it's a read-only property
-        with a single ``embed(input: str)`` method), so to honour the per-call
-        ``isQuery`` flag we must rebuild the instance for every invocation.
-        Dense encoders do not distinguish q/d and ignore this argument.
+        with a single ``embed(input: str)`` method), so callers cache separate
+        query/document instances. Dense encoders do not distinguish q/d and
+        ignore this argument.
         """
 
         def _encoding_type_for(default: str) -> str:
@@ -137,13 +361,8 @@ class AIService:
                     encoding_type=_encoding_type_for(cfg.encodingType.value),
                 )
             if isinstance(cfg, BM25Config):
-                from zvec import BM25EmbeddingFunction  # type: ignore[attr-defined]
-
-                return BM25EmbeddingFunction(
-                    encoding_type=_encoding_type_for(cfg.encodingType.value),
-                    language=cfg.language.value,
-                    b=cfg.b,
-                    k1=cfg.k1,
+                return self._build_bm25_embedding(
+                    cfg, encoding_type=_encoding_type_for(cfg.encodingType.value)
                 )
             if isinstance(cfg, QwenDenseConfig):
                 from zvec import QwenDenseEmbedding  # type: ignore[attr-defined]
@@ -280,7 +499,18 @@ class AIService:
         :meth:`_build_embedding` so the right value is baked in.
         """
         rec = self._registry.get_embedding(name)
-        instance = self._build_embedding(rec.config, is_query=body.isQuery)
+        try:
+            instance = self._get_embedding_instance(
+                name, rec.config, is_query=body.isQuery
+            )
+        except (AIDependencyMissingError, AIFunctionInvocationError):
+            raise
+        except Exception as exc:
+            raise AIFunctionInvocationError(
+                f"Embedding '{name}' failed to initialize: {exc}",
+                extra={"name": name, "type": rec.config.type.value},
+                sdk_exception=type(exc).__name__,
+            ) from exc
         try:
             vectors = [instance.embed(text) for text in body.texts]
         except ImportError as exc:
