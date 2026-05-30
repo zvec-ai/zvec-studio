@@ -20,7 +20,7 @@ import {
 } from '@/features/documents/hooks';
 import { coerceFieldValue } from './coerce-field-value';
 import { useListEmbeddings, useEmbed } from '@/features/ai/hooks';
-import type { EmbedResponse } from '@/features/ai/api';
+import type { EmbedResponse, EmbeddingFunctionRecord } from '@/features/ai/api';
 import { getEmbeddingTag, getEmbeddingDimension } from '@/features/ai/utils';
 import {
   embeddingMatchesVector,
@@ -92,6 +92,12 @@ interface VectorInputState {
   embedText: string;
 }
 
+interface VectorFieldLike {
+  name: string;
+  dataType: string;
+  dimension: number;
+}
+
 interface DocSlot {
   id: string;
   docId: string;
@@ -114,6 +120,91 @@ function makeDocSlot(
 
 function embedResultMatchesVector(result: EmbedResponse, vector: { dataType: string }): boolean {
   return isSparseVectorType(vector.dataType) ? result.kind === 'sparse' : result.kind === 'dense';
+}
+
+function controlId(prefix: string, vectorName: string, suffix: string): string {
+  return `${prefix}-${vectorName}-${suffix}`.replace(/[^A-Za-z0-9_-]/g, '-');
+}
+
+function VectorFieldInput({
+  controlPrefix,
+  vector,
+  input,
+  embeddings,
+  dimMismatch,
+  onPatch,
+}: {
+  controlPrefix: string;
+  vector: VectorFieldLike;
+  input: VectorInputState;
+  embeddings: ReadonlyArray<EmbeddingFunctionRecord>;
+  dimMismatch?: { embDim: number; fieldDim: number } | null;
+  onPatch: (patch: Partial<VectorInputState>) => void;
+}): JSX.Element {
+  const { t } = useTranslation();
+  const selectId = controlId(controlPrefix, vector.name, 'embedding');
+  const matchingEmbeddings = embeddings.filter((emb) => embeddingMatchesVector(emb, vector));
+
+  function updateEmbedding(embedding: string): void {
+    onPatch({ embedding, mode: embedding ? 'embed' : 'raw' });
+  }
+
+  return (
+    <div className="zv-dml-vector-field">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <span className="zv-mono" style={{ fontWeight: 600 }}>{vector.name}</span>
+        <span className="zv-vq-field-tag">{vectorDimensionLabel(vector)} {vector.dataType}</span>
+      </div>
+
+      <div className="zv-form-group">
+        <label className="zv-form-label" htmlFor={selectId}>
+          {t('pages.collections.detail.mutate.embedding')}
+        </label>
+        <select
+          id={selectId}
+          className="zv-form-select"
+          value={input.embedding}
+          onChange={(e) => updateEmbedding(e.target.value)}
+        >
+          <option value="">{t('pages.collections.detail.mutate.selectEmbedding')}</option>
+          {matchingEmbeddings.map((emb) => (
+            <option key={emb.name} value={emb.name}>
+              {emb.name} ({getEmbeddingTag(emb)})
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {input.mode === 'embed' ? (
+        <>
+          {dimMismatch && (
+            <span className="zv-form-hint" style={{ color: 'var(--zv-color-warning)', marginBottom: 4, display: 'block' }}>
+              {t('pages.collections.detail.mutate.dimMismatch', {
+                embDim: dimMismatch.embDim,
+                fieldDim: dimMismatch.fieldDim,
+              })}
+            </span>
+          )}
+          <textarea
+            className="zv-form-textarea"
+            placeholder={dimMismatch
+              ? t('pages.collections.detail.mutate.dimMismatchDisabled')
+              : t('pages.collections.detail.mutate.embedTextPlaceholder')}
+            value={input.embedText}
+            disabled={!!dimMismatch}
+            onChange={(e) => onPatch({ embedText: e.target.value })}
+          />
+        </>
+      ) : (
+        <textarea
+          className="zv-form-textarea"
+          value={input.rawText}
+          onChange={(e) => onPatch({ rawText: e.target.value })}
+          spellCheck={false}
+        />
+      )}
+    </div>
+  );
 }
 
 /* ─── InsertView ─── */
@@ -307,40 +398,15 @@ function InsertView({
             {vectors.map((v) => {
               const input = slot.vectorInputs[v.name];
               return (
-                <div className="zv-dml-vector-field" key={v.name}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <span className="zv-mono" style={{ fontWeight: 600 }}>{v.name}</span>
-                    <span className="zv-vq-field-tag">{vectorDimensionLabel(v)} {v.dataType}</span>
-                  </div>
-
-                  <div className="zv-input-mode-tabs" style={{ marginBottom: 10 }}>
-                    <button type="button" className={`zv-input-mode-tab${input.mode === 'raw' ? ' zv-input-mode-tab--active' : ''}`} onClick={() => updateSlotVector(slot.id, v.name, { mode: 'raw' })}>
-                      {t('pages.collections.detail.mutate.modeRaw')}
-                    </button>
-                    <button type="button" className={`zv-input-mode-tab${input.mode === 'embed' ? ' zv-input-mode-tab--active' : ''}`} onClick={() => updateSlotVector(slot.id, v.name, { mode: 'embed' })}>
-                      {t('pages.collections.detail.mutate.modeEmbed')}
-                    </button>
-                  </div>
-
-                  {input.mode === 'raw' ? (
-                    <textarea className="zv-form-textarea" value={input.rawText} onChange={(e) => updateSlotVector(slot.id, v.name, { rawText: e.target.value })} spellCheck={false} />
-                  ) : (
-                    <>
-                      <select className="zv-form-select" value={input.embedding} onChange={(e) => updateSlotVector(slot.id, v.name, { embedding: e.target.value })} style={{ marginBottom: 8 }}>
-                        <option value="">{t('pages.collections.detail.mutate.selectEmbedding')}</option>
-                        {allEmbeddings.filter((emb) => embeddingMatchesVector(emb, v)).map((emb) => (
-                          <option key={emb.name} value={emb.name}>{emb.name} ({getEmbeddingTag(emb)})</option>
-                        ))}
-                      </select>
-                      {dimMismatches[v.name] && (
-                        <span className="zv-form-hint" style={{ color: 'var(--zv-color-warning)', marginBottom: 4, display: 'block' }}>
-                          {t('pages.collections.detail.mutate.dimMismatch', { embDim: dimMismatches[v.name]!.embDim, fieldDim: dimMismatches[v.name]!.fieldDim })}
-                        </span>
-                      )}
-                      <textarea className="zv-form-textarea" placeholder={dimMismatches[v.name] ? t('pages.collections.detail.mutate.dimMismatchDisabled') : t('pages.collections.detail.mutate.embedTextPlaceholder')} value={input.embedText} disabled={!!dimMismatches[v.name]} onChange={(e) => updateSlotVector(slot.id, v.name, { embedText: e.target.value })} />
-                    </>
-                  )}
-                </div>
+                <VectorFieldInput
+                  key={v.name}
+                  controlPrefix={slot.id}
+                  vector={v}
+                  input={input}
+                  embeddings={allEmbeddings}
+                  dimMismatch={dimMismatches[v.name]}
+                  onPatch={(patch) => updateSlotVector(slot.id, v.name, patch)}
+                />
               );
             })}
           </div>
@@ -513,27 +579,14 @@ function UpsertView({
               {vectors.map((v) => {
                 const input = slot.vectorInputs[v.name];
                 return (
-                  <div className="zv-dml-vector-field" key={v.name}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                      <span className="zv-mono" style={{ fontWeight: 600 }}>{v.name}</span>
-                      <span className="zv-vq-field-tag">{vectorDimensionLabel(v)} {v.dataType}</span>
-                    </div>
-                    <div className="zv-input-mode-tabs" style={{ marginBottom: 10 }}>
-                      <button type="button" className={`zv-input-mode-tab${input.mode === 'raw' ? ' zv-input-mode-tab--active' : ''}`} onClick={() => updateSlotVector(slot.id, v.name, { mode: 'raw' })}>{t('pages.collections.detail.mutate.modeRaw')}</button>
-                      <button type="button" className={`zv-input-mode-tab${input.mode === 'embed' ? ' zv-input-mode-tab--active' : ''}`} onClick={() => updateSlotVector(slot.id, v.name, { mode: 'embed' })}>{t('pages.collections.detail.mutate.modeEmbed')}</button>
-                    </div>
-                    {input.mode === 'raw' ? (
-                      <textarea className="zv-form-textarea" value={input.rawText} onChange={(e) => updateSlotVector(slot.id, v.name, { rawText: e.target.value })} spellCheck={false} />
-                    ) : (
-                      <>
-                        <select className="zv-form-select" value={input.embedding} onChange={(e) => updateSlotVector(slot.id, v.name, { embedding: e.target.value })} style={{ marginBottom: 8 }}>
-                          <option value="">{t('pages.collections.detail.mutate.selectEmbedding')}</option>
-                          {allEmbeddings.filter((emb) => embeddingMatchesVector(emb, v)).map((emb) => (<option key={emb.name} value={emb.name}>{emb.name} ({getEmbeddingTag(emb)})</option>))}
-                        </select>
-                        <textarea className="zv-form-textarea" placeholder={t('pages.collections.detail.mutate.embedTextPlaceholder')} value={input.embedText} onChange={(e) => updateSlotVector(slot.id, v.name, { embedText: e.target.value })} />
-                      </>
-                    )}
-                  </div>
+                  <VectorFieldInput
+                    key={v.name}
+                    controlPrefix={slot.id}
+                    vector={v}
+                    input={input}
+                    embeddings={allEmbeddings}
+                    onPatch={(patch) => updateSlotVector(slot.id, v.name, patch)}
+                  />
                 );
               })}
             </div>
@@ -706,27 +759,14 @@ function UpdateView({
               {vectors.map((v) => {
                 const input = slot.vectorInputs[v.name];
                 return (
-                  <div className="zv-dml-vector-field" key={v.name}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                      <span className="zv-mono" style={{ fontWeight: 600 }}>{v.name}</span>
-                      <span className="zv-vq-field-tag">{vectorDimensionLabel(v)} {v.dataType}</span>
-                    </div>
-                    <div className="zv-input-mode-tabs" style={{ marginBottom: 10 }}>
-                      <button type="button" className={`zv-input-mode-tab${input.mode === 'raw' ? ' zv-input-mode-tab--active' : ''}`} onClick={() => updateSlotVector(slot.id, v.name, { mode: 'raw' })}>{t('pages.collections.detail.mutate.modeRaw')}</button>
-                      <button type="button" className={`zv-input-mode-tab${input.mode === 'embed' ? ' zv-input-mode-tab--active' : ''}`} onClick={() => updateSlotVector(slot.id, v.name, { mode: 'embed' })}>{t('pages.collections.detail.mutate.modeEmbed')}</button>
-                    </div>
-                    {input.mode === 'raw' ? (
-                      <textarea className="zv-form-textarea" value={input.rawText} onChange={(e) => updateSlotVector(slot.id, v.name, { rawText: e.target.value })} spellCheck={false} />
-                    ) : (
-                      <>
-                        <select className="zv-form-select" value={input.embedding} onChange={(e) => updateSlotVector(slot.id, v.name, { embedding: e.target.value })} style={{ marginBottom: 8 }}>
-                          <option value="">{t('pages.collections.detail.mutate.selectEmbedding')}</option>
-                          {allEmbeddings.filter((emb) => embeddingMatchesVector(emb, v)).map((emb) => (<option key={emb.name} value={emb.name}>{emb.name} ({getEmbeddingTag(emb)})</option>))}
-                        </select>
-                        <textarea className="zv-form-textarea" placeholder={t('pages.collections.detail.mutate.embedTextPlaceholder')} value={input.embedText} onChange={(e) => updateSlotVector(slot.id, v.name, { embedText: e.target.value })} />
-                      </>
-                    )}
-                  </div>
+                  <VectorFieldInput
+                    key={v.name}
+                    controlPrefix={slot.id}
+                    vector={v}
+                    input={input}
+                    embeddings={allEmbeddings}
+                    onPatch={(patch) => updateSlotVector(slot.id, v.name, patch)}
+                  />
                 );
               })}
             </div>

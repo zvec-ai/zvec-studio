@@ -245,11 +245,11 @@ describe('MutateTab', () => {
 
     await user.type(screen.getByPlaceholderText('Document ID (required)'), 'doc-dense');
     await user.type(screen.getByPlaceholderText('STRING'), 'Dense Doc');
-    await user.click(screen.getByRole('button', { name: /^embed$/i }));
 
     await waitFor(() => {
       expect(screen.getByText(/local-dense/)).toBeInTheDocument();
     });
+    expect(screen.queryByRole('button', { name: /^embed$/i })).not.toBeInTheDocument();
 
     const embeddingSelect = document.querySelector('select.zv-form-select') as HTMLSelectElement;
     await user.selectOptions(embeddingSelect, 'local-dense');
@@ -287,7 +287,6 @@ describe('MutateTab', () => {
 
     await user.type(screen.getByPlaceholderText('Document ID (required)'), 'doc-sparse-embed');
     await user.type(screen.getByPlaceholderText('STRING'), 'Sparse Doc');
-    await user.click(screen.getByRole('button', { name: /^embed$/i }));
 
     await waitFor(() => {
       expect(screen.getByText(/bm25/)).toBeInTheDocument();
