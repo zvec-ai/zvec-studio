@@ -44,10 +44,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python 3.11
+      - name: Setup Python 3.10
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.10"
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -81,7 +81,21 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libsoup-3.0-dev \
-            patchelf
+            patchelf \
+            webkit2gtk-driver \
+            xvfb
+
+      - name: Install Tauri WebDriver
+        if: runner.os != 'macOS'
+        run: cargo install tauri-driver --locked
+
+      - name: Install Microsoft Edge WebDriver
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo install --git https://github.com/chippers/msedgedriver-tool
+          msedgedriver-tool
+          $PWD.Path | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Install backend (with packaging extras)
         run: |
@@ -122,6 +136,43 @@ jobs:
         if: runner.os == 'macOS'
         working-directory: apps/desktop
         run: bash scripts/post-build-sign.sh
+
+      - name: Install desktop artifact
+        id: desktop-install
+        run: python scripts/desktop_install_smoke.py
+
+      - name: Run installed desktop API smoke (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python scripts/desktop_api_smoke.py --app-path "${{ steps.desktop-install.outputs.app_path }}" --port 17861
+
+      - name: Run installed desktop API smoke
+        if: runner.os != 'Linux'
+        run: python scripts/desktop_api_smoke.py --app-path "${{ steps.desktop-install.outputs.app_path }}" --port 17861
+
+      - name: Run installed desktop UI smoke (Linux)
+        if: runner.os == 'Linux'
+        env:
+          DESKTOP_APP_PATH: ${{ steps.desktop-install.outputs.app_path }}
+          ZVEC_PORT: "17862"
+          ZVEC_STUDIO_DATA_DIR: ${{ github.workspace }}/artifacts/desktop-smoke/wdio-data
+        run: xvfb-run -a pnpm --filter desktop e2e:installed
+
+      - name: Run installed desktop UI smoke (Windows)
+        if: runner.os == 'Windows'
+        env:
+          DESKTOP_APP_PATH: ${{ steps.desktop-install.outputs.app_path }}
+          ZVEC_PORT: "17862"
+          ZVEC_STUDIO_DATA_DIR: ${{ github.workspace }}/artifacts/desktop-smoke/wdio-data
+        run: pnpm --filter desktop e2e:installed
+
+      - name: Upload desktop smoke diagnostics
+        if: failure() || always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-smoke-${{ matrix.platform.name }}
+          path: artifacts/desktop-smoke/
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Collect artifacts
         shell: bash
@@ -169,10 +220,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python 3.11
+      - name: Setup Python 3.10
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.10"
 
       - name: Setup Node 20
         uses: actions/setup-node@v4

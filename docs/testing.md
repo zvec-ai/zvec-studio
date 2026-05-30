@@ -62,9 +62,10 @@ overall; routers / middleware hold at **≥ 75 %**. Actual figures at
 - `cargo test` — 6 unit tests cover sidecar configuration, ready-probe
   success + timeout, invalid address reporting and launch-summary
   dev-vs-bundled disambiguation.
-- Tauri IPC E2E (`tauri-driver`) is post-MVP; for now Playwright runs
-  only in web mode — good enough to catch regressions in the shared
-  frontend code that both modes use.
+- CI installs the built desktop artifact and runs `desktop_api_smoke.py`
+  against the bundled sidecar. Linux and Windows also run the installed-app
+  UI smoke through `tauri-driver`; macOS is limited to install/start/API
+  smoke because Tauri does not provide an official WKWebView WebDriver.
 
 ## Reproducing a CI failure locally
 

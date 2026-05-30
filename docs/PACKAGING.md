@@ -88,10 +88,11 @@ Triggered by `v*` tags or manual `workflow_dispatch`. Runs across:
 | Job key            | Runner              | Notes                          |
 |--------------------|---------------------|--------------------------------|
 | `macos-aarch64`    | `macos-14`          | Apple Silicon native           |
-| `macos-x86_64`     | `macos-13`          | Intel macOS                    |
 | `linux-x86_64`     | `ubuntu-latest`     | needs WebKitGTK 4.1 (apt)     |
 | `linux-aarch64`    | `ubuntu-24.04-arm`  | ARM64 native runner            |
 | `windows-x86_64`   | `windows-latest`    | MSI + NSIS                     |
+
+macOS x86_64 / Intel builds are temporarily not supported.
 
 Each job uploads its installers as a job artifact (`zvec-studio-<platform>`).
 
@@ -136,7 +137,24 @@ Production signing is planned:
 Until those land, distribute via the GitHub Releases tab with a clear
 "unsigned, may trigger Gatekeeper / SmartScreen warnings" note.
 
-## Smoke-testing a built binary
+## Smoke-testing a built desktop bundle
+
+CI installs or unpacks the generated desktop artifact before declaring the
+bundle healthy:
+
+```bash
+python scripts/desktop_install_smoke.py
+python scripts/desktop_api_smoke.py --app-path "$(cat artifacts/desktop-smoke/app-path.txt)"
+DESKTOP_APP_PATH="$(cat artifacts/desktop-smoke/app-path.txt)" pnpm --filter desktop e2e:installed
+```
+
+The API smoke launches the installed app, waits for the embedded sidecar on
+`/api/v1/healthz`, then creates dense and sparse collections and exercises
+insert, browse and search. The UI smoke uses `tauri-driver` and runs on Linux
+and Windows only; macOS has no official WKWebView driver in Tauri's desktop
+WebDriver support.
+
+## Smoke-testing a built sidecar binary
 
 ```bash
 ./apps/backend/dist/zvec-studio-sidecar --host 127.0.0.1 --port 17860 &

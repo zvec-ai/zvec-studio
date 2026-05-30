@@ -103,8 +103,8 @@ embedded vector database.
 - Tauri config split: dev-friendly `tauri.conf.json` (no `externalBin`) +
   `tauri.bundle.conf.json` override injected via `tauri build --config`.
 - Makefile `package.sidecar` / `package.desktop` / `package` targets.
-- `.github/workflows/release.yml`: four-runner matrix
-  (macos-14 arm64, macos-13 x86_64, ubuntu-latest, windows-latest)
+- `.github/workflows/release.yml`: four-platform matrix
+  (Apple Silicon macOS, Linux x86_64, Linux ARM64, Windows x86_64)
   triggered by `v*` tags or manual dispatch, producing `.dmg`, `.app.tar.gz`,
   `.deb`, `.AppImage`, `.msi`, `.exe` artifacts. Unsigned — see
   [docs/PACKAGING.md](docs/PACKAGING.md) for the signing roadmap.

@@ -15,7 +15,7 @@ Usage
 -----
     python scripts/build_sidecar.py            # build for the current host
     python scripts/build_sidecar.py --skip-pyinstaller  # only re-copy
-    python scripts/build_sidecar.py --triple x86_64-apple-darwin
+    python scripts/build_sidecar.py --triple aarch64-apple-darwin
 
 Prereqs
 -------

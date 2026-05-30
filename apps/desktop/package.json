@@ -7,12 +7,18 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build && bash scripts/post-build-sign.sh",
+    "e2e:installed": "wdio run wdio.installed.conf.mjs",
     "lint": "echo '(desktop shell uses cargo for lint -- run `make desktop.check`)' && exit 0",
     "typecheck": "echo '(desktop shell typecheck happens via cargo check)' && exit 0",
     "test": "echo '(desktop tests run via cargo test -- see `make desktop.test`)' && exit 0",
     "test:unit": "echo '(desktop unit tests run via cargo test)' && exit 0"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.1.0"
+    "@tauri-apps/cli": "^2.1.0",
+    "@wdio/cli": "^9.0.0",
+    "@wdio/local-runner": "^9.0.0",
+    "@wdio/mocha-framework": "^9.0.0",
+    "@wdio/spec-reporter": "^9.0.0",
+    "webdriverio": "^9.0.0"
   }
 }

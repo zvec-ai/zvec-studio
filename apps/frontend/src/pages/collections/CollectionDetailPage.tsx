@@ -105,6 +105,7 @@ export function CollectionDetailPage(): JSX.Element {
             key={key}
             className={`zv-detail-tab${activeTab === key ? ' zv-detail-tab--active' : ''}`}
             onClick={() => setActiveTab(key)}
+            data-testid={`zv-detail-tab-${key}`}
           >
             {t(`pages.collections.detail.tabs.${key}`)}
           </button>

@@ -56,7 +56,11 @@ export function WelcomePage(): JSX.Element {
       <p className="zv-welcome__sub">{t('pages.home.subheading')}</p>
 
       <div className="zv-welcome__actions">
-        <Button variant="primary" onClick={() => setShowCreateCollection(true)}>
+        <Button
+          variant="primary"
+          onClick={() => setShowCreateCollection(true)}
+          data-testid="zv-welcome-create"
+        >
           {t('pages.home.createBtn')}
         </Button>
         <Button variant="secondary" onClick={() => setShowOpenCollection(true)}>
