@@ -100,7 +100,9 @@ def _linux_bin_from_deb(artifact: Path) -> str | None:
             continue
         archive_path = parts[-1].lstrip("./")
         if archive_path.startswith("usr/bin/") and not archive_path.endswith("/"):
-            return Path(archive_path).name
+            name = Path(archive_path).name
+            if "sidecar" not in name.lower():
+                return name
     return None
 
 
@@ -121,7 +123,11 @@ def _install_linux(artifact: Path, install_dir: Path) -> Path:
         candidates.append(Path("/usr/bin") / bin_name)
     candidates.extend(Path("/usr/bin").glob("*zvec*"))
     for candidate in candidates:
-        if candidate.is_file() and os.access(candidate, os.X_OK):
+        if (
+            candidate.is_file()
+            and os.access(candidate, os.X_OK)
+            and "sidecar" not in candidate.name.lower()
+        ):
             return candidate
     raise SystemExit(f"Installed .deb but could not find executable; bin={bin_name!r}")
 
@@ -214,7 +220,8 @@ def _install_windows(artifact: Path, install_dir: Path) -> Path:
             candidates.extend(root.rglob("*Zvec*.exe"))
             candidates.extend(root.rglob("*zvec*.exe"))
     for candidate in sorted(set(candidates)):
-        if candidate.is_file() and "unins" not in candidate.name.lower():
+        lower_name = candidate.name.lower()
+        if candidate.is_file() and "unins" not in lower_name and "sidecar" not in lower_name:
             return candidate
     raise SystemExit(f"Installed Windows artifact but could not find app exe under {search_roots}")
 
