@@ -242,7 +242,7 @@ jobs:
         run: pnpm install --frozen-lockfile=false
 
       - name: Install Python build tools
-        run: pip install build wheel twine
+        run: pip install build wheel twine uv
 
       - name: Inject version from git tag
         run: |
