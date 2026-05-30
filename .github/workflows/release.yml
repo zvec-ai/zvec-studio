@@ -170,7 +170,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: desktop-smoke-${{ matrix.platform.name }}
-          path: artifacts/desktop-smoke/
+          path: |
+            artifacts/desktop-smoke/*.log
+            artifacts/desktop-smoke/*.txt
+            artifacts/desktop-smoke/wdio/**
           if-no-files-found: ignore
           retention-days: 14
 
