@@ -1280,7 +1280,7 @@ class SdkBackend:
                 extra={"vectorField": spec.field},
             )
         vec_def = matches[0]
-        vector = spec.vector
+        vector: Any = spec.vector
         if spec.vector is not None and _is_sparse_vector_type(vec_def.dataType):
             vector = _coerce_sparse_vector(spec.vector, vector_name=spec.field)
         elif spec.vector is not None and len(spec.vector) != vec_def.dimension:

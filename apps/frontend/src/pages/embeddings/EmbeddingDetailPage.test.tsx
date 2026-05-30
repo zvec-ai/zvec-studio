@@ -12,6 +12,7 @@ import { QueryClient } from '@tanstack/react-query';
 
 import { renderWithProviders } from '@/test-utils/render';
 import type { ApiClient } from '@/lib/api-client';
+import { embeddingDetailQueryKey, embeddingsListQueryKey } from '@/features/ai';
 
 import { EmbeddingDetailPage } from './EmbeddingDetailPage';
 
@@ -71,7 +72,11 @@ function makeQueryClient(): QueryClient {
   });
 }
 
-function renderPage(state: FakeState, embName = 'test-emb') {
+function renderPage(
+  state: FakeState,
+  embName = 'test-emb',
+  queryClient = makeQueryClient(),
+) {
   return renderWithProviders(
     <Routes>
       <Route path="/embeddings/:name" element={<EmbeddingDetailPage />} />
@@ -80,7 +85,7 @@ function renderPage(state: FakeState, embName = 'test-emb') {
     {
       initialEntries: [`/embeddings/${embName}`],
       apiClient: makeApiClient(state),
-      queryClient: makeQueryClient(),
+      queryClient,
     },
   );
 }
@@ -279,19 +284,20 @@ describe('EmbeddingDetailPage', () => {
     expect(await screen.findByTestId('collections-page')).toBeInTheDocument();
   });
 
-  it('does not refetch detail after delete (removeQueries, not invalidate)', async () => {
+  it('removes detail query after delete instead of invalidating it', async () => {
     const user = userEvent.setup();
+    const queryClient = makeQueryClient();
+    const removeSpy = vi.spyOn(queryClient, 'removeQueries');
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
     const state: FakeState = {
       embedding: { name: 'test-emb', description: null, config: { type: 'default_local_dense' } },
       updated: null,
       deleted: null,
       calls: [],
     };
-    renderPage(state);
+    renderPage(state, 'test-emb', queryClient);
 
     await screen.findByText('test-emb');
-    // Clear call log before delete
-    state.calls.length = 0;
     await user.click(screen.getByRole('button', { name: /^delete$/i }));
     const deleteBtns = screen.getAllByRole('button', { name: /^delete$/i });
     await user.click(deleteBtns[deleteBtns.length - 1]);
@@ -299,11 +305,14 @@ describe('EmbeddingDetailPage', () => {
     await waitFor(() => {
       expect(state.deleted).toBe('test-emb');
     });
-
-    // After delete, no GET to the deleted resource should have been issued
-    const getAfterDelete = state.calls.filter(
-      (c) => c.method === 'GET' && c.path.includes('/ai/embeddings/test-emb'),
-    );
-    expect(getAfterDelete).toHaveLength(0);
+    await waitFor(() => {
+      expect(removeSpy).toHaveBeenCalledWith({
+        queryKey: embeddingDetailQueryKey('test-emb'),
+      });
+    });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: embeddingDetailQueryKey('test-emb'),
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: embeddingsListQueryKey });
   });
 });

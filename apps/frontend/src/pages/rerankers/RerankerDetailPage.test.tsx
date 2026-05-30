@@ -3,7 +3,7 @@
  *
  * Uses a fake ApiClient to exercise rendering, save, and delete confirmation.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Routes, Route } from 'react-router-dom';
@@ -11,6 +11,7 @@ import { QueryClient } from '@tanstack/react-query';
 
 import { renderWithProviders } from '@/test-utils/render';
 import type { ApiClient } from '@/lib/api-client';
+import { rerankerDetailQueryKey, rerankersListQueryKey } from '@/features/ai';
 
 import { RerankerDetailPage } from './RerankerDetailPage';
 
@@ -62,7 +63,11 @@ function makeQueryClient(): QueryClient {
   });
 }
 
-function renderPage(state: FakeState, rerName = 'my-rrf') {
+function renderPage(
+  state: FakeState,
+  rerName = 'my-rrf',
+  queryClient = makeQueryClient(),
+) {
   return renderWithProviders(
     <Routes>
       <Route path="/rerankers/:name" element={<RerankerDetailPage />} />
@@ -71,7 +76,7 @@ function renderPage(state: FakeState, rerName = 'my-rrf') {
     {
       initialEntries: [`/rerankers/${rerName}`],
       apiClient: makeApiClient(state),
-      queryClient: makeQueryClient(),
+      queryClient,
     },
   );
 }
@@ -187,18 +192,20 @@ describe('RerankerDetailPage', () => {
     expect(await screen.findByTestId('collections-page')).toBeInTheDocument();
   });
 
-  it('does not refetch detail after delete (removeQueries, not invalidate)', async () => {
+  it('removes detail query after delete instead of invalidating it', async () => {
     const user = userEvent.setup();
+    const queryClient = makeQueryClient();
+    const removeSpy = vi.spyOn(queryClient, 'removeQueries');
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
     const state: FakeState = {
       reranker: { name: 'my-rrf', description: null, config: { type: 'rrf', rankConstant: 60 } },
       updated: null,
       deleted: null,
       calls: [],
     };
-    renderPage(state);
+    renderPage(state, 'my-rrf', queryClient);
 
     await screen.findByText('my-rrf');
-    state.calls.length = 0;
     await user.click(screen.getByRole('button', { name: /^delete$/i }));
     const deleteBtns = screen.getAllByRole('button', { name: /^delete$/i });
     await user.click(deleteBtns[deleteBtns.length - 1]);
@@ -206,14 +213,15 @@ describe('RerankerDetailPage', () => {
     await waitFor(() => {
       expect(state.deleted).toBe('my-rrf');
     });
-
-    // Only count GETs that occur AFTER the DELETE call (ignore stale refetches
-    // that may fire during the click interaction on slower runtimes like Node 20).
-    const deleteIdx = state.calls.findIndex((c) => c.method === 'DELETE');
-    const getAfterDelete = state.calls.filter(
-      (c, i) => i > deleteIdx && c.method === 'GET' && c.path.includes('/ai/rerankers/my-rrf'),
-    );
-    expect(getAfterDelete).toHaveLength(0);
+    await waitFor(() => {
+      expect(removeSpy).toHaveBeenCalledWith({
+        queryKey: rerankerDetailQueryKey('my-rrf'),
+      });
+    });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: rerankerDetailQueryKey('my-rrf'),
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: rerankersListQueryKey });
   });
 
   it('shows correct icon label for rrf type', async () => {
