@@ -269,7 +269,7 @@ def _coerce_sparse_vector(value: Any, *, vector_name: str) -> dict[int, float]:
 
         if (
             isinstance(raw_weight, bool)
-            or not isinstance(raw_weight, (int, float))
+            or not isinstance(raw_weight, int | float)
             or not math.isfinite(float(raw_weight))
         ):
             raise InvalidSchemaError(
