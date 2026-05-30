@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import gc
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -229,6 +230,59 @@ _SDK_TO_VECTOR: dict[SdkDataType, VectorDataType] = {
 _SDK_METRIC_TO_STUDIO: dict[SdkMetricType, MetricType] = {
     v: k for k, v in _METRIC_TO_SDK.items()
 }
+
+_SPARSE_VECTOR_TYPES: frozenset[VectorDataType] = frozenset(
+    {
+        VectorDataType.SPARSE_VECTOR_FP32,
+        VectorDataType.SPARSE_VECTOR_FP16,
+    }
+)
+
+
+def _is_sparse_vector_type(data_type: VectorDataType) -> bool:
+    return data_type in _SPARSE_VECTOR_TYPES
+
+
+def _coerce_sparse_vector(value: Any, *, vector_name: str) -> dict[int, float]:
+    if not isinstance(value, dict) or not value:
+        raise InvalidSchemaError(
+            f"Vector '{vector_name}' must be a non-empty sparse object.",
+            extra={"vector": vector_name, "expectedType": "sparse object"},
+        )
+
+    out: dict[int, float] = {}
+    for raw_key, raw_weight in value.items():
+        if isinstance(raw_key, bool):
+            key: int | None = None
+        elif isinstance(raw_key, int):
+            key = raw_key
+        elif isinstance(raw_key, str) and raw_key.isdecimal():
+            key = int(raw_key)
+        else:
+            key = None
+
+        if key is None or key < 0 or key > 0xFFFFFFFF:
+            raise InvalidSchemaError(
+                f"Vector '{vector_name}' must use uint32 sparse keys.",
+                extra={"vector": vector_name, "expectedKeyType": "uint32", "actualKey": raw_key},
+            )
+
+        if (
+            isinstance(raw_weight, bool)
+            or not isinstance(raw_weight, (int, float))
+            or not math.isfinite(float(raw_weight))
+        ):
+            raise InvalidSchemaError(
+                f"Vector '{vector_name}' must use finite float sparse weights.",
+                extra={
+                    "vector": vector_name,
+                    "expectedValueType": "float",
+                    "actualValue": raw_weight,
+                },
+            )
+
+        out[key] = float(raw_weight)
+    return out
 
 
 def _from_sdk_index_param(ip: Any) -> VectorIndexParam | None:
@@ -444,7 +498,7 @@ def _validate_field_value(name: str, value: Any, field: FieldSchema) -> None:
 
 def _build_doc(doc: dict[str, Any], schema: CollectionSchema) -> SdkDoc:
     doc_id = _ensure_id(doc)
-    vec_dims = {v.name: v.dimension for v in schema.vectors}
+    vec_defs = {v.name: v for v in schema.vectors}
     field_map = {f.name: f for f in schema.fields}
     # ``Any`` mirrors the SDK's invariant value type (list[float]/list[int]/
     # ndarray/sparse dict) so mypy does not complain about narrowing.
@@ -453,13 +507,16 @@ def _build_doc(doc: dict[str, Any], schema: CollectionSchema) -> SdkDoc:
     for k, v in doc.items():
         if k == "id":
             continue
-        if k in vec_dims:
-            if not isinstance(v, list) or len(v) != vec_dims[k]:
+        if k in vec_defs:
+            vec_def = vec_defs[k]
+            if _is_sparse_vector_type(vec_def.dataType):
+                v = _coerce_sparse_vector(v, vector_name=k)
+            elif not isinstance(v, list) or len(v) != vec_def.dimension:
                 raise DimensionMismatchError(
-                    f"Vector '{k}' must be a list of length {vec_dims[k]}.",
+                    f"Vector '{k}' must be a list of length {vec_def.dimension}.",
                     extra={
                         "vector": k,
-                        "expectedDim": vec_dims[k],
+                        "expectedDim": vec_def.dimension,
                         "actualDim": len(v) if isinstance(v, list) else None,
                     },
                 )
@@ -474,7 +531,7 @@ def _build_doc(doc: dict[str, Any], schema: CollectionSchema) -> SdkDoc:
                 f"Unknown column '{k}' in document.",
                 extra={"column": k},
             )
-    missing = set(vec_dims) - set(vectors)
+    missing = set(vec_defs) - set(vectors)
     if missing:
         raise InvalidSchemaError(
             f"Document is missing required vectors: {sorted(missing)}",
@@ -496,7 +553,7 @@ def _build_doc_partial(doc: dict[str, Any], schema: CollectionSchema) -> SdkDoc:
             "Update payload requires an explicit string 'id'.",
             extra={"id": raw_id},
         )
-    vec_dims = {v.name: v.dimension for v in schema.vectors}
+    vec_defs = {v.name: v for v in schema.vectors}
     field_map = {f.name: f for f in schema.fields}
     # See note on ``_build_doc`` -- ``Any`` matches the SDK's invariant value type.
     vectors: dict[str, Any] = {}
@@ -504,13 +561,16 @@ def _build_doc_partial(doc: dict[str, Any], schema: CollectionSchema) -> SdkDoc:
     for k, v in doc.items():
         if k == "id":
             continue
-        if k in vec_dims:
-            if not isinstance(v, list) or len(v) != vec_dims[k]:
+        if k in vec_defs:
+            vec_def = vec_defs[k]
+            if _is_sparse_vector_type(vec_def.dataType):
+                v = _coerce_sparse_vector(v, vector_name=k)
+            elif not isinstance(v, list) or len(v) != vec_def.dimension:
                 raise DimensionMismatchError(
-                    f"Vector '{k}' must be a list of length {vec_dims[k]}.",
+                    f"Vector '{k}' must be a list of length {vec_def.dimension}.",
                     extra={
                         "vector": k,
-                        "expectedDim": vec_dims[k],
+                        "expectedDim": vec_def.dimension,
                         "actualDim": len(v) if isinstance(v, list) else None,
                     },
                 )
@@ -1128,7 +1188,7 @@ class SdkBackend:
         name: str,
         *,
         queries: list[VectorQuerySpec] | None = None,
-        legacy_vector: list[float] | None = None,
+        legacy_vector: Any | None = None,
         legacy_vector_field: str | None = None,
         top_k: int,
         filter_expr: str | None = None,
@@ -1183,7 +1243,7 @@ class SdkBackend:
         record: CollectionRecord,
         *,
         queries: list[VectorQuerySpec] | None,
-        legacy_vector: list[float] | None,
+        legacy_vector: Any | None,
         legacy_vector_field: str | None,
     ) -> list[VectorQuerySpec]:
         """Merge canonical ``queries`` with the legacy single-vector form.
@@ -1220,7 +1280,10 @@ class SdkBackend:
                 extra={"vectorField": spec.field},
             )
         vec_def = matches[0]
-        if spec.vector is not None and len(spec.vector) != vec_def.dimension:
+        vector = spec.vector
+        if spec.vector is not None and _is_sparse_vector_type(vec_def.dataType):
+            vector = _coerce_sparse_vector(spec.vector, vector_name=spec.field)
+        elif spec.vector is not None and len(spec.vector) != vec_def.dimension:
             raise DimensionMismatchError(
                 f"Query vector has dimension {len(spec.vector)},"
                 f" expected {vec_def.dimension}.",
@@ -1234,7 +1297,7 @@ class SdkBackend:
         if spec.id is not None:
             kwargs["id"] = spec.id
         else:
-            kwargs["vector"] = spec.vector
+            kwargs["vector"] = vector
         sdk_param = SdkBackend._build_sdk_query_param(spec.param)
         if sdk_param is not None:
             kwargs["param"] = sdk_param

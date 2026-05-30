@@ -42,6 +42,25 @@ def _collection_payload(name: str) -> dict:
     }
 
 
+def _sparse_collection_payload(name: str) -> dict:
+    return {
+        "name": name,
+        "vectors": [
+            {
+                "name": "embedding",
+                "dataType": "SPARSE_VECTOR_FP32",
+                "dimension": 768,
+                "indexParam": {
+                    "indexType": "HNSW",
+                    "metric": "IP",
+                    "params": {"M": 16},
+                },
+            }
+        ],
+        "fields": [{"name": "title", "dataType": "STRING"}],
+    }
+
+
 def _doc(i: int, *, with_id: bool = True) -> dict:
     body: dict = {
         "title": "tech" if i % 2 == 0 else "other",
@@ -65,6 +84,18 @@ async def _make_collection(
     return name
 
 
+async def _make_sparse_collection(
+    client: AsyncClient, tmp_path: Path, name: str = "sparse_docs"
+) -> str:
+    path = tmp_path / name
+    resp = await client.post(
+        f"{API}/collections",
+        json={"path": str(path), "schema": _sparse_collection_payload(name)},
+    )
+    assert resp.status_code == 201, resp.text
+    return name
+
+
 class TestInsertAndGet:
     async def test_insert_with_explicit_ids(
         self, client: AsyncClient, tmp_path: Path
@@ -82,6 +113,26 @@ class TestInsertAndGet:
         got = await client.get(f"{API}/collections/{name}/documents/doc-002")
         assert got.status_code == 200
         assert got.json()["id"] == "doc-002"
+
+    async def test_insert_sparse_vector_coerces_json_keys_and_values(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        name = await _make_sparse_collection(client, tmp_path)
+        resp = await client.post(
+            f"{API}/collections/{name}/documents",
+            json={
+                "documents": [
+                    {
+                        "id": "s-001",
+                        "title": "sparse",
+                        "embedding": {"42": 1, "314": 0.5},
+                    }
+                ]
+            },
+        )
+
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["inserted"] == 1
 
     async def test_insert_auto_ulid_when_id_missing(
         self, client: AsyncClient, tmp_path: Path

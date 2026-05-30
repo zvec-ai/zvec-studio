@@ -17,6 +17,7 @@ import { WelcomePage } from './WelcomePage';
 interface FakeState {
   collections: Array<{ name: string; path: string }>;
   recent: Array<{ path: string; name?: string; lastOpenedAt: string }>;
+  calls?: Array<{ method: string; path: string; body?: unknown }>;
 }
 
 function makeApiClient(state: FakeState): ApiClient {
@@ -27,6 +28,7 @@ function makeApiClient(state: FakeState): ApiClient {
       opts?: { method?: string; body?: unknown },
     ): Promise<T> => {
       const method = opts?.method ?? 'GET';
+      state.calls?.push({ method, path, body: opts?.body });
 
       if (method === 'GET' && path === '/collections') {
         return { items: state.collections } as unknown as T;
@@ -89,6 +91,7 @@ function renderWelcome(
           }
         >
           <Route index element={<WelcomePage />} />
+          <Route path="collections/:name" element={<div data-testid="collection-detail">Collection detail</div>} />
         </Route>
       </Routes>,
       {
@@ -159,5 +162,24 @@ describe('WelcomePage', () => {
 
     expect(await screen.findByText('open1')).toBeInTheDocument();
     expect(screen.getByText('/tmp/recent-only')).toBeInTheDocument();
+  });
+
+  it('navigates to open collections and opens recent collections from disk', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = {
+      collections: [{ name: 'open1', path: '/tmp/open1' }],
+      recent: [{ path: '/tmp/recent-only', name: 'recent-only', lastOpenedAt: '2025-01-02T00:00:00Z' }],
+      calls: [],
+    };
+    const firstRender = renderWelcome(state);
+
+    await user.click(await screen.findByText('open1'));
+    expect(await screen.findByTestId('collection-detail')).toBeInTheDocument();
+
+    firstRender.unmount();
+    renderWelcome(state);
+    await user.click(await screen.findByText('recent-only'));
+    expect(await screen.findByTestId('collection-detail')).toBeInTheDocument();
+    expect(state.calls?.some((c) => c.method === 'POST' && c.path === '/collections/open')).toBe(true);
   });
 });

@@ -8,12 +8,13 @@ A 10-minute walkthrough: install, create a collection, insert documents, run a v
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| Python | ≥ 3.10 | FastAPI backend |
+| Python | 3.10 | FastAPI backend, pinned by `apps/backend/.python-version` |
+| uv | latest | Python environment manager |
 | Node.js | ≥ 20 | Vite + React frontend |
 | pnpm | ≥ 9 | Workspace package manager |
 | Rust | stable | Desktop shell only (Tauri v2) |
 
-macOS: `brew install python@3.11 node pnpm rustup-init`
+macOS: `brew install python@3.11 uv node pnpm rustup-init`
 
 ## 2. Clone & Install
 
@@ -21,20 +22,13 @@ macOS: `brew install python@3.11 node pnpm rustup-init`
 git clone https://github.com/zvec/zvec-studio.git
 cd zvec-studio
 
-pnpm install
-
-cd apps/backend
-python3 -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -e ".[dev]"
-cd ../..
+make install
 ```
 
 > **AI extras (optional).** The base install above does not pull in
 > `sentence-transformers`, `dashscope`, `openai`, or `dashtext`. Without them,
 > calls to `local-dense` / `local-sparse` / `bm25` / remote providers return
-> HTTP 503. To enable them, replace the `pip install` line with
-> `pip install -e ".[dev,ai]"`, or — at the repo root — run `make install.ai`.
+> HTTP 503. To enable them, replace `make install` with `make install.ai`.
 
 ## 3. Run in Web Mode
 
@@ -51,8 +45,8 @@ Open <http://127.0.0.1:5173>.
 > Without `make`, start in two terminals:
 > ```bash
 > # Terminal 1 — backend
-> cd apps/backend && source .venv/bin/activate
-> python -m uvicorn zvec_studio.main:app --host 127.0.0.1 --port 7860 --reload
+> cd apps/backend
+> uv run --no-sync uvicorn zvec_studio.main:app --host 127.0.0.1 --port 7860 --reload
 >
 > # Terminal 2 — frontend
 > pnpm --filter frontend dev

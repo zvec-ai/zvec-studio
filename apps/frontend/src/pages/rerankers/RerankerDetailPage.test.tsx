@@ -125,6 +125,27 @@ describe('RerankerDetailPage', () => {
     });
   });
 
+  it('rejects invalid config JSON before saving', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = {
+      reranker: { name: 'my-rrf', description: null, config: { type: 'rrf', rankConstant: 60 } },
+      updated: null,
+      deleted: null,
+      calls: [],
+    };
+    renderPage(state);
+
+    await screen.findByText('my-rrf');
+    const configEditor = screen.getByDisplayValue(/rankConstant/) as HTMLTextAreaElement;
+    await user.clear(configEditor);
+    await user.click(configEditor);
+    await user.paste('not-json');
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    expect(await screen.findByTestId('zv-toast')).toHaveTextContent(/invalid json/i);
+    expect(state.updated).toBeNull();
+  });
+
   it('opens delete confirmation and sends delete request', async () => {
     const user = userEvent.setup();
     const state: FakeState = {

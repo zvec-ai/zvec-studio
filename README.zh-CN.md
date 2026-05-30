@@ -63,7 +63,7 @@ zvec-studio
 ```bash
 git clone https://github.com/zvec-ai/zvec-studio.git
 cd zvec-studio
-make install    # 安装 Node + Python 依赖
+make install    # 安装 Node 依赖 + backend uv 环境
 make dev        # 同时启动后端 + 前端开发服务器
 ```
 
@@ -72,7 +72,7 @@ make dev        # 同时启动后端 + 前端开发服务器
 > 如果需要使用 `local-dense` / `bm25` / `dashscope` 等内置函数，
 > 改为执行 `make install.ai`。
 
-> 环境要求：**Node.js ≥ 20**、**pnpm ≥ 9**、**Python ≥ 3.10**、**Rust**（桌面版需要）。
+> 环境要求：**Node.js ≥ 20**、**pnpm ≥ 9**、**Python ≥ 3.10**、**uv**、**Rust**（桌面版需要）。
 > 完整开发环境搭建见 [贡献指南](CONTRIBUTING.md)。
 
 ## ⚡ 快速上手

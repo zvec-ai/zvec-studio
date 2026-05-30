@@ -28,8 +28,9 @@ interface FakeCollection {
 
 interface FakeState {
   collections: Map<string, FakeCollection>;
+  recent?: Array<{ name?: string | null; path: string }>;
   getError?: UserFacingError;
-  calls: Array<{ method: string; path: string }>;
+  calls: Array<{ method: string; path: string; body?: unknown }>;
 }
 
 function fakeSummary(name = 'demo'): CollectionSummary {
@@ -71,13 +72,25 @@ function makeApiClient(state: FakeState): ApiClient {
     baseUrl: 'fake',
     request: async <T,>(path: string, opts?: { method?: string; body?: unknown }): Promise<T> => {
       const method = opts?.method ?? 'GET';
-      state.calls.push({ method, path });
+      state.calls.push({ method, path, body: opts?.body });
+      if (path === '/collections/recent' && method === 'GET') {
+        return { items: state.recent ?? [] } as unknown as T;
+      }
       if (path.startsWith('/collections/') && method === 'GET') {
         if (state.getError) throw new ApiError(state.getError);
-        const name = decodeURIComponent(path.slice('/collections/'.length));
+        const [resource] = path.split('?');
+        const name = decodeURIComponent(resource.slice('/collections/'.length));
         const record = state.collections.get(name);
         if (!record) throw new ApiError(fakeError('COLLECTION_NOT_FOUND'));
         return record.summary as unknown as T;
+      }
+      if (path === '/collections/open' && method === 'POST') {
+        const body = opts?.body as { path: string };
+        const name = body.path.split('/').pop() ?? 'opened';
+        const summary = fakeSummary(name);
+        state.collections.set(name, { summary: { ...summary, path: body.path } });
+        state.getError = undefined;
+        return state.collections.get(name)!.summary as unknown as T;
       }
       if (path.endsWith(':flush') && method === 'POST') {
         return { name: 'ok', performed: true } as unknown as T;
@@ -99,9 +112,6 @@ function makeApiClient(state: FakeState): ApiClient {
         return undefined as unknown as T;
       }
       if (method === 'GET' && (path === '/ai/rerankers' || path === '/ai/embeddings')) {
-        return { items: [] } as unknown as T;
-      }
-      if (path === '/collections/recent' && method === 'GET') {
         return { items: [] } as unknown as T;
       }
       if (path === '/fs/reveal' && method === 'POST') {
@@ -191,6 +201,23 @@ describe('CollectionDetailPage', () => {
     await user.click(screen.getByRole('button', { name: /retry/i }));
     expect(await screen.findByText(/\/tmp\/demo/)).toBeInTheDocument();
     spy.mockRestore();
+  });
+
+  it('auto-opens a recently used collection when detail lookup returns 404', async () => {
+    const state: FakeState = {
+      collections: new Map(),
+      recent: [{ name: 'closed', path: '/tmp/closed' }],
+      getError: { ...fakeError('COLLECTION_NOT_FOUND'), status: 404 },
+      calls: [],
+    };
+    renderDetail('closed', makeApiClient(state));
+
+    expect(await screen.findByText(/\/tmp\/closed/)).toBeInTheDocument();
+    expect(state.calls).toContainEqual({
+      method: 'POST',
+      path: '/collections/open',
+      body: { path: '/tmp/closed' },
+    });
   });
 
   it('destroy is gated by typing the Collection name and navigates to /collections', async () => {

@@ -84,7 +84,7 @@ const COLLECTION = {
 
 function renderTab(
   state: FakeState,
-  overrides?: { collection?: Partial<typeof COLLECTION> },
+  overrides?: { collection?: Record<string, unknown> },
 ) {
   const col = { ...COLLECTION, ...(overrides?.collection ?? {}) };
   return renderWithProviders(
@@ -112,6 +112,29 @@ describe('OverviewTab', () => {
     expect(glance.textContent).toContain('embedding');
     expect(glance.textContent).toContain('title');
     expect(glance.textContent).toContain('score');
+  });
+
+  it('does not display a sparse vector dimension in the schema glance', () => {
+    const state: FakeState = { optimizeCalled: false, destroyCalled: null, calls: [] };
+    renderTab(state, {
+      collection: {
+        schema: {
+          ...COLLECTION.schema,
+          vectors: [
+            {
+              name: 'sparse',
+              dataType: 'SPARSE_VECTOR_FP32' as const,
+              dimension: 768,
+              indexParam: { indexType: 'HNSW', metric: 'IP', params: {} },
+            },
+          ],
+        },
+      },
+    });
+
+    const glance = document.querySelector('.zv-schema-glance')!;
+    expect(glance.textContent).toContain('sparse');
+    expect(glance.textContent).not.toContain('768d');
   });
 
   it('shows correct field/index counts', () => {
@@ -145,6 +168,22 @@ describe('OverviewTab', () => {
     });
   });
 
+  it('reveals the collection folder through the filesystem API', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = { optimizeCalled: false, destroyCalled: null, calls: [] };
+    renderTab(state);
+
+    await user.click(screen.getByTitle(/open folder/i));
+
+    await waitFor(() => {
+      expect(state.calls).toContainEqual({
+        method: 'POST',
+        path: '/fs/reveal',
+        body: { path: '/tmp/demo' },
+      });
+    });
+  });
+
   it('opens destroy dialog and requires name confirmation', async () => {
     const user = userEvent.setup();
     const state: FakeState = { optimizeCalled: false, destroyCalled: null, calls: [] };
@@ -166,5 +205,21 @@ describe('OverviewTab', () => {
     await user.clear(input);
     await user.type(input, 'demo');
     expect(confirmBtn).not.toBeDisabled();
+  });
+
+  it('destroys the collection after exact name confirmation', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = { optimizeCalled: false, destroyCalled: null, calls: [] };
+    renderTab(state);
+
+    await user.click(screen.getByRole('button', { name: /destroy/i }));
+    const input = screen.getByPlaceholderText('demo');
+    await user.type(input, 'demo');
+    const confirmBtn = screen.getAllByRole('button', { name: /destroy/i }).pop()!;
+    await user.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(state.destroyCalled).toBe('demo');
+    });
   });
 });

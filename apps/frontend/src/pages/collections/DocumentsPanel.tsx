@@ -40,6 +40,7 @@ import {
 } from '@/features/documents';
 
 import { InsertDocumentDialog } from './InsertDocumentDialog';
+import { formatSparseVectorValue, isSparseVectorType } from './vector-utils';
 import './DocumentsPanel.css';
 
 export interface DocumentsPanelProps {
@@ -72,9 +73,11 @@ export function DocumentsPanel({
       tpl[f.name] = f.dataType === 'STRING' ? '' : 0;
     }
     for (const v of schema.vectors ?? []) {
-      tpl[v.name] = Array.from({ length: v.dimension ?? 3 }, (_, i) =>
-        Math.round(((i + 1) / (v.dimension ?? 3)) * 10) / 10,
-      );
+      tpl[v.name] = isSparseVectorType(v.dataType)
+        ? { '42': 1.0, '314': 0.5 }
+        : Array.from({ length: v.dimension ?? 3 }, (_, i) =>
+            Math.round(((i + 1) / (v.dimension ?? 3)) * 10) / 10,
+          );
     }
     return tpl;
   }, [schema]);
@@ -172,10 +175,13 @@ export function DocumentsPanel({
 
   const columns = useMemo<ReadonlyArray<TableColumn<DocumentRecord>>>(() => {
     const keys = collectColumnKeys(items, schema.fields);
+    const sparseVectorFields = new Set(
+      (schema.vectors ?? []).filter((v) => isSparseVectorType(v.dataType)).map((v) => v.name),
+    );
     const dataColumns: Array<TableColumn<DocumentRecord>> = keys.map((key) => ({
       key,
       header: key,
-      render: (row) => renderCell(row[key]),
+      render: (row) => renderCell(row[key], sparseVectorFields.has(key), key === 'id'),
     }));
     const allSelected =
       items.length > 0 && items.every((row, idx) => selectedIds.has(rowKey(row, idx)));
@@ -233,7 +239,7 @@ export function DocumentsPanel({
       },
     };
     return [selectColumn, ...dataColumns, actionsColumn];
-  }, [items, selectedIds, schema.fields, t]);
+  }, [items, selectedIds, schema.fields, schema.vectors, t]);
 
   async function performDelete(): Promise<void> {
     if (!pendingDelete) return;
@@ -686,9 +692,15 @@ function collectColumnKeys(
   return out;
 }
 
-function renderCell(value: unknown): ReactNode {
+function renderCell(value: unknown, isSparseVector = false, isId = false): ReactNode {
   if (value === null || value === undefined) {
     return <span className="zv-documents-panel__null">—</span>;
+  }
+  if (isSparseVector) {
+    const formatted = formatSparseVectorValue(value);
+    if (formatted) {
+      return <code className="zv-documents-panel__code">{formatted}</code>;
+    }
   }
   if (Array.isArray(value) && value.every((v) => typeof v === 'number')) {
     return renderVectorSummary(value as number[]);
@@ -700,7 +712,7 @@ function renderCell(value: unknown): ReactNode {
     return value ? 'true' : 'false';
   }
   if (typeof value === 'string') {
-    return <span className="zv-documents-panel__string">&quot;{value}&quot;</span>;
+    return isId ? value : <span className="zv-documents-panel__string">&quot;{value}&quot;</span>;
   }
   return String(value);
 }

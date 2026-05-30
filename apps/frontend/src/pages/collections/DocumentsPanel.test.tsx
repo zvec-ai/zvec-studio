@@ -208,13 +208,19 @@ function makeQueryClient(): QueryClient {
 
 function renderPanel(
   state: FakeDocsState,
-  overrides?: { pageSize?: number },
+  overrides?: { pageSize?: number; schema?: Parameters<typeof DocumentsPanel>[0]['schema'] },
 ) {
   const apiClient = makeApiClient(state);
   return renderWithProviders(
     <DocumentsPanel
       collection="demo"
-      schema={{ name: 'demo', vectors: [{ name: 'embedding', dataType: 'VECTOR_FP32', dimension: 128 }], fields: [] }}
+      schema={
+        overrides?.schema ?? {
+          name: 'demo',
+          vectors: [{ name: 'embedding', dataType: 'VECTOR_FP32', dimension: 128 }],
+          fields: [],
+        }
+      }
       pageSize={overrides?.pageSize ?? 50}
     />,
     { apiClient, queryClient: makeQueryClient() },
@@ -232,7 +238,10 @@ describe('DocumentsPanel', () => {
     expect(screen.getByText('embedding')).toBeInTheDocument();
 
     // All 3 rows are rendered by primary key.
-    expect(screen.getByTestId('zv-documents-row-1')).toBeInTheDocument();
+    const firstRow = screen.getByTestId('zv-documents-row-1');
+    expect(firstRow).toBeInTheDocument();
+    expect(within(firstRow).getByText('1')).toBeInTheDocument();
+    expect(within(firstRow).queryByText('"1"')).not.toBeInTheDocument();
     expect(screen.getByTestId('zv-documents-row-2')).toBeInTheDocument();
     expect(screen.getByTestId('zv-documents-row-3')).toBeInTheDocument();
 
@@ -240,6 +249,23 @@ describe('DocumentsPanel', () => {
     const summaries = screen.getAllByTestId('zv-documents-vector-summary');
     expect(summaries.length).toBe(3);
     expect(summaries[0]).toHaveTextContent('(128-d)');
+  });
+
+  it('renders sparse vector keys without JSON quotes', async () => {
+    const state: FakeDocsState = {
+      docs: [{ id: '1', title: 'sparse', embedding: { '42': 1, '314': 0.5 } }],
+      calls: [],
+    };
+    renderPanel(state, {
+      schema: {
+        name: 'demo',
+        vectors: [{ name: 'embedding', dataType: 'SPARSE_VECTOR_FP32', dimension: 768 }],
+        fields: [],
+      },
+    });
+
+    expect(await screen.findByText('{42: 1.0, 314: 0.5}')).toBeInTheDocument();
+    expect(screen.queryByText('{"42":1,"314":0.5}')).not.toBeInTheDocument();
   });
 
   it('summarises document count and truncated flag in the toolbar', async () => {

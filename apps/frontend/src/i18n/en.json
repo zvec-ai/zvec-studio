@@ -627,7 +627,7 @@
           "addDoc": "+ Doc",
           "modeForm": "Form",
           "modeJson": "JSON",
-          "idRequired": "ID *"
+          "idRequired": "Document ID"
         }
       }
     },

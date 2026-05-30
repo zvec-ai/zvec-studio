@@ -55,6 +55,26 @@ class TestSearchRequest:
         with pytest.raises(ValidationError):
             SearchRequest(vector=[])
 
+    def test_accepts_sparse_legacy_vector_payload(self) -> None:
+        req = SearchRequest.model_validate(
+            {"vector": {"42": 1.0, "314": 0.5}, "vectorField": "sparse"}
+        )
+
+        assert req.vector == {"42": 1.0, "314": 0.5}
+        assert req.vectorField == "sparse"
+
+    def test_accepts_sparse_vector_query_payload(self) -> None:
+        req = SearchRequest.model_validate(
+            {"queries": [{"field": "sparse", "vector": {"42": 1.0}}]}
+        )
+
+        assert req.queries is not None
+        assert req.queries[0].vector == {"42": 1.0}
+
+    def test_sparse_vector_cannot_be_empty(self) -> None:
+        with pytest.raises(ValidationError):
+            SearchRequest.model_validate({"vector": {}})
+
     def test_rejects_unknown_field(self) -> None:
         with pytest.raises(ValidationError):
             SearchRequest.model_validate({"vector": [0.1], "unexpected": True})

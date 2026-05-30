@@ -21,7 +21,15 @@ import {
 import { coerceFieldValue } from './coerce-field-value';
 import { useListEmbeddings, useEmbed } from '@/features/ai/hooks';
 import type { EmbedResponse } from '@/features/ai/api';
-import { isDenseEmbedding, getEmbeddingTag, getEmbeddingDimension } from '@/features/ai/utils';
+import { getEmbeddingTag, getEmbeddingDimension } from '@/features/ai/utils';
+import {
+  embeddingMatchesVector,
+  isDenseVectorType,
+  isSparseVectorType,
+  parseRawVector,
+  vectorDimensionLabel,
+  vectorRawTextTemplate,
+} from './vector-utils';
 
 type SubView = 'insert' | 'upsert' | 'update' | 'delete';
 type DeleteMode = 'byId' | 'byFilter';
@@ -93,15 +101,19 @@ interface DocSlot {
 
 function makeDocSlot(
   fields: ReadonlyArray<{ name: string }>,
-  vectors: ReadonlyArray<{ name: string; dimension: number }>,
+  vectors: ReadonlyArray<{ name: string; dataType: string; dimension: number }>,
 ): DocSlot {
   const fv: Record<string, string> = {};
   for (const f of fields) if (f.name !== 'id') fv[f.name] = '';
   const vi: Record<string, VectorInputState> = {};
   for (const v of vectors) {
-    vi[v.name] = { mode: 'raw', rawText: JSON.stringify(Array.from({ length: v.dimension }, () => 0)), embedding: '', embedText: '' };
+    vi[v.name] = { mode: 'raw', rawText: vectorRawTextTemplate(v), embedding: '', embedText: '' };
   }
   return { id: `doc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`, docId: '', fieldValues: fv, vectorInputs: vi };
+}
+
+function embedResultMatchesVector(result: EmbedResponse, vector: { dataType: string }): boolean {
+  return isSparseVectorType(vector.dataType) ? result.kind === 'sparse' : result.kind === 'dense';
 }
 
 /* ─── InsertView ─── */
@@ -120,10 +132,7 @@ function InsertView({
   const mutation = useInsertDocuments(collectionName);
   const embedMutation = useEmbed();
   const embeddingsQuery = useListEmbeddings();
-  const denseEmbeddings = useMemo(
-    () => (embeddingsQuery.data?.items ?? []).filter((e) => isDenseEmbedding(e.config)),
-    [embeddingsQuery.data],
-  );
+  const allEmbeddings = useMemo(() => embeddingsQuery.data?.items ?? [], [embeddingsQuery.data]);
 
   const [slots, setSlots] = useState<DocSlot[]>(() => [makeDocSlot(fields, vectors)]);
   const busy = mutation.isPending || embedMutation.isPending;
@@ -151,7 +160,11 @@ function InsertView({
     for (const v of vectors) {
       const input = firstSlot.vectorInputs[v.name];
       if (input.mode === 'embed' && input.embedding) {
-        const emb = denseEmbeddings.find((e) => e.name === input.embedding);
+        if (!isDenseVectorType(v.dataType)) {
+          result[v.name] = null;
+          continue;
+        }
+        const emb = allEmbeddings.find((e) => e.name === input.embedding);
         const eDim = emb ? getEmbeddingDimension(emb.config) : null;
         if (eDim !== null && eDim !== v.dimension) {
           result[v.name] = { embDim: eDim, fieldDim: v.dimension };
@@ -163,7 +176,7 @@ function InsertView({
       }
     }
     return result;
-  }, [vectors, slots, denseEmbeddings]);
+  }, [vectors, slots, allEmbeddings]);
 
   const anyDimMismatch = Object.values(dimMismatches).some(Boolean);
 
@@ -205,7 +218,7 @@ function InsertView({
               name: input.embedding,
               body: { texts: [input.embedText], isQuery: false },
             });
-            if (res.kind !== 'dense' || !res.vectors[0]) {
+            if (!embedResultMatchesVector(res, v) || !res.vectors[0]) {
               toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.insertFailed') });
               return;
             }
@@ -219,12 +232,12 @@ function InsertView({
             return;
           }
         } else {
-          try {
-            doc[v.name] = JSON.parse(input.rawText || '[]');
-          } catch {
+          const parsed = parseRawVector(input.rawText, v);
+          if (!parsed) {
             toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.invalidJson') });
             return;
           }
+          doc[v.name] = parsed;
         }
       }
       docs.push(doc);
@@ -297,7 +310,7 @@ function InsertView({
                 <div className="zv-dml-vector-field" key={v.name}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                     <span className="zv-mono" style={{ fontWeight: 600 }}>{v.name}</span>
-                    <span className="zv-vq-field-tag">{v.dimension}d {v.dataType}</span>
+                    <span className="zv-vq-field-tag">{vectorDimensionLabel(v)} {v.dataType}</span>
                   </div>
 
                   <div className="zv-input-mode-tabs" style={{ marginBottom: 10 }}>
@@ -315,7 +328,7 @@ function InsertView({
                     <>
                       <select className="zv-form-select" value={input.embedding} onChange={(e) => updateSlotVector(slot.id, v.name, { embedding: e.target.value })} style={{ marginBottom: 8 }}>
                         <option value="">{t('pages.collections.detail.mutate.selectEmbedding')}</option>
-                        {denseEmbeddings.map((emb) => (
+                        {allEmbeddings.filter((emb) => embeddingMatchesVector(emb, v)).map((emb) => (
                           <option key={emb.name} value={emb.name}>{emb.name} ({getEmbeddingTag(emb)})</option>
                         ))}
                       </select>
@@ -360,10 +373,7 @@ function UpsertView({
   const mutation = useUpsertDocuments(collectionName);
   const embedMutation = useEmbed();
   const embeddingsQuery = useListEmbeddings();
-  const denseEmbeddings = useMemo(
-    () => (embeddingsQuery.data?.items ?? []).filter((e) => isDenseEmbedding(e.config)),
-    [embeddingsQuery.data],
-  );
+  const allEmbeddings = useMemo(() => embeddingsQuery.data?.items ?? [], [embeddingsQuery.data]);
 
   const [mode, setMode] = useState<'form' | 'json'>('form');
   const [slots, setSlots] = useState<DocSlot[]>(() => [makeDocSlot(fields, vectors)]);
@@ -415,7 +425,7 @@ function UpsertView({
           }
           try {
             const res: EmbedResponse = await embedMutation.mutateAsync({ name: input.embedding, body: { texts: [input.embedText], isQuery: false } });
-            if (res.kind !== 'dense' || !res.vectors[0]) { toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.upsertFailed') }); return; }
+            if (!embedResultMatchesVector(res, v) || !res.vectors[0]) { toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.upsertFailed') }); return; }
             doc[v.name] = res.vectors[0];
           } catch (err) {
             toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.upsertFailed'), description: err instanceof ApiError ? err.error.message : err instanceof Error ? err.message : String(err) });
@@ -423,8 +433,11 @@ function UpsertView({
           }
         } else {
           // Skip vector if user left it as default (empty or all-zeros)
-          if (!input.rawText || input.rawText === '[]') continue;
-          try { doc[v.name] = JSON.parse(input.rawText); } catch { toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.invalidJson') }); return; }
+          const raw = input.rawText.trim();
+          if (!raw || raw === vectorRawTextTemplate(v)) continue;
+          const parsed = parseRawVector(raw, v);
+          if (!parsed) { toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.invalidJson') }); return; }
+          doc[v.name] = parsed;
         }
       }
       docs.push(doc);
@@ -503,7 +516,7 @@ function UpsertView({
                   <div className="zv-dml-vector-field" key={v.name}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                       <span className="zv-mono" style={{ fontWeight: 600 }}>{v.name}</span>
-                      <span className="zv-vq-field-tag">{v.dimension}d {v.dataType}</span>
+                      <span className="zv-vq-field-tag">{vectorDimensionLabel(v)} {v.dataType}</span>
                     </div>
                     <div className="zv-input-mode-tabs" style={{ marginBottom: 10 }}>
                       <button type="button" className={`zv-input-mode-tab${input.mode === 'raw' ? ' zv-input-mode-tab--active' : ''}`} onClick={() => updateSlotVector(slot.id, v.name, { mode: 'raw' })}>{t('pages.collections.detail.mutate.modeRaw')}</button>
@@ -515,7 +528,7 @@ function UpsertView({
                       <>
                         <select className="zv-form-select" value={input.embedding} onChange={(e) => updateSlotVector(slot.id, v.name, { embedding: e.target.value })} style={{ marginBottom: 8 }}>
                           <option value="">{t('pages.collections.detail.mutate.selectEmbedding')}</option>
-                          {denseEmbeddings.map((emb) => (<option key={emb.name} value={emb.name}>{emb.name} ({getEmbeddingTag(emb)})</option>))}
+                          {allEmbeddings.filter((emb) => embeddingMatchesVector(emb, v)).map((emb) => (<option key={emb.name} value={emb.name}>{emb.name} ({getEmbeddingTag(emb)})</option>))}
                         </select>
                         <textarea className="zv-form-textarea" placeholder={t('pages.collections.detail.mutate.embedTextPlaceholder')} value={input.embedText} onChange={(e) => updateSlotVector(slot.id, v.name, { embedText: e.target.value })} />
                       </>
@@ -553,10 +566,7 @@ function UpdateView({
   const mutation = useUpdateDocuments(collectionName);
   const embedMutation = useEmbed();
   const embeddingsQuery = useListEmbeddings();
-  const denseEmbeddings = useMemo(
-    () => (embeddingsQuery.data?.items ?? []).filter((e) => isDenseEmbedding(e.config)),
-    [embeddingsQuery.data],
-  );
+  const allEmbeddings = useMemo(() => embeddingsQuery.data?.items ?? [], [embeddingsQuery.data]);
 
   const [mode, setMode] = useState<'form' | 'json'>('form');
   const [slots, setSlots] = useState<DocSlot[]>(() => [makeDocSlot(fields, vectors)]);
@@ -619,7 +629,7 @@ function UpdateView({
           if (!input.embedding || !input.embedText.trim()) continue;
           try {
             const res: EmbedResponse = await embedMutation.mutateAsync({ name: input.embedding, body: { texts: [input.embedText], isQuery: false } });
-            if (res.kind !== 'dense' || !res.vectors[0]) continue;
+            if (!embedResultMatchesVector(res, v) || !res.vectors[0]) continue;
             doc[v.name] = res.vectors[0];
           } catch (err) {
             toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.updateFailed'), description: err instanceof ApiError ? err.error.message : err instanceof Error ? err.message : String(err) });
@@ -627,8 +637,10 @@ function UpdateView({
           }
         } else {
           const raw = input.rawText.trim();
-          if (!raw || raw === JSON.stringify(Array.from({ length: v.dimension }, () => 0))) continue;
-          try { doc[v.name] = JSON.parse(raw); } catch { toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.invalidJson') }); return; }
+          if (!raw || raw === vectorRawTextTemplate(v)) continue;
+          const parsed = parseRawVector(raw, v);
+          if (!parsed) { toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.invalidJson') }); return; }
+          doc[v.name] = parsed;
         }
       }
       docs.push(doc);
@@ -697,7 +709,7 @@ function UpdateView({
                   <div className="zv-dml-vector-field" key={v.name}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                       <span className="zv-mono" style={{ fontWeight: 600 }}>{v.name}</span>
-                      <span className="zv-vq-field-tag">{v.dimension}d {v.dataType}</span>
+                      <span className="zv-vq-field-tag">{vectorDimensionLabel(v)} {v.dataType}</span>
                     </div>
                     <div className="zv-input-mode-tabs" style={{ marginBottom: 10 }}>
                       <button type="button" className={`zv-input-mode-tab${input.mode === 'raw' ? ' zv-input-mode-tab--active' : ''}`} onClick={() => updateSlotVector(slot.id, v.name, { mode: 'raw' })}>{t('pages.collections.detail.mutate.modeRaw')}</button>
@@ -709,7 +721,7 @@ function UpdateView({
                       <>
                         <select className="zv-form-select" value={input.embedding} onChange={(e) => updateSlotVector(slot.id, v.name, { embedding: e.target.value })} style={{ marginBottom: 8 }}>
                           <option value="">{t('pages.collections.detail.mutate.selectEmbedding')}</option>
-                          {denseEmbeddings.map((emb) => (<option key={emb.name} value={emb.name}>{emb.name} ({getEmbeddingTag(emb)})</option>))}
+                          {allEmbeddings.filter((emb) => embeddingMatchesVector(emb, v)).map((emb) => (<option key={emb.name} value={emb.name}>{emb.name} ({getEmbeddingTag(emb)})</option>))}
                         </select>
                         <textarea className="zv-form-textarea" placeholder={t('pages.collections.detail.mutate.embedTextPlaceholder')} value={input.embedText} onChange={(e) => updateSlotVector(slot.id, v.name, { embedText: e.target.value })} />
                       </>

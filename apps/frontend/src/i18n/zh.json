@@ -627,7 +627,7 @@
           "addDoc": "+ 文档",
           "modeForm": "表单",
           "modeJson": "JSON",
-          "idRequired": "ID *"
+          "idRequired": "文档 ID"
         }
       }
     },

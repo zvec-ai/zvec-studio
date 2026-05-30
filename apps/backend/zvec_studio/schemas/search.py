@@ -89,6 +89,10 @@ QueryParamSpec = Annotated[
     Field(discriminator="type"),
 ]
 
+SparseVector = Annotated[dict[str, float], Field(min_length=1)]
+DenseVector = Annotated[list[float], Field(min_length=1, max_length=32_768)]
+VectorPayload = DenseVector | SparseVector
+
 
 class VectorQuerySpec(BaseModel):
     """One ANN query targeting a single vector field.
@@ -107,7 +111,7 @@ class VectorQuerySpec(BaseModel):
         default=None,
         description="Existing document id; the stored vector is used as query.",
     )
-    vector: Annotated[list[float], Field(min_length=1, max_length=32_768)] | None = (
+    vector: VectorPayload | None = (
         Field(default=None, description="Explicit query vector.")
     )
     param: QueryParamSpec | None = Field(
@@ -140,9 +144,7 @@ class SearchRequest(BaseModel):
     ) = None
 
     # Legacy single-vector form (still accepted; folded into ``queries[0]``).
-    vector: Annotated[list[float], Field(min_length=1, max_length=32_768)] | None = (
-        None
-    )
+    vector: VectorPayload | None = None
     vectorField: str | None = None
 
     # Common params.

@@ -122,6 +122,29 @@ describe('<CreateCollectionDialog />', () => {
     ).toBeInTheDocument();
   });
 
+  it('hides dense-only controls for sparse vector fields', async () => {
+    const state: FakeState = { calls: [] };
+    const apiClient = makeApiClient(state);
+    renderWithProviders(<Harness />, { apiClient });
+
+    await userEvent.type(screen.getByTestId('zv-create-name'), 'sparseCol');
+    await userEvent.type(screen.getByTestId('zv-create-path'), '/tmp/sparseCol');
+    await userEvent.selectOptions(screen.getByLabelText('Type'), 'SPARSE_VECTOR_FP32');
+
+    expect(screen.queryByLabelText('Dimension')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Metric')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId('zv-create-submit'));
+
+    await waitFor(() => {
+      expect(state.calls.some((c) => c.method === 'POST' && c.path === '/collections')).toBe(true);
+    });
+    const post = state.calls.find((c) => c.method === 'POST')!;
+    const body = post.body as { schema: { vectors: Array<{ dataType: string; indexParam: { metric: string } }> } };
+    expect(body.schema.vectors[0]?.dataType).toBe('SPARSE_VECTOR_FP32');
+    expect(body.schema.vectors[0]?.indexParam.metric).toBe('IP');
+  });
+
   it('submits the normalized payload and closes on success', async () => {
     const state: FakeState = { calls: [] };
     const apiClient = makeApiClient(state);

@@ -29,6 +29,14 @@ function isVectorType(dt: string): boolean {
   return (VECTOR_TYPES as readonly string[]).includes(dt);
 }
 
+function isSparseVectorType(dt: string): boolean {
+  return dt.startsWith('SPARSE_VECTOR');
+}
+
+function isDenseVectorType(dt: string): boolean {
+  return isVectorType(dt) && !isSparseVectorType(dt);
+}
+
 /**
  * Infer the path separator from an existing path string.
  * If the path contains backslash (Windows-style), return `\`; otherwise `/`.
@@ -208,35 +216,27 @@ export function CreateCollectionDialog({
       next.name = t('pages.collections.create.errors.nameFormat');
     if (!path.trim()) next.path = t('pages.collections.create.errors.pathRequired');
     for (const f of fields) {
-      if (isVectorType(f.dataType)) {
+      if (!f.name.trim() || !FIELD_NAME_RE.test(f.name)) {
+        next[`field_${f.id}`] = t('pages.collections.create.errors.fieldNameRequired');
+      } else if (RESERVED_FIELD_NAMES.has(f.name)) {
+        next[`field_${f.id}`] = t('pages.collections.create.errors.reservedName', { name: f.name });
+      }
+      if (isDenseVectorType(f.dataType)) {
         const dim = Number.parseInt(f.dimension, 10);
         if (!Number.isFinite(dim) || dim < 1 || dim > 32768) {
-          next.dimension = t('pages.collections.create.errors.dimRange');
-          break;
-        }
-      } else {
-        if (!f.name.trim() || !FIELD_NAME_RE.test(f.name)) {
-          next.fields = t('pages.collections.create.errors.fieldNameRequired');
-          break;
-        }
-        if (RESERVED_FIELD_NAMES.has(f.name)) {
-          next.fields = t('pages.collections.create.errors.reservedName', { name: f.name });
-          break;
+          next[`dim_${f.id}`] = t('pages.collections.create.errors.dimRange');
         }
       }
     }
     // Check duplicate field names across all fields (vector + scalar)
-    if (!next.fields) {
-      const seen = new Set<string>();
-      for (const f of fields) {
-        const n = f.name.trim();
-        if (!n) continue;
-        if (seen.has(n)) {
-          next.fields = t('pages.collections.create.errors.duplicateField', { name: n });
-          break;
-        }
-        seen.add(n);
+    const seen = new Map<string, string>();
+    for (const f of fields) {
+      const n = f.name.trim();
+      if (!n) continue;
+      if (seen.has(n) && !next[`field_${f.id}`]) {
+        next[`field_${f.id}`] = t('pages.collections.create.errors.duplicateField', { name: n });
       }
+      if (!seen.has(n)) seen.set(n, f.id);
     }
     return next;
   }
@@ -258,7 +258,7 @@ export function CreateCollectionDialog({
         dimension: Number.parseInt(v.dimension, 10),
         indexParam: {
           indexType: v.indexType,
-          metric: v.metric,
+          metric: isSparseVectorType(v.dataType) ? 'IP' : v.metric,
           params: buildVectorParams(v),
         },
       })),
@@ -360,7 +360,7 @@ export function CreateCollectionDialog({
           {errors.fields && <p className="zv-create__error" role="alert">{errors.fields}</p>}
           <div className="zv-create__field-list">
             {fields.map((field) => (
-              <div key={field.id} className="zv-create__field-card">
+              <div key={field.id} className={`zv-create__field-card${errors[`field_${field.id}`] ? ' zv-create__field-card--invalid' : ''}`}>
                 <CloseButton
                   className="zv-create__field-close"
                   onClick={() => removeField(field.id)}
@@ -371,12 +371,19 @@ export function CreateCollectionDialog({
                   <Input
                     label={t('pages.collections.create.fieldName')}
                     value={field.name}
-                    onChange={(e) => updateField(field.id, { name: e.target.value })}
+                    onChange={(e) => {
+                      updateField(field.id, { name: e.target.value });
+                      clearError(`field_${field.id}`);
+                    }}
+                    errorText={errors[`field_${field.id}`]}
                   />
                   <Select
                     label={t('pages.collections.create.fieldType')}
                     value={field.dataType}
-                    onChange={(e) => updateField(field.id, { dataType: e.target.value as AnyDataType })}
+                    onChange={(e) => {
+                      updateField(field.id, { dataType: e.target.value as AnyDataType });
+                      clearError(`dim_${field.id}`);
+                    }}
                     options={ALL_DATA_TYPES.map((dt) => ({ value: dt, label: dt }))}
                   />
                 </div>
@@ -384,19 +391,26 @@ export function CreateCollectionDialog({
                 {isVectorType(field.dataType) && (
                   <>
                     <div className="zv-create__field-vector">
-                      <Input
-                        label={t('pages.collections.create.vectorDim')}
-                        type="number"
-                        value={field.dimension}
-                        onChange={(e) => updateField(field.id, { dimension: e.target.value })}
-                        errorText={errors.dimension}
-                      />
-                      <Select
-                        label={t('pages.collections.create.metric')}
-                        value={field.metric}
-                        onChange={(e) => updateField(field.id, { metric: e.target.value as (typeof METRICS)[number] })}
-                        options={METRICS.map((m) => ({ value: m, label: m }))}
-                      />
+                      {isDenseVectorType(field.dataType) && (
+                        <>
+                          <Input
+                            label={t('pages.collections.create.vectorDim')}
+                            type="number"
+                            value={field.dimension}
+                            onChange={(e) => {
+                              updateField(field.id, { dimension: e.target.value });
+                              clearError(`dim_${field.id}`);
+                            }}
+                            errorText={errors[`dim_${field.id}`]}
+                          />
+                          <Select
+                            label={t('pages.collections.create.metric')}
+                            value={field.metric}
+                            onChange={(e) => updateField(field.id, { metric: e.target.value as (typeof METRICS)[number] })}
+                            options={METRICS.map((m) => ({ value: m, label: m }))}
+                          />
+                        </>
+                      )}
                       <Select
                         label={t('pages.collections.create.indexType')}
                         value={field.indexType}

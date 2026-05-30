@@ -8,6 +8,7 @@ import type { CollectionSummary } from '@/features/collections/api';
 import type { DocumentBrowseRequest } from '@/features/documents/api';
 import { useDocumentsBrowse, useDocumentDetails } from '@/features/documents/hooks';
 import { FilterBuilder } from './FilterBuilder';
+import { formatSparseVectorValue, isSparseVectorType } from './vector-utils';
 
 type BrowseMode = 'filter' | 'id';
 
@@ -27,6 +28,10 @@ export function BrowseTab({ collection }: BrowseTabProps): JSX.Element {
   const toast = useToast();
   const { schema, stats } = collection;
   const fields = useMemo(() => schema.fields ?? [], [schema.fields]);
+  const sparseVectorFields = useMemo(
+    () => new Set((schema.vectors ?? []).filter((v) => isSparseVectorType(v.dataType)).map((v) => v.name)),
+    [schema.vectors],
+  );
 
   const [mode, setMode] = useState<BrowseMode>('filter');
   const [idInput, setIdInput] = useState('');
@@ -206,7 +211,7 @@ export function BrowseTab({ collection }: BrowseTabProps): JSX.Element {
                             className="zv-cell-copy__text zv-browse-id-btn"
                             onClick={() => handleFetchById(String(row.id))}
                           >
-                            {formatCellValue(row[key])}
+                            {formatCellValue(row[key], false, true)}
                           </button>
                           <button type="button" className="zv-cell-copy__btn" onClick={() => handleCopyCell(row[key])}>
                             {CopyIcon}
@@ -214,7 +219,7 @@ export function BrowseTab({ collection }: BrowseTabProps): JSX.Element {
                         </div>
                       ) : (
                         <div className="zv-cell-copy">
-                          <span className="zv-cell-copy__text">{formatCellValue(row[key])}</span>
+                          <span className="zv-cell-copy__text">{formatCellValue(row[key], sparseVectorFields.has(key), key === 'id')}</span>
                           {row[key] != null && (
                             <button type="button" className="zv-cell-copy__btn" onClick={() => handleCopyCell(row[key])}>
                               {CopyIcon}
@@ -249,14 +254,18 @@ export function BrowseTab({ collection }: BrowseTabProps): JSX.Element {
   );
 }
 
-function formatCellValue(value: unknown): string {
+function formatCellValue(value: unknown, isSparseVector = false, isId = false): string {
   if (value === null || value === undefined) return '—';
+  if (isSparseVector) {
+    const formatted = formatSparseVectorValue(value);
+    if (formatted) return formatted;
+  }
   if (Array.isArray(value)) {
     if (value.length > 4) return `[${value.slice(0, 3).map(String).join(', ')}, ...]`;
     return `[${value.map(String).join(', ')}]`;
   }
   if (typeof value === 'object') return JSON.stringify(value);
   if (typeof value === 'boolean') return value ? 'true' : 'false';
-  if (typeof value === 'string') return `"${value}"`;
+  if (typeof value === 'string') return isId ? value : `"${value}"`;
   return String(value);
 }

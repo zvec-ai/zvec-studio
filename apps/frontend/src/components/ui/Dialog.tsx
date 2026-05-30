@@ -8,6 +8,11 @@ import { useEffect, useRef, type ReactNode } from 'react';
 
 import './Dialog.css';
 
+function notifyDialogStackChange(): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new Event('zv-dialog-stack-change'));
+}
+
 export interface DialogProps {
   readonly open: boolean;
   readonly onClose: () => void;
@@ -32,12 +37,14 @@ export function Dialog({ open, onClose, title, ariaLabel, size = 'default', chil
       } else {
         dialog.setAttribute('open', '');
       }
+      notifyDialogStackChange();
     } else if (!open && dialog.open) {
       if (typeof dialog.close === 'function') {
         dialog.close();
       } else {
         dialog.removeAttribute('open');
       }
+      notifyDialogStackChange();
     }
   }, [open]);
 

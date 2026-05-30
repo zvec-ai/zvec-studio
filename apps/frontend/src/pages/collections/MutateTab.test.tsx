@@ -21,6 +21,8 @@ interface FakeState {
   updated: unknown[];
   deletedIds: string[];
   deletedFilters: string[];
+  embeddings: Array<{ name: string; description: string | null; config: Record<string, unknown> }>;
+  embedResponse?: unknown;
   calls: Array<{ method: string; path: string; body?: unknown }>;
 }
 
@@ -35,10 +37,17 @@ function makeApiClient(state: FakeState): ApiClient {
       state.calls.push({ method, path, body: opts?.body });
 
       if (method === 'GET' && path === '/ai/embeddings') {
-        return { items: [] } as unknown as T;
+        return { items: state.embeddings } as unknown as T;
       }
       if (method === 'GET' && path === '/ai/rerankers') {
         return { items: [] } as unknown as T;
+      }
+      if (method === 'POST' && path.includes(':embed')) {
+        return (state.embedResponse ?? {
+          kind: 'dense',
+          dimension: 4,
+          vectors: [[0.1, 0.2, 0.3, 0.4]],
+        }) as unknown as T;
       }
       // Insert: POST /collections/{name}/documents
       if (method === 'POST' && /\/collections\/[^/]+\/documents$/.test(path)) {
@@ -104,12 +113,38 @@ const COLLECTION = {
 };
 
 function freshState(): FakeState {
-  return { inserted: [], upserted: [], updated: [], deletedIds: [], deletedFilters: [], calls: [] };
+  return {
+    inserted: [],
+    upserted: [],
+    updated: [],
+    deletedIds: [],
+    deletedFilters: [],
+    embeddings: [],
+    calls: [],
+  };
 }
 
-function renderTab(state: FakeState) {
+const SPARSE_COLLECTION = {
+  ...COLLECTION,
+  schema: {
+    ...COLLECTION.schema,
+    vectors: [
+      {
+        name: 'embedding',
+        dataType: 'SPARSE_VECTOR_FP32' as const,
+        dimension: 768,
+        indexParam: { indexType: 'HNSW', metric: 'IP', params: {} },
+      },
+    ],
+    fields: [
+      { name: 'title', dataType: 'STRING', nullable: false },
+    ],
+  },
+};
+
+function renderTab(state: FakeState, collection: unknown = COLLECTION) {
   return renderWithProviders(
-    <MutateTab collection={COLLECTION as any} />,
+    <MutateTab collection={collection as any} />,
     { apiClient: makeApiClient(state), queryClient: makeQueryClient() },
   );
 }
@@ -130,6 +165,18 @@ describe('MutateTab', () => {
     expect(screen.getByText(/insert document/i)).toBeInTheDocument();
     expect(screen.getByText('title')).toBeInTheDocument();
     expect(screen.getByText('score')).toBeInTheDocument();
+  });
+
+  it('uses the same document id label in insert and upsert forms', async () => {
+    const user = userEvent.setup();
+    renderTab(freshState());
+
+    expect(screen.getByText('Document ID')).toBeInTheDocument();
+
+    await user.click(screen.getByText('Upsert'));
+
+    expect(screen.getByText('Document ID')).toBeInTheDocument();
+    expect(screen.queryByText('ID *')).not.toBeInTheDocument();
   });
 
   it('submits an insert and calls the API', async () => {
@@ -159,6 +206,113 @@ describe('MutateTab', () => {
       const toast = screen.getByTestId('zv-toast');
       expect(toast).toHaveTextContent(/inserted/i);
     });
+  });
+
+  it('submits unquoted sparse raw vectors from the insert form', async () => {
+    const user = userEvent.setup();
+    const state = freshState();
+    renderTab(state, SPARSE_COLLECTION);
+
+    await user.type(screen.getByPlaceholderText('Document ID (required)'), 'doc-sparse');
+    await user.type(screen.getByPlaceholderText('STRING'), 'Sparse Doc');
+
+    const vectorInput = screen.getByDisplayValue('{42: 1.0}') as HTMLTextAreaElement;
+    await user.clear(vectorInput);
+    await user.click(vectorInput);
+    await user.paste('{42: 1.0, 314: 0.5}');
+
+    const submitBtn = document.querySelector('button[type="submit"]') as HTMLButtonElement;
+    await user.click(submitBtn);
+
+    await waitFor(() => {
+      expect(state.inserted).toHaveLength(1);
+    });
+    expect((state.inserted[0] as any).embedding).toEqual({ '42': 1, '314': 0.5 });
+  });
+
+  it('submits dense embedding output from the insert form', async () => {
+    const user = userEvent.setup();
+    const state = freshState();
+    state.embeddings = [
+      { name: 'local-dense', description: null, config: { type: 'default_local_dense', dimension: 4 } },
+    ];
+    state.embedResponse = {
+      kind: 'dense',
+      dimension: 4,
+      vectors: [[0.1, 0.2, 0.3, 0.4]],
+    };
+    renderTab(state);
+
+    await user.type(screen.getByPlaceholderText('Document ID (required)'), 'doc-dense');
+    await user.type(screen.getByPlaceholderText('STRING'), 'Dense Doc');
+    await user.click(screen.getByRole('button', { name: /^embed$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/local-dense/)).toBeInTheDocument();
+    });
+
+    const embeddingSelect = document.querySelector('select.zv-form-select') as HTMLSelectElement;
+    await user.selectOptions(embeddingSelect, 'local-dense');
+    const textInput = screen.getByPlaceholderText('Enter text to embed...');
+    await user.click(textInput);
+    await user.paste('dense document text');
+
+    const submitBtn = document.querySelector('button[type="submit"]') as HTMLButtonElement;
+    await user.click(submitBtn);
+
+    await waitFor(() => {
+      expect(state.inserted).toHaveLength(1);
+    });
+
+    const embedCall = state.calls.find((c) => c.path.includes('/ai/embeddings/local-dense:embed'));
+    expect(embedCall?.body).toEqual({
+      texts: ['dense document text'],
+      isQuery: false,
+    });
+    expect((state.inserted[0] as any).embedding).toEqual([0.1, 0.2, 0.3, 0.4]);
+  });
+
+  it('submits sparse embedding output from the insert form', async () => {
+    const user = userEvent.setup();
+    const state = freshState();
+    state.embeddings = [
+      { name: 'local-dense', description: null, config: { type: 'default_local_dense', dimension: 4 } },
+      { name: 'bm25', description: null, config: { type: 'bm25' } },
+    ];
+    state.embedResponse = {
+      kind: 'sparse',
+      vectors: [{ '42': 1, '314': 0.5 }],
+    };
+    renderTab(state, SPARSE_COLLECTION);
+
+    await user.type(screen.getByPlaceholderText('Document ID (required)'), 'doc-sparse-embed');
+    await user.type(screen.getByPlaceholderText('STRING'), 'Sparse Doc');
+    await user.click(screen.getByRole('button', { name: /^embed$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/bm25/)).toBeInTheDocument();
+    });
+
+    const embeddingSelect = document.querySelector('select.zv-form-select') as HTMLSelectElement;
+    expect(Array.from(embeddingSelect.options).map((o) => o.value)).toEqual(['', 'bm25']);
+    await user.selectOptions(embeddingSelect, 'bm25');
+    const textInput = screen.getByPlaceholderText('Enter text to embed...');
+    await user.click(textInput);
+    await user.paste('sparse document text');
+
+    const submitBtn = document.querySelector('button[type="submit"]') as HTMLButtonElement;
+    await user.click(submitBtn);
+
+    await waitFor(() => {
+      expect(state.inserted).toHaveLength(1);
+    });
+
+    const embedCall = state.calls.find((c) => c.path.includes('/ai/embeddings/bm25:embed'));
+    expect(embedCall?.body).toEqual({
+      texts: ['sparse document text'],
+      isQuery: false,
+    });
+    expect((state.inserted[0] as any).embedding).toEqual({ '42': 1, '314': 0.5 });
   });
 
   it('switches to Delete tab and shows By ID mode', async () => {
@@ -208,6 +362,31 @@ describe('MutateTab', () => {
     expect(screen.getByPlaceholderText(/category = 'archived'/i)).toBeInTheDocument();
   });
 
+  it('deletes documents by filter after confirmation', async () => {
+    const user = userEvent.setup();
+    const state = freshState();
+    renderTab(state);
+
+    await user.click(screen.getByText('Delete'));
+    await user.click(screen.getByText(/by filter/i));
+
+    const filterInput = screen.getByPlaceholderText(/category = 'archived'/i);
+    await user.type(filterInput, "title = 'old'");
+
+    const submitBtn = document.querySelector('button[type="submit"]') as HTMLButtonElement;
+    await user.click(submitBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/cannot be undone/i)).toBeInTheDocument();
+    });
+    const dialogDeleteBtn = screen.getAllByRole('button', { name: /^delete$/i }).pop()!;
+    await user.click(dialogDeleteBtn);
+
+    await waitFor(() => {
+      expect(state.deletedFilters).toEqual(["title = 'old'"]);
+    });
+  });
+
   it('switches to Upsert tab and shows form/JSON mode toggle', async () => {
     const user = userEvent.setup();
     renderTab(freshState());
@@ -219,6 +398,28 @@ describe('MutateTab', () => {
     expect(screen.getByText('JSON')).toBeInTheDocument();
   });
 
+  it('submits an upsert form payload without untouched vectors', async () => {
+    const user = userEvent.setup();
+    const state = freshState();
+    renderTab(state);
+
+    await user.click(screen.getByText('Upsert'));
+    await user.type(screen.getByPlaceholderText(/document id/i), 'doc-upsert');
+    await user.type(screen.getByPlaceholderText('STRING'), 'Upserted Doc');
+
+    const submitBtn = document.querySelector('button[type="submit"]') as HTMLButtonElement;
+    await user.click(submitBtn);
+
+    await waitFor(() => {
+      expect(state.upserted).toHaveLength(1);
+    });
+    expect(state.upserted[0]).toMatchObject({
+      id: 'doc-upsert',
+      title: 'Upserted Doc',
+    });
+    expect((state.upserted[0] as Record<string, unknown>).embedding).toBeUndefined();
+  });
+
   it('switches to Update tab', async () => {
     const user = userEvent.setup();
     renderTab(freshState());
@@ -227,6 +428,28 @@ describe('MutateTab', () => {
 
     expect(screen.getByText(/update documents/i)).toBeInTheDocument();
     expect(screen.getByText(/partial update/i)).toBeInTheDocument();
+  });
+
+  it('submits an update form payload without untouched vectors', async () => {
+    const user = userEvent.setup();
+    const state = freshState();
+    renderTab(state);
+
+    await user.click(screen.getByText('Update'));
+    await user.type(screen.getByPlaceholderText(/document id/i), 'doc-update');
+    await user.type(screen.getByPlaceholderText('STRING'), 'Updated Doc');
+
+    const submitBtn = document.querySelector('button[type="submit"]') as HTMLButtonElement;
+    await user.click(submitBtn);
+
+    await waitFor(() => {
+      expect(state.updated).toHaveLength(1);
+    });
+    expect(state.updated[0]).toMatchObject({
+      id: 'doc-update',
+      title: 'Updated Doc',
+    });
+    expect((state.updated[0] as Record<string, unknown>).embedding).toBeUndefined();
   });
 
   it('adds a second document slot in Insert view', async () => {

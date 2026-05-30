@@ -14,6 +14,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
 import type { ErrorSeverity } from '@/lib/error-mapper';
@@ -32,6 +33,12 @@ const DEFAULT_TTL: Record<ErrorSeverity, number | null> = {
   warning: 5_000,
   error: 7_000,
 };
+
+function resolveToastHost(): HTMLElement | null {
+  if (typeof document === 'undefined') return null;
+  const openDialogs = Array.from(document.querySelectorAll<HTMLDialogElement>('dialog[open]'));
+  return openDialogs.at(-1) ?? document.body;
+}
 
 export function ToastProvider({ children }: { children: ReactNode }): JSX.Element {
   const { t } = useTranslation();
@@ -74,27 +81,76 @@ export function ToastProvider({ children }: { children: ReactNode }): JSX.Elemen
     [push, dismiss, items],
   );
 
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const [portalHost, setPortalHost] = useState<HTMLElement | null>(() => resolveToastHost());
+
+  const refreshHost = useCallback(() => {
+    const nextHost = resolveToastHost();
+    setPortalHost((prev) => (prev === nextHost ? prev : nextHost));
+  }, []);
+
+  useEffect(() => {
+    refreshHost();
+  }, [items.length, refreshHost]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.addEventListener('zv-dialog-stack-change', refreshHost);
+    return () => {
+      window.removeEventListener('zv-dialog-stack-change', refreshHost);
+    };
+  }, [refreshHost]);
+
+  // Keep the toast viewport in the browser top layer. Re-showing when a toast
+  // arrives moves it above any modal dialog that was opened after app mount.
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el || typeof el.showPopover !== 'function') return;
+    const isOpen = el.matches(':popover-open');
+    try {
+      if (items.length === 0) {
+        if (isOpen && typeof el.hidePopover === 'function') el.hidePopover();
+        return;
+      }
+      if (isOpen && typeof el.hidePopover === 'function') el.hidePopover();
+      el.showPopover();
+    } catch {
+      // Already showing, unsupported, or blocked by the current browser state.
+    }
+  }, [items.length, portalHost]);
+
+  const viewport = (
+    <div
+      ref={viewportRef}
+      className="zv-toast-viewport"
+      role="region"
+      aria-label={t('components.toast.notifications')}
+      // @ts-expect-error -- popover is valid HTML but not yet in React's type defs
+      popover="manual"
+    >
+      {items.map((toast) => (
+        <div
+          key={toast.id}
+          className={`zv-toast zv-toast--${toast.severity}`}
+          role={toast.severity === 'error' ? 'alert' : 'status'}
+          data-testid="zv-toast"
+        >
+          <div className="zv-toast__title">{toast.title}</div>
+          {toast.description && <div className="zv-toast__body">{toast.description}</div>}
+          <CloseButton
+            className="zv-toast__close"
+            aria-label={t('components.toast.dismiss')}
+            onClick={() => dismiss(toast.id)}
+          />
+        </div>
+      ))}
+    </div>
+  );
+
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="zv-toast-viewport" role="region" aria-label={t('components.toast.notifications')}>
-        {items.map((toast) => (
-          <div
-            key={toast.id}
-            className={`zv-toast zv-toast--${toast.severity}`}
-            role={toast.severity === 'error' ? 'alert' : 'status'}
-            data-testid="zv-toast"
-          >
-            <div className="zv-toast__title">{toast.title}</div>
-            {toast.description && <div className="zv-toast__body">{toast.description}</div>}
-            <CloseButton
-              className="zv-toast__close"
-              aria-label={t('components.toast.dismiss')}
-              onClick={() => dismiss(toast.id)}
-            />
-          </div>
-        ))}
-      </div>
+      {portalHost ? createPortal(viewport, portalHost) : viewport}
     </ToastContext.Provider>
   );
 }

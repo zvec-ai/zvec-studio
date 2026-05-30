@@ -34,6 +34,7 @@ import {
 } from '@/features/searches';
 import type { CollectionSummary } from '@/features/collections';
 import { useListRerankers, useListEmbeddings, useEmbed } from '@/features/ai';
+import { embeddingMatchesVector, isDenseVectorType, isSparseVectorType, parseRawVector, vectorRawTextTemplate } from './vector-utils';
 
 import './SearchPanel.css';
 
@@ -56,7 +57,6 @@ export function SearchPanel({ collection, schema }: SearchPanelProps): JSX.Eleme
 
   const vectors = useMemo(() => schema.vectors ?? [], [schema.vectors]);
   const defaultVectorField = vectors[0]?.name ?? '';
-  const defaultDimension = vectors[0]?.dimension ?? 0;
 
   /**
    * Two query modes are supported:
@@ -70,7 +70,7 @@ export function SearchPanel({ collection, schema }: SearchPanelProps): JSX.Eleme
   const [embeddingName, setEmbeddingName] = useState<string>('');
 
   const [vectorText, setVectorText] = useState<string>(() =>
-    JSON.stringify(defaultVectorOf(defaultDimension), null, 0),
+    vectors[0] ? vectorRawTextTemplate(vectors[0]) : '[]',
   );
   const [topK, setTopK] = useState<number>(10);
   const [filter, setFilter] = useState<string>('');
@@ -78,13 +78,15 @@ export function SearchPanel({ collection, schema }: SearchPanelProps): JSX.Eleme
   const [vectorField, setVectorField] = useState<string>(defaultVectorField);
   const [rerankerName, setRerankerName] = useState<string>('');
   const [parseError, setParseError] = useState<string | null>(null);
+  const selectedVector = vectors.find((v) => v.name === vectorField) ?? vectors[0] ?? null;
+  const defaultDimension = selectedVector && isDenseVectorType(selectedVector.dataType) ? selectedVector.dimension ?? 0 : 0;
 
   const [response, setResponse] = useState<SearchResponse | null>(null);
   const [selectedResult, setSelectedResult] = useState<SearchResult | null>(null);
 
   // If we swap between Collections, reset the form + result surface.
   useEffect(() => {
-    setVectorText(JSON.stringify(defaultVectorOf(defaultDimension), null, 0));
+    setVectorText(vectors[0] ? vectorRawTextTemplate(vectors[0]) : '[]');
     setTopK(10);
     setFilter('');
     setOutputFieldsText('');
@@ -96,7 +98,7 @@ export function SearchPanel({ collection, schema }: SearchPanelProps): JSX.Eleme
     setParseError(null);
     setResponse(null);
     setSelectedResult(null);
-  }, [collection, defaultDimension, defaultVectorField]);
+  }, [collection, defaultVectorField, vectors]);
 
   const vectorFieldOptions: ReadonlyArray<SelectOption> = useMemo(
     () => vectors.map((v) => ({ value: v.name, label: v.name })),
@@ -121,9 +123,11 @@ export function SearchPanel({ collection, schema }: SearchPanelProps): JSX.Eleme
         value: '',
         label: t('pages.collections.detail.searchPanel.embeddingNone'),
       },
-      ...items.map((e) => ({ value: e.name, label: e.name })),
+      ...items
+        .filter((e) => embeddingMatchesVector(e, selectedVector))
+        .map((e) => ({ value: e.name, label: e.name })),
     ];
-  }, [embeddings.data, t]);
+  }, [embeddings.data, selectedVector, t]);
 
   const columns: ReadonlyArray<TableColumn<SearchResult>> = useMemo(
     () => [
@@ -150,7 +154,7 @@ export function SearchPanel({ collection, schema }: SearchPanelProps): JSX.Eleme
     event.preventDefault();
     setParseError(null);
 
-    let vector: ReadonlyArray<number> | null;
+    let vector: SearchRequest['vector'] = null;
     if (mode === 'text') {
       if (!queryText.trim()) {
         setParseError(t('pages.collections.detail.searchPanel.errors.queryRequired'));
@@ -165,7 +169,11 @@ export function SearchPanel({ collection, schema }: SearchPanelProps): JSX.Eleme
           name: embeddingName,
           body: { texts: [queryText], isQuery: true },
         });
-        if (res.kind !== 'dense') {
+        if (selectedVector && isDenseVectorType(selectedVector.dataType) && res.kind !== 'dense') {
+          setParseError(t('pages.collections.detail.searchPanel.errors.embeddingNotDense'));
+          return;
+        }
+        if (selectedVector && isSparseVectorType(selectedVector.dataType) && res.kind !== 'sparse') {
           setParseError(t('pages.collections.detail.searchPanel.errors.embeddingNotDense'));
           return;
         }
@@ -174,7 +182,7 @@ export function SearchPanel({ collection, schema }: SearchPanelProps): JSX.Eleme
           setParseError(t('pages.collections.detail.searchPanel.errors.embeddingEmpty'));
           return;
         }
-        if (defaultDimension > 0 && vector.length !== defaultDimension) {
+        if (defaultDimension > 0 && Array.isArray(vector) && vector.length !== defaultDimension) {
           setParseError(
             t('pages.collections.detail.searchPanel.errors.dimensionMismatch', {
               expected: defaultDimension,
@@ -200,12 +208,12 @@ export function SearchPanel({ collection, schema }: SearchPanelProps): JSX.Eleme
         return;
       }
     } else {
-      const parsed = parseVector(vectorText);
+      const parsed = parseRawVector(vectorText, selectedVector);
       if (!parsed) {
         setParseError(t('pages.collections.detail.searchPanel.errors.invalidVector'));
         return;
       }
-      if (defaultDimension > 0 && parsed.length !== defaultDimension) {
+      if (defaultDimension > 0 && Array.isArray(parsed) && parsed.length !== defaultDimension) {
         setParseError(
           t('pages.collections.detail.searchPanel.errors.dimensionMismatch', {
             expected: defaultDimension,
@@ -219,7 +227,7 @@ export function SearchPanel({ collection, schema }: SearchPanelProps): JSX.Eleme
 
     const outputFields = parseOutputFields(outputFieldsText);
     const body: SearchRequest = {
-      vector: vector as number[],
+      vector,
       topK,
       filter: filter.trim() ? filter.trim() : null,
       outputFields: outputFields.length > 0 ? outputFields : null,
@@ -309,7 +317,7 @@ export function SearchPanel({ collection, schema }: SearchPanelProps): JSX.Eleme
           <div className="zv-search-panel__vector">
             <label htmlFor="zv-search-vector" className="zv-search-panel__label">
               {t('pages.collections.detail.searchPanel.vectorLabel', {
-                dimension: defaultDimension || '?',
+                dimension: defaultDimension || (selectedVector && isSparseVectorType(selectedVector.dataType) ? 'sparse' : '?'),
               })}
             </label>
             <textarea
@@ -386,7 +394,13 @@ export function SearchPanel({ collection, schema }: SearchPanelProps): JSX.Eleme
               label={t('pages.collections.detail.searchPanel.vectorFieldLabel')}
               options={vectorFieldOptions}
               value={vectorField}
-              onChange={(e) => setVectorField(e.target.value)}
+              onChange={(e) => {
+                const nextName = e.target.value;
+                const nextVector = vectors.find((v) => v.name === nextName);
+                setVectorField(nextName);
+                setEmbeddingName('');
+                if (nextVector) setVectorText(vectorRawTextTemplate(nextVector));
+              }}
               data-testid="zv-search-vector-field"
             />
           )}
@@ -608,23 +622,6 @@ function formatFieldValue(value: unknown): string {
   }
   if (typeof value === 'object') return '{…}';
   return String(value);
-}
-
-function defaultVectorOf(dim: number): Array<number> {
-  if (dim <= 0) return [];
-  return Array.from({ length: dim }, (_, i) => Number(((i % 8) * 0.1).toFixed(2)));
-}
-
-function parseVector(text: string): Array<number> | null {
-  try {
-    const parsed = JSON.parse(text.trim()) as unknown;
-    if (!Array.isArray(parsed)) return null;
-    if (parsed.length === 0) return null;
-    if (!parsed.every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
-    return parsed as Array<number>;
-  } catch {
-    return null;
-  }
 }
 
 function parseOutputFields(text: string): Array<string> {

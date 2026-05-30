@@ -1487,7 +1487,9 @@ export interface components {
             /** Queries */
             queries?: components["schemas"]["VectorQuerySpec"][] | null;
             /** Vector */
-            vector?: number[] | null;
+            vector?: number[] | {
+                [key: string]: number;
+            } | null;
             /** Vectorfield */
             vectorField?: string | null;
             /**
@@ -1615,7 +1617,9 @@ export interface components {
              * Vector
              * @description Explicit query vector.
              */
-            vector?: number[] | null;
+            vector?: number[] | {
+                [key: string]: number;
+            } | null;
             /**
              * Param
              * @description Optional per-query index parameter (HNSW/IVF/HNSW_RABITQ/VAMANA).
@@ -1859,7 +1863,9 @@ export interface operations {
     };
     get_collection_api_v1_collections__name__get: {
         parameters: {
-            query?: never;
+            query?: {
+                path?: string | null;
+            };
             header?: never;
             path: {
                 name: string;
@@ -1890,7 +1896,9 @@ export interface operations {
     };
     close_collection_api_v1_collections__name__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                path?: string | null;
+            };
             header?: never;
             path: {
                 name: string;
@@ -1919,7 +1927,9 @@ export interface operations {
     };
     get_schema_api_v1_collections__name__schema_get: {
         parameters: {
-            query?: never;
+            query?: {
+                path?: string | null;
+            };
             header?: never;
             path: {
                 name: string;
@@ -1950,7 +1960,9 @@ export interface operations {
     };
     get_stats_api_v1_collections__name__stats_get: {
         parameters: {
-            query?: never;
+            query?: {
+                path?: string | null;
+            };
             header?: never;
             path: {
                 name: string;
@@ -1981,7 +1993,9 @@ export interface operations {
     };
     flush_collection_api_v1_collections__name__flush_post: {
         parameters: {
-            query?: never;
+            query?: {
+                path?: string | null;
+            };
             header?: never;
             path: {
                 name: string;
@@ -2012,7 +2026,9 @@ export interface operations {
     };
     optimize_collection_api_v1_collections__name__optimize_post: {
         parameters: {
-            query?: never;
+            query?: {
+                path?: string | null;
+            };
             header?: never;
             path: {
                 name: string;
@@ -2043,7 +2059,9 @@ export interface operations {
     };
     destroy_collection_api_v1_collections__name__destroy_post: {
         parameters: {
-            query?: never;
+            query?: {
+                path?: string | null;
+            };
             header?: never;
             path: {
                 name: string;
@@ -2072,7 +2090,9 @@ export interface operations {
     };
     add_field_api_v1_collections__name__fields_post: {
         parameters: {
-            query?: never;
+            query?: {
+                path?: string | null;
+            };
             header?: never;
             path: {
                 name: string;
@@ -2107,7 +2127,9 @@ export interface operations {
     };
     drop_field_api_v1_collections__name__fields__field__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                path?: string | null;
+            };
             header?: never;
             path: {
                 name: string;
@@ -2139,7 +2161,9 @@ export interface operations {
     };
     rename_field_api_v1_collections__name__fields__field__patch: {
         parameters: {
-            query?: never;
+            query?: {
+                path?: string | null;
+            };
             header?: never;
             path: {
                 name: string;
@@ -2175,7 +2199,9 @@ export interface operations {
     };
     create_index_api_v1_collections__name__indexes_post: {
         parameters: {
-            query?: never;
+            query?: {
+                path?: string | null;
+            };
             header?: never;
             path: {
                 name: string;
@@ -2210,7 +2236,9 @@ export interface operations {
     };
     drop_index_api_v1_collections__name__indexes__vector_field__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                path?: string | null;
+            };
             header?: never;
             path: {
                 name: string;
@@ -2242,7 +2270,9 @@ export interface operations {
     };
     create_scalar_index_api_v1_collections__name__fields__field__index_post: {
         parameters: {
-            query?: never;
+            query?: {
+                path?: string | null;
+            };
             header?: never;
             path: {
                 name: string;
@@ -2278,7 +2308,9 @@ export interface operations {
     };
     drop_scalar_index_api_v1_collections__name__fields__field__index_delete: {
         parameters: {
-            query?: never;
+            query?: {
+                path?: string | null;
+            };
             header?: never;
             path: {
                 name: string;
@@ -2310,7 +2342,9 @@ export interface operations {
     };
     browse_documents_api_v1_collections__name__documents_browse_post: {
         parameters: {
-            query?: never;
+            query?: {
+                path?: string | null;
+            };
             header?: never;
             path: {
                 name: string;
@@ -2345,7 +2379,9 @@ export interface operations {
     };
     get_document_api_v1_collections__name__documents__doc_id__get: {
         parameters: {
-            query?: never;
+            query?: {
+                path?: string | null;
+            };
             header?: never;
             path: {
                 name: string;
@@ -2379,7 +2415,9 @@ export interface operations {
     };
     delete_document_api_v1_collections__name__documents__doc_id__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                path?: string | null;
+            };
             header?: never;
             path: {
                 name: string;
@@ -2409,7 +2447,9 @@ export interface operations {
     };
     insert_documents_api_v1_collections__name__documents_post: {
         parameters: {
-            query?: never;
+            query?: {
+                path?: string | null;
+            };
             header?: never;
             path: {
                 name: string;
@@ -2444,7 +2484,9 @@ export interface operations {
     };
     update_documents_api_v1_collections__name__documents_patch: {
         parameters: {
-            query?: never;
+            query?: {
+                path?: string | null;
+            };
             header?: never;
             path: {
                 name: string;
@@ -2479,7 +2521,9 @@ export interface operations {
     };
     delete_documents_api_v1_collections__name__documents_deleteBatch_post: {
         parameters: {
-            query?: never;
+            query?: {
+                path?: string | null;
+            };
             header?: never;
             path: {
                 name: string;
@@ -2514,7 +2558,9 @@ export interface operations {
     };
     upsert_documents_api_v1_collections__name__documents_upsert_post: {
         parameters: {
-            query?: never;
+            query?: {
+                path?: string | null;
+            };
             header?: never;
             path: {
                 name: string;
@@ -2549,7 +2595,9 @@ export interface operations {
     };
     delete_by_filter_api_v1_collections__name__documents_deleteByFilter_post: {
         parameters: {
-            query?: never;
+            query?: {
+                path?: string | null;
+            };
             header?: never;
             path: {
                 name: string;
@@ -2649,7 +2697,9 @@ export interface operations {
     };
     search_api_v1_collections__name__searches_post: {
         parameters: {
-            query?: never;
+            query?: {
+                path?: string | null;
+            };
             header?: never;
             path: {
                 name: string;

@@ -24,17 +24,17 @@ Pull requests without DCO sign-off will be blocked by CI.
 
 - Node.js >= 20 LTS
 - pnpm >= 9 (`npm i -g pnpm`)
-- Python >= 3.10
+- Python 3.10 (pinned for the backend via `apps/backend/.python-version`)
+- uv
 - Rust stable (for desktop shell, optional at early stage)
 
 ### Bootstrap
 
 ```bash
-pnpm install
-pip install -e "apps/backend[dev]"
+make install
 # Add `,ai` extras (sentence-transformers / dashscope / openai / dashtext)
 # only when you need to exercise :embed / :rerank locally:
-#   pip install -e "apps/backend[dev,ai]"   # or: make install.ai
+#   make install.ai
 ```
 
 ### Common commands
@@ -60,8 +60,8 @@ Every Task must leave the repository in a state where `make verify` passes. See 
 pnpm --filter desktop tauri:dev
 
 # Production build (current platform):
-pip install -e "apps/backend[packaging]"
-python scripts/build_sidecar.py
+make install.packaging
+make package.sidecar
 pnpm --filter desktop tauri:build
 
 # macOS only — re-sign and recreate DMG:

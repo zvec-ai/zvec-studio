@@ -4,12 +4,21 @@ import { useTranslation } from 'react-i18next';
 import { Button, CloseButton } from '@/components/ui';
 import { useToast } from '@/components/ui/toast-context';
 import type { CollectionSummary } from '@/features/collections/api';
-import type { SearchResponse, SearchResult } from '@/features/searches/api';
+import type { SearchRequest, SearchResponse, SearchResult } from '@/features/searches/api';
 import { useSearchDocuments } from '@/features/searches/hooks';
 import { useListEmbeddings, useEmbed, useListRerankers } from '@/features/ai/hooks';
 import type { EmbedResponse } from '@/features/ai/api';
-import { isDenseEmbedding, getEmbeddingDimension, getEmbeddingTag } from '@/features/ai/utils';
+import { getEmbeddingDimension, getEmbeddingTag } from '@/features/ai/utils';
 import { FilterBuilder } from './FilterBuilder';
+import {
+  embeddingMatchesVector,
+  isDenseVectorType,
+  isSparseVectorType,
+  parseRawVector,
+  vectorPlaceholder,
+  vectorTagLabel,
+  type RawVectorValue,
+} from './vector-utils';
 
 interface VQState {
   field: string;
@@ -42,24 +51,6 @@ function formatCellValue(value: unknown): string {
   if (typeof value === 'object') return JSON.stringify(value);
   if (typeof value === 'boolean') return value ? 'true' : 'false';
   return String(value);
-}
-
-function parseVector(text: string): number[] | null {
-  try {
-    const parsed = JSON.parse(text.trim()) as unknown;
-    if (!Array.isArray(parsed)) return null;
-    if (parsed.length === 0) return null;
-    if (!parsed.every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
-    return parsed as number[];
-  } catch {
-    return null;
-  }
-}
-
-
-function vectorTagLabel(v: { dimension: number; indexParam?: { indexType: string } | null }): string {
-  const idx = v.indexParam?.indexType ?? 'FLAT';
-  return `${idx} ${v.dimension}d`;
 }
 
 export function QueryTab({ collection }: QueryTabProps): JSX.Element {
@@ -125,10 +116,6 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
   }
 
   const allEmbeddings = useMemo(() => embeddings.data?.items ?? [], [embeddings.data]);
-  const denseEmbeddings = useMemo(
-    () => allEmbeddings.filter((e) => isDenseEmbedding(e.config)),
-    [allEmbeddings],
-  );
   const rerankerItems = useMemo(() => rerankers.data?.items ?? [], [rerankers.data]);
 
   const usedFields = useMemo(() => new Set(queries.map((q) => q.field)), [queries]);
@@ -142,12 +129,14 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
     () =>
       queries.map((q) => {
         if (!q.embedding) return false;
-        const emb = denseEmbeddings.find((e) => e.name === q.embedding);
+        const vec = vectors.find((v) => v.name === q.field);
+        if (!vec || !isDenseVectorType(vec.dataType)) return false;
+        const emb = allEmbeddings.find((e) => e.name === q.embedding);
         const eDim = emb ? getEmbeddingDimension(emb.config) : null;
-        const fDim = vectors.find((v) => v.name === q.field)?.dimension ?? null;
+        const fDim = vec.dimension ?? null;
         return eDim !== null && fDim !== null && eDim !== fDim;
       }),
-    [queries, denseEmbeddings, vectors],
+    [queries, allEmbeddings, vectors],
   );
   const anyDimMismatch = queryDimMismatches.some(Boolean);
 
@@ -178,9 +167,11 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
   async function handleSearch(e: FormEvent): Promise<void> {
     e.preventDefault();
 
-    const querySpecs: Array<{ field: string; vector?: number[]; id?: string }> = [];
+    const querySpecs: Array<{ field: string; vector?: RawVectorValue; id?: string }> = [];
 
     for (const q of queries) {
+      const vecSchema = vectors.find((v) => v.name === q.field);
+      if (!vecSchema) continue;
       if (q.embedding && q.mode === 'text') {
         if (!q.queryText.trim()) continue;
         try {
@@ -188,7 +179,8 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
             name: q.embedding,
             body: { texts: [q.queryText], isQuery: true },
           });
-          if (res.kind !== 'dense') continue;
+          if (isSparseVectorType(vecSchema.dataType) && res.kind !== 'sparse') continue;
+          if (isDenseVectorType(vecSchema.dataType) && res.kind !== 'dense') continue;
           const vec = res.vectors[0];
           if (!vec) continue;
           querySpecs.push({ field: q.field, vector: vec });
@@ -204,7 +196,7 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
         if (!q.idText.trim()) continue;
         querySpecs.push({ field: q.field, id: q.idText.trim() });
       } else {
-        const vec = parseVector(q.vectorText);
+        const vec = parseRawVector(q.vectorText, vecSchema);
         if (!vec) continue;
         querySpecs.push({ field: q.field, vector: vec });
       }
@@ -212,7 +204,7 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
 
     if (querySpecs.length === 0) return;
 
-    const body = {
+    const body: SearchRequest = {
       queries: querySpecs,
       topK,
       filter: filter.trim() || null,
@@ -252,10 +244,11 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
         {queries.map((q, idx) => {
           const vecSchema = vectors.find((v) => v.name === q.field);
           const indexType = vecSchema?.indexParam?.indexType;
+          const matchingEmbeddings = allEmbeddings.filter((emb) => embeddingMatchesVector(emb, vecSchema));
 
           const dimMismatch = queryDimMismatches[idx] ?? false;
           const selectedEmb = q.embedding
-            ? denseEmbeddings.find((e) => e.name === q.embedding)
+            ? allEmbeddings.find((e) => e.name === q.embedding)
             : null;
           const embDim = selectedEmb ? getEmbeddingDimension(selectedEmb.config) : null;
           const fieldDim = vecSchema?.dimension ?? null;
@@ -287,7 +280,7 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
                   }}
                 >
                   <option value="">{t('pages.collections.detail.query.embeddingNone')}</option>
-                  {denseEmbeddings.map((emb) => (
+                  {matchingEmbeddings.map((emb) => (
                     <option key={emb.name} value={emb.name}>
                       {emb.name} ({getEmbeddingTag(emb)})
                     </option>
@@ -323,7 +316,7 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
                     <div className="zv-form-group" style={{ marginTop: 10 }}>
                       <textarea
                         className="zv-form-textarea"
-                        placeholder={t('pages.collections.detail.query.vectorPlaceholder', { dim: vecSchema?.dimension ?? '?' })}
+                        placeholder={vectorPlaceholder(vecSchema)}
                         value={q.vectorText}
                         spellCheck={false}
                         onChange={(e) => updateQuery(idx, { vectorText: e.target.value })}

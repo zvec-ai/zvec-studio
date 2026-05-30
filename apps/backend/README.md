@@ -14,13 +14,13 @@
 # Install (uv recommended)
 uv sync                       # core only
 uv sync --extra dev           # + tests, ruff, mypy
-uv sync --extra ai            # + sentence-transformers / dashscope / openai
+uv sync --extra dev --extra ai # + sentence-transformers / dashscope / openai / dashtext
 
 # Or via pip
 pip install -e ".[dev,ai]"
 
 # Run
-zvec-studio --port 7860
+uv run zvec-studio --port 7860
 ```
 
 Open:
@@ -68,9 +68,9 @@ All errors follow **RFC 7807** (`application/problem+json`). Error codes in [`zv
 ## Testing
 
 ```bash
-pytest                          # full suite (~216 tests)
-pytest tests/unit               # fast, no I/O
-pytest tests/integration        # real SDK + httpx
+uv run pytest                   # full suite (~216 tests)
+uv run pytest tests/unit        # fast, no I/O
+uv run pytest tests/integration # real SDK + httpx
 make verify                     # full quality gate (from repo root)
 ```
 
@@ -81,8 +81,8 @@ make verify                     # full quality gate (from repo root)
 **PyInstaller sidecar** (for Tauri desktop):
 
 ```bash
-pip install -e ".[packaging]"
-pyinstaller zvec_studio.spec    # → dist/zvec-studio-sidecar
+uv sync --extra packaging
+uv run pyinstaller zvec_studio.spec    # → dist/zvec-studio-sidecar
 ```
 
 **Embedding in your own app:**

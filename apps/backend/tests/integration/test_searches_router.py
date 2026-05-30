@@ -39,12 +39,39 @@ def _collection_payload(name: str, *, metric: str = "L2") -> dict:
     }
 
 
+def _sparse_collection_payload(name: str) -> dict:
+    return {
+        "name": name,
+        "vectors": [
+            {
+                "name": "embedding",
+                "dataType": "SPARSE_VECTOR_FP32",
+                "dimension": 768,
+                "indexParam": {
+                    "indexType": "HNSW",
+                    "metric": "IP",
+                    "params": {"M": 16},
+                },
+            }
+        ],
+        "fields": [{"name": "score", "dataType": "INT64"}],
+    }
+
+
 def _doc(i: int, *, base: float = 1.0) -> dict:
     """Vectors aligned along the x-axis so L2 distance equals ``abs(i*base)``."""
     return {
         "id": f"d-{i:03d}",
         "score": i % 7,
         "embedding": [float(i) * base, 0.0, 0.0, 0.0],
+    }
+
+
+def _sparse_doc(i: int) -> dict:
+    return {
+        "id": f"s-{i:03d}",
+        "score": i,
+        "embedding": {str(40 + i): 1},
     }
 
 
@@ -59,6 +86,18 @@ async def _make_collection(
     resp = await client.post(
         f"{API}/collections",
         json={"path": str(path), "schema": _collection_payload(name, metric=metric)},
+    )
+    assert resp.status_code == 201, resp.text
+    return name
+
+
+async def _make_sparse_collection(
+    client: AsyncClient, tmp_path: Path, name: str = "sparse_searchables"
+) -> str:
+    path = tmp_path / name
+    resp = await client.post(
+        f"{API}/collections",
+        json={"path": str(path), "schema": _sparse_collection_payload(name)},
     )
     assert resp.status_code == 201, resp.text
     return name
@@ -86,6 +125,19 @@ class TestHappyPath:
         assert len(body["results"]) == 3
         assert [r["id"] for r in body["results"]] == ["d-001", "d-002", "d-003"]
         assert body["took_ms"] >= 0.0
+
+    async def test_sparse_query_coerces_json_keys_and_values(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        name = await _make_sparse_collection(client, tmp_path)
+        await _seed(client, name, [_sparse_doc(i) for i in range(1, 4)])
+        resp = await client.post(
+            f"{API}/collections/{name}/searches",
+            json={"vector": {"41": 1}, "topK": 1},
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert len(resp.json()["results"]) == 1
 
     async def test_response_embeds_trace_id(
         self, client: AsyncClient, tmp_path: Path

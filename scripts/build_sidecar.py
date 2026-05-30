@@ -19,7 +19,7 @@ Usage
 
 Prereqs
 -------
-    pip install -e "apps/backend[packaging]"
+    make install.packaging
     rustc --version           # required for triple auto-detect
 
 This script is intentionally self-contained: only stdlib + an installed

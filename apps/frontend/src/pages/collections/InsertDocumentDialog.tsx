@@ -23,6 +23,7 @@ import {
 } from '@/features/documents';
 import { useListEmbeddings, useEmbed } from '@/features/ai';
 import type { CollectionSummary } from '@/features/collections';
+import { embeddingMatchesVector, isDenseVectorType, isSparseVectorType, vectorDimensionLabel } from './vector-utils';
 
 export interface InsertDocumentDialogProps {
   readonly open: boolean;
@@ -79,14 +80,17 @@ export function InsertDocumentDialog({
 
   const embeddingOptions: ReadonlyArray<SelectOption> = useMemo(() => {
     const items = embeddings.data?.items ?? [];
+    const target = vectors.find((v) => v.name === vectorField) ?? null;
     return [
       { value: '', label: t('pages.collections.detail.documentsPanel.insert.autoEmbed.embeddingNone') },
-      ...items.map((e) => ({ value: e.name, label: e.name })),
+      ...items
+        .filter((e) => embeddingMatchesVector(e, target))
+        .map((e) => ({ value: e.name, label: e.name })),
     ];
-  }, [embeddings.data, t]);
+  }, [embeddings.data, t, vectorField, vectors]);
 
   const vectorFieldOptions: ReadonlyArray<SelectOption> = useMemo(
-    () => vectors.map((v) => ({ value: v.name, label: `${v.name} (${v.dimension}d)` })),
+    () => vectors.map((v) => ({ value: v.name, label: `${v.name} (${vectorDimensionLabel(v)})` })),
     [vectors],
   );
 
@@ -145,13 +149,17 @@ export function InsertDocumentDialog({
         name: embeddingName,
         body: { texts: lines, isQuery: false },
       });
-      if (res.kind !== 'dense') {
+      const target = vectors.find((v) => v.name === vectorField);
+      if (target && isDenseVectorType(target.dataType) && res.kind !== 'dense') {
+        setAutoError(t('pages.collections.detail.documentsPanel.insert.autoEmbed.errors.notDense'));
+        return;
+      }
+      if (target && isSparseVectorType(target.dataType) && res.kind !== 'sparse') {
         setAutoError(t('pages.collections.detail.documentsPanel.insert.autoEmbed.errors.notDense'));
         return;
       }
       // Validate dimension against schema if available.
-      const target = vectors.find((v) => v.name === vectorField);
-      if (target && res.dimension !== target.dimension) {
+      if (target && isDenseVectorType(target.dataType) && res.kind === 'dense' && res.dimension !== target.dimension) {
         setAutoError(
           t('pages.collections.detail.documentsPanel.insert.autoEmbed.errors.dimensionMismatch', {
             field: vectorField,

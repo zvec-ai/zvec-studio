@@ -36,6 +36,9 @@
   flex-direction: column;
   gap: var(--zv-space-3);
 }
+.zv-create__field-card--invalid {
+  border-color: var(--zv-color-danger);
+}
 
 .zv-create__field-close {
   position: absolute;

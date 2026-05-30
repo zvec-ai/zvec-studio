@@ -168,6 +168,49 @@ describe('AiFunctionsPage', () => {
     expect(screen.getByTestId('zv-ai-emb-name-my-emb')).toHaveTextContent('my-emb');
   });
 
+  it('updates embedding config template when changing embedding type', async () => {
+    const user = userEvent.setup();
+    const state: FakeAiState = { embeddings: [], rerankers: [], calls: [] };
+    renderPage(state);
+
+    await screen.findByTestId('zv-ai-emb-empty');
+    await user.click(screen.getByTestId('zv-ai-emb-create'));
+    await user.type(screen.getByTestId('zv-ai-emb-name'), 'bm25-emb');
+    await user.selectOptions(screen.getByTestId('zv-ai-emb-type'), 'bm25');
+
+    expect((screen.getByTestId('zv-ai-emb-config') as HTMLTextAreaElement).value).toContain('"type": "bm25"');
+    await user.click(screen.getByTestId('zv-ai-emb-create-submit'));
+
+    await waitFor(() => {
+      expect(state.embeddings[0].config.type).toBe('bm25');
+    });
+  });
+
+  it('toasts backend errors when creating an embedding fails', async () => {
+    const user = userEvent.setup();
+    const state: FakeAiState = {
+      embeddings: [],
+      rerankers: [],
+      createError: {
+        code: 'AI_FUNCTION_EXISTS',
+        message: 'duplicate embedding',
+        messageKey: 'errors.code.AI_FUNCTION_EXISTS',
+        status: 409,
+        traceId: null,
+        severity: 'warning',
+      },
+      calls: [],
+    };
+    renderPage(state);
+
+    await screen.findByTestId('zv-ai-emb-empty');
+    await user.click(screen.getByTestId('zv-ai-emb-create'));
+    await user.type(screen.getByTestId('zv-ai-emb-name'), 'dup');
+    await user.click(screen.getByTestId('zv-ai-emb-create-submit'));
+
+    expect(await screen.findByTestId('zv-toast')).toHaveTextContent('duplicate embedding');
+  });
+
   it('deletes an embedding via the confirm dialog', async () => {
     const user = userEvent.setup();
     const state: FakeAiState = {
@@ -215,6 +258,30 @@ describe('AiFunctionsPage', () => {
     // Table appears
     expect(await screen.findByTestId('zv-ai-rer-table')).toBeInTheDocument();
     expect(screen.getByTestId('zv-ai-rer-name-my-rrf')).toHaveTextContent('my-rrf');
+  });
+
+  it('updates reranker config template and validates invalid reranker JSON', async () => {
+    const user = userEvent.setup();
+    const state: FakeAiState = { embeddings: [], rerankers: [], calls: [] };
+    renderPage(state);
+
+    await screen.findByTestId('zv-ai-emb-empty');
+    await user.click(screen.getByRole('tab', { name: /rerankers/i }));
+    await screen.findByTestId('zv-ai-rer-empty');
+    await user.click(screen.getByTestId('zv-ai-rer-create'));
+
+    await user.selectOptions(screen.getByTestId('zv-ai-rer-type'), 'weighted');
+    expect((screen.getByTestId('zv-ai-rer-config') as HTMLTextAreaElement).value).toContain('"type": "weighted"');
+
+    const configTextarea = screen.getByTestId('zv-ai-rer-config');
+    await user.clear(configTextarea);
+    await user.click(configTextarea);
+    await user.paste('not-json');
+    await user.type(screen.getByTestId('zv-ai-rer-name'), 'bad-reranker');
+    await user.click(screen.getByTestId('zv-ai-rer-create-submit'));
+
+    expect(await screen.findByTestId('zv-ai-rer-error-msg')).toBeInTheDocument();
+    expect(state.calls.filter((c) => c.method === 'POST' && c.path === '/ai/rerankers')).toHaveLength(0);
   });
 
   it('validates invalid JSON in the Create Embedding config textarea', async () => {

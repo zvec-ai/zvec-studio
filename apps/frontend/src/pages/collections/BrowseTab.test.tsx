@@ -98,9 +98,13 @@ const COLLECTION = {
   stats: { documentCount: 0, indexState: 'none' as const, storageBytes: 0 },
 };
 
-function renderTab(state: FakeBrowseState, overrides?: { stats?: Partial<typeof COLLECTION.stats> }) {
+function renderTab(
+  state: FakeBrowseState,
+  overrides?: { stats?: Partial<typeof COLLECTION.stats>; collection?: Record<string, unknown> },
+) {
   const col = {
     ...COLLECTION,
+    ...(overrides?.collection ?? {}),
     stats: { ...COLLECTION.stats, ...(overrides?.stats ?? {}) },
   };
   return renderWithProviders(
@@ -127,9 +131,36 @@ describe('BrowseTab', () => {
     const state: FakeBrowseState = { docs: fakeDocs(3), calls: [] };
     renderTab(state);
 
-    expect(await screen.findByText('"doc-1"')).toBeInTheDocument();
-    expect(screen.getByText('"doc-2"')).toBeInTheDocument();
-    expect(screen.getByText('"doc-3"')).toBeInTheDocument();
+    expect(await screen.findByText('doc-1')).toBeInTheDocument();
+    expect(screen.getByText('doc-2')).toBeInTheDocument();
+    expect(screen.getByText('doc-3')).toBeInTheDocument();
+    expect(screen.queryByText('"doc-1"')).not.toBeInTheDocument();
+    expect(screen.getByText('"Item 1"')).toBeInTheDocument();
+  });
+
+  it('renders sparse vector keys without JSON quotes', async () => {
+    const state: FakeBrowseState = {
+      docs: [{ id: 'doc-1', title: 'Sparse', embedding: { '42': 1, '314': 0.5 } }],
+      calls: [],
+    };
+    renderTab(state, {
+      collection: {
+        schema: {
+          ...COLLECTION.schema,
+          vectors: [
+            {
+              name: 'embedding',
+              dataType: 'SPARSE_VECTOR_FP32' as const,
+              dimension: 768,
+              indexParam: { indexType: 'HNSW', metric: 'IP', params: {} },
+            },
+          ],
+        },
+      },
+    });
+
+    expect(await screen.findByText('{42: 1.0, 314: 0.5}')).toBeInTheDocument();
+    expect(screen.queryByText('{"42":1,"314":0.5}')).not.toBeInTheDocument();
   });
 
   it('shows empty state when no documents exist', async () => {
@@ -145,7 +176,7 @@ describe('BrowseTab', () => {
     const state: FakeBrowseState = { docs, calls: [] };
     renderTab(state);
 
-    await screen.findByText('"doc-1"');
+    await screen.findByText('doc-1');
     expect(screen.getByText(/truncat/i)).toBeInTheDocument();
   });
 
@@ -154,7 +185,7 @@ describe('BrowseTab', () => {
     const state: FakeBrowseState = { docs: fakeDocs(3), calls: [] };
     renderTab(state);
 
-    await screen.findByText('"doc-1"');
+    await screen.findByText('doc-1');
     await user.click(screen.getByText('ID'));
 
     // The ID-mode input placeholder mentions doc IDs
@@ -167,7 +198,7 @@ describe('BrowseTab', () => {
     const state: FakeBrowseState = { docs: fakeDocs(5), calls: [] };
     renderTab(state);
 
-    await screen.findByText('"doc-1"');
+    await screen.findByText('doc-1');
     await user.click(screen.getByText('ID'));
 
     const idInput = screen.getByPlaceholderText(/doc_01/);
@@ -188,7 +219,7 @@ describe('BrowseTab', () => {
     const state: FakeBrowseState = { docs: fakeDocs(5), calls: [] };
     renderTab(state);
 
-    await screen.findByText('"doc-1"');
+    await screen.findByText('doc-1');
 
     // Type filter in the SQL input
     const filterInput = screen.getByPlaceholderText(/category = 'news'/);

@@ -14,6 +14,7 @@ import { Button, Dialog } from '@/components/ui';
 import { useToast } from '@/components/ui/toast-context';
 import { ApiError } from '@/lib/api-client';
 import { SchemaPanelDdl } from './SchemaDdlSection';
+import { vectorDimensionLabel } from './vector-utils';
 
 interface OverviewTabProps {
   collection: CollectionSummary;
@@ -119,7 +120,7 @@ export function OverviewTab({ collection }: OverviewTabProps): JSX.Element {
       {/* Quick schema glance */}
       <div className="zv-schema-glance">
         {vectors.map((v) => (
-          <span key={v.name} className="zv-tag zv-tag--blue">{v.name} <span className="zv-tag__dim">{v.dimension}d</span></span>
+          <span key={v.name} className="zv-tag zv-tag--blue">{v.name} <span className="zv-tag__dim">{vectorDimensionLabel(v)}</span></span>
         ))}
         {fields.map((f) => (
           <span key={f.name} className="zv-tag zv-tag--green">{f.name}</span>

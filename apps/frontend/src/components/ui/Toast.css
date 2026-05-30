@@ -1,12 +1,30 @@
 .zv-toast-viewport {
   position: fixed;
-  top: var(--zv-space-6);
-  right: var(--zv-space-6);
+  inset: var(--zv-space-6) var(--zv-space-6) auto auto;
   display: flex;
   flex-direction: column;
   gap: var(--zv-space-3);
   z-index: 9999;
-  pointer-events: none;
+  pointer-events: auto;
+  /* Reset popover default styles */
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  overflow: visible;
+}
+/* Override UA :popover-open defaults (inset:0, margin:auto) */
+.zv-toast-viewport:popover-open {
+  position: fixed;
+  inset: var(--zv-space-6) var(--zv-space-6) auto auto;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  overflow: visible;
+  width: auto;
+  height: auto;
+  pointer-events: auto;
 }
 .zv-toast {
   min-width: 280px;

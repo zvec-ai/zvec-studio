@@ -10,7 +10,7 @@
  * - server-side failure surfaces a toast and keeps the prior results.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { fireEvent, screen, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient } from '@tanstack/react-query';
 
@@ -55,6 +55,9 @@ interface FakeSearchState {
     results: Array<{ id: unknown; score: number; fields: Record<string, unknown> }>;
     took_ms: number;
   };
+  embeddings?: Array<{ name: string; description: string | null; config: Record<string, unknown> }>;
+  rerankers?: Array<{ name: string; description: string | null; config: Record<string, unknown> }>;
+  embedResponse?: unknown;
   /** Throw this UserFacingError on the next request instead of returning. */
   error?: UserFacingError;
   /** Spy on every inbound request so tests can assert on the body shape. */
@@ -84,10 +87,20 @@ function makeApiClient(state: FakeSearchState): ApiClient {
       // ``From text`` mode lists registered embeddings — return empty lists
       // silently and don't tally the requests, so existing assertions on
       // ``state.calls`` only see the search POST(s).
-      if (method === 'GET' && (path === '/ai/rerankers' || path === '/ai/embeddings')) {
-        return { items: [] } as unknown as T;
+      if (method === 'GET' && path === '/ai/rerankers') {
+        return { items: state.rerankers ?? [] } as unknown as T;
+      }
+      if (method === 'GET' && path === '/ai/embeddings') {
+        return { items: state.embeddings ?? [] } as unknown as T;
       }
       state.calls.push({ method, path, body: opts?.body });
+      if (method === 'POST' && path.includes(':embed')) {
+        return (state.embedResponse ?? {
+          kind: 'dense',
+          dimension: 4,
+          vectors: [[0.1, 0.2, 0.3, 0.4]],
+        }) as unknown as T;
+      }
       if (method === 'POST' && /\/collections\/[^/]+\/searches$/.test(path)) {
         if (state.error) throw new ApiError(state.error);
         const body = (state.response ?? {
@@ -179,6 +192,82 @@ describe('SearchPanel', () => {
     expect(err.textContent).toMatch(/4/);
     expect(err.textContent).toMatch(/3/);
     expect(state.calls).toHaveLength(0);
+  });
+
+  it('accepts unquoted sparse raw vector keys', async () => {
+    const user = userEvent.setup();
+    const state: FakeSearchState = { calls: [] };
+    const schema: CollectionSummary['schema'] = {
+      ...DEFAULT_SCHEMA,
+      vectors: [
+        {
+          name: 'embedding',
+          dataType: 'SPARSE_VECTOR_FP32',
+          dimension: 768,
+          indexParam: { indexType: 'HNSW', metric: 'IP', params: {} },
+        },
+      ],
+    };
+    renderPanel(state, schema);
+
+    const textarea = screen.getByTestId('zv-search-vector') as HTMLTextAreaElement;
+    expect(textarea.value).toBe('{42: 1.0}');
+    fireEvent.change(textarea, { target: { value: '{42: 1.0, 314: 0.5}' } });
+    await user.click(screen.getByTestId('zv-search-submit'));
+
+    await waitFor(() => {
+      expect(state.calls).toHaveLength(1);
+    });
+    expect((state.calls[0].body as any).vector).toEqual({ '42': 1, '314': 0.5 });
+  });
+
+  it('embeds text queries and forwards the selected reranker', async () => {
+    const user = userEvent.setup();
+    const state: FakeSearchState = {
+      calls: [],
+      embeddings: [
+        { name: 'local-dense', description: null, config: { type: 'default_local_dense', dimension: 4 } },
+      ],
+      rerankers: [
+        { name: 'rrf', description: null, config: { type: 'rrf' } },
+      ],
+      embedResponse: {
+        kind: 'dense',
+        dimension: 4,
+        vectors: [[0.1, 0.2, 0.3, 0.4]],
+      },
+      response: {
+        results: [{ id: 'doc-text', score: 0.91, fields: { title: 'Text hit' } }],
+        took_ms: 1.2,
+      },
+    };
+    renderPanel(state);
+
+    await user.click(screen.getByTestId('zv-search-mode-text'));
+    await waitFor(() => {
+      expect(screen.getByTestId('zv-search-embedding')).toHaveTextContent('local-dense');
+    });
+
+    await user.selectOptions(screen.getByTestId('zv-search-embedding'), 'local-dense');
+    await user.selectOptions(screen.getByTestId('zv-search-reranker'), 'rrf');
+    await user.type(screen.getByTestId('zv-search-text'), 'semantic search text');
+    await user.click(screen.getByTestId('zv-search-submit'));
+
+    await screen.findByTestId('zv-search-row-doc-text');
+
+    const embedCall = state.calls.find((c) => c.path.includes('/ai/embeddings/local-dense:embed'));
+    expect(embedCall?.body).toEqual({
+      texts: ['semantic search text'],
+      isQuery: true,
+    });
+
+    const searchCall = state.calls.find((c) => c.path.includes('/collections/demo/searches'))!;
+    expect(searchCall.body).toMatchObject({
+      vector: [0.1, 0.2, 0.3, 0.4],
+      vectorField: 'embedding',
+      rerankerName: 'rrf',
+      includeVector: false,
+    });
   });
 
   it('submits a search, renders results, summary, and opens the drawer', async () => {

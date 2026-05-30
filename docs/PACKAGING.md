@@ -24,10 +24,10 @@ The env var `ZVEC_SIDECAR_BINARY=/abs/path` overrides both.
 
 ```bash
 # 1. Install packaging extras (PyInstaller).
-pip install -e "apps/backend[packaging]"
+make install.packaging
 
 # 2. Freeze the sidecar.
-python scripts/build_sidecar.py
+make package.sidecar
 # -> apps/backend/dist/zvec-studio-sidecar
 # -> apps/desktop/src-tauri/binaries/zvec-studio-sidecar-<triple>(.exe)
 

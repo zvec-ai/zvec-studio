@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 
+import { Dialog } from './Dialog';
 import { ToastProvider } from './Toast';
 import { useToast } from './toast-context';
 
@@ -49,6 +50,34 @@ describe('ToastProvider / useToast', () => {
 
     await user.click(screen.getByRole('button', { name: /dismiss/i }));
     expect(screen.queryByTestId('zv-toast')).not.toBeInTheDocument();
+  });
+
+  it('moves active toasts with the dialog stack', async () => {
+    let api: ReturnType<typeof useToast> | null = null;
+
+    function Host({ open }: { open: boolean }): JSX.Element {
+      return (
+        <ToastProvider>
+          <Harness onReady={(t) => { api = t; }} />
+          <Dialog open={open} onClose={() => undefined} title="Modal">
+            Dialog body
+          </Dialog>
+        </ToastProvider>
+      );
+    }
+
+    const { rerender } = render(<Host open />);
+    act(() => {
+      api!.push({ title: 'Dialog scoped', severity: 'error', ttl: null });
+    });
+
+    expect(screen.getByTestId('zv-toast').closest('dialog')).toHaveAttribute('open');
+
+    rerender(<Host open={false} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('zv-toast').closest('dialog')).toBeNull();
+    });
   });
 
   it('throws when useToast is called outside a provider', () => {

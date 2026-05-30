@@ -41,6 +41,7 @@ import {
   type CollectionSummary,
 } from '@/features/collections';
 import type { components } from '@zvec-studio/api-client';
+import { isSparseVectorType, vectorDimensionLabel } from './vector-utils';
 
 type ScalarDataType = components['schemas']['ScalarDataType'];
 type IndexType = components['schemas']['IndexType'];
@@ -126,7 +127,7 @@ export function SchemaPanelDdl({ summary, indexCompleteness, completenessColor }
     {
       key: 'dim',
       header: t('pages.collections.detail.schema.columnDimension'),
-      render: (row) => row.dimension,
+      render: (row) => vectorDimensionLabel(row),
     },
     {
       key: 'index',
@@ -705,6 +706,8 @@ function CreateIndexDialog({ target, onClose, collection, toast }: CreateIndexDi
   const [metric, setMetric] = useState<MetricType>('COSINE');
   const [paramsText, setParamsText] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+  const targetIsSparse = target ? isSparseVectorType(target.dataType) : false;
+  const effectiveMetric: MetricType = targetIsSparse ? 'IP' : metric;
 
   function reset(): void {
     setIndexType('HNSW');
@@ -712,6 +715,10 @@ function CreateIndexDialog({ target, onClose, collection, toast }: CreateIndexDi
     setParamsText('');
     setError(null);
   }
+
+  useEffect(() => {
+    if (targetIsSparse) setMetric('IP');
+  }, [targetIsSparse]);
 
   function close(): void {
     if (mutation.isPending) return;
@@ -740,7 +747,7 @@ function CreateIndexDialog({ target, onClose, collection, toast }: CreateIndexDi
         body: {
           vectorField: target.name,
           indexType,
-          metric,
+          metric: effectiveMetric,
           params,
         },
       });
@@ -785,7 +792,7 @@ function CreateIndexDialog({ target, onClose, collection, toast }: CreateIndexDi
       }
     >
       <p style={{ marginBottom: '0.5rem' }}>
-        <strong>{target?.name}</strong> (dim={target?.dimension})
+        <strong>{target?.name}</strong> ({target ? vectorDimensionLabel(target) : '—'})
       </p>
       <Select<IndexType>
         label={t('pages.collections.detail.schema.ddl.createIndexDialog.indexTypeLabel')}
@@ -798,9 +805,9 @@ function CreateIndexDialog({ target, onClose, collection, toast }: CreateIndexDi
       <Select<MetricType>
         label={t('pages.collections.detail.schema.ddl.createIndexDialog.metricLabel')}
         options={METRIC_TYPES}
-        value={metric}
+        value={effectiveMetric}
         onChange={(event) => setMetric(event.target.value as MetricType)}
-        disabled={mutation.isPending}
+        disabled={mutation.isPending || targetIsSparse}
         data-testid="zv-schema-create-index-metric"
       />
       <Input

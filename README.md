@@ -63,7 +63,7 @@ Double-click to run — no Python needed.
 ```bash
 git clone https://github.com/zvec-ai/zvec-studio.git
 cd zvec-studio
-make install    # install Node + Python dependencies
+make install    # install Node deps + backend uv environment
 make dev        # starts backend + frontend dev servers
 ```
 
@@ -72,7 +72,7 @@ make dev        # starts backend + frontend dev servers
 > `make install.ai` instead if you want to use built-in functions like
 > `local-dense`, `bm25`, or `dashscope`.
 
-> Prerequisites: **Node.js ≥ 20**, **pnpm ≥ 9**, **Python ≥ 3.10**, **Rust** (desktop only).
+> Prerequisites: **Node.js ≥ 20**, **pnpm ≥ 9**, **Python ≥ 3.10**, **uv**, **Rust** (desktop only).
 > See [Contributing](https://github.com/zvec-ai/zvec-studio/blob/main/CONTRIBUTING.md) for the full dev setup guide.
 
 ## ⚡ Quick Start
