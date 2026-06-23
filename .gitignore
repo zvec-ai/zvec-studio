@@ -110,4 +110,5 @@ logs/
 # Local zvec-studio user data
 ~/.zvec-studio/
 tmp/
+.tmp/
 .cache/

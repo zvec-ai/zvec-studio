@@ -4,8 +4,8 @@
  * Uses a fake ApiClient to exercise the vector search form: mode switching,
  * search execution, results display, and embedding/reranker integration.
  */
-import { describe, it, expect } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, it, expect } from 'vitest';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient } from '@tanstack/react-query';
 
@@ -97,7 +97,51 @@ function renderTab(state: FakeState, overrides?: { collection?: Record<string, u
   );
 }
 
+function installMemorySessionStorage(): void {
+  const store = new Map<string, string>();
+  const fake: Storage = {
+    get length() {
+      return store.size;
+    },
+    clear: () => store.clear(),
+    getItem: (key) => (store.has(key) ? store.get(key)! : null),
+    key: (index) => Array.from(store.keys())[index] ?? null,
+    removeItem: (key) => {
+      store.delete(key);
+    },
+    setItem: (key, value) => {
+      store.set(key, String(value));
+    },
+  };
+  Object.defineProperty(window, 'sessionStorage', {
+    configurable: true,
+    value: fake,
+  });
+}
+
+function queryCards(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll('.zv-vq-card'));
+}
+
+function queryCard(container: HTMLElement, index = 0): HTMLElement {
+  const card = queryCards(container)[index];
+  if (!card) throw new Error(`No query card found at index ${index}`);
+  return card;
+}
+
+function selectWithOption(container: HTMLElement, optionValue: string): HTMLSelectElement {
+  const select = Array.from(container.querySelectorAll('select.zv-form-select')).find((el) =>
+    Array.from((el as HTMLSelectElement).options).some((option) => option.value === optionValue),
+  );
+  if (!select) throw new Error(`No select found with option ${optionValue}`);
+  return select as HTMLSelectElement;
+}
+
 describe('QueryTab', () => {
+  beforeEach(() => {
+    installMemorySessionStorage();
+  });
+
   it('renders the query form with vector field card', async () => {
     const state: FakeState = { searchResults: [], embeddings: [], rerankers: [], calls: [] };
     renderTab(state);
@@ -290,6 +334,29 @@ describe('QueryTab', () => {
     expect(state.calls.filter((c) => c.path.includes('/searches'))).toHaveLength(0);
   });
 
+  it('restores query state after unmounting and remounting', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = { searchResults: [], embeddings: [], rerankers: [], calls: [] };
+    const view = renderTab(state);
+
+    const vectorInput = screen.getByPlaceholderText(/\[0\.1/) as HTMLTextAreaElement;
+    await user.click(vectorInput);
+    await user.paste('[0.1, 0.2, 0.3, 0.4]');
+
+    const topKInput = view.container.querySelector('.zv-query-inline-row input[type="number"]') as HTMLInputElement;
+    fireEvent.change(topKInput, { target: { value: '7' } });
+
+    await waitFor(() => {
+      expect(window.sessionStorage.getItem('zvec-studio.query-tab./tmp/demo.demo')).toContain('[0.1, 0.2, 0.3, 0.4]');
+    });
+
+    view.unmount();
+    const remounted = renderTab(state);
+
+    expect(screen.getByPlaceholderText(/\[0\.1/)).toHaveValue('[0.1, 0.2, 0.3, 0.4]');
+    expect(remounted.container.querySelector('.zv-query-inline-row input[type="number"]')).toHaveValue(7);
+  });
+
   it('populates embedding dropdown from API', async () => {
     const state: FakeState = {
       searchResults: [],
@@ -306,7 +373,7 @@ describe('QueryTab', () => {
     });
   });
 
-  it('submits a dense embedding query with reranker', async () => {
+  it('submits a dense embedding query without reranker for a single query', async () => {
     const user = userEvent.setup();
     const state: FakeState = {
       searchResults: [{ id: 'doc-dense', score: 0.92, fields: { title: 'Dense' } }],
@@ -324,9 +391,9 @@ describe('QueryTab', () => {
       expect(screen.getByText(/local-dense/)).toBeInTheDocument();
     });
 
-    const selects = container.querySelectorAll('select.zv-form-select');
-    await user.selectOptions(selects[0], 'local-dense');
-    await user.selectOptions(selects[1], 'rrf');
+    expect(screen.queryByText(/^Reranker$/i)).not.toBeInTheDocument();
+    const card = queryCard(container);
+    await user.selectOptions(within(card).getByRole('combobox'), 'local-dense');
 
     const textInput = screen.getByPlaceholderText(/enter query text/i);
     await user.click(textInput);
@@ -345,9 +412,53 @@ describe('QueryTab', () => {
 
     const searchCall = state.calls.find((c) => c.path.includes('/searches'))!;
     expect((searchCall.body as any).queries).toEqual([
-      { field: 'embedding', vector: [0.1, 0.2, 0.3, 0.4] },
+      {
+        field: 'embedding',
+        vector: [0.1, 0.2, 0.3, 0.4],
+        param: {
+          type: 'HNSW',
+          ef: 300,
+          radius: 0,
+          isLinear: false,
+          isUsingRefiner: false,
+        },
+      },
     ]);
-    expect((searchCall.body as any).rerankerName).toBe('rrf');
+    expect((searchCall.body as any).rerankerName).toBeNull();
+  });
+
+  it('ignores a persisted reranker when only one query is submitted', async () => {
+    const user = userEvent.setup();
+    window.sessionStorage.setItem(
+      'zvec-studio.query-tab./tmp/demo.demo',
+      JSON.stringify({
+        queries: [
+          {
+            field: 'embedding',
+            routeType: 'vector',
+            mode: 'vector',
+            vectorText: '[0.1, 0.2, 0.3, 0.4]',
+          },
+        ],
+        rerankerName: 'rrf',
+      }),
+    );
+    const state: FakeState = {
+      searchResults: [{ id: 'doc-single', score: 0.91, fields: {} }],
+      embeddings: [],
+      rerankers: [{ name: 'rrf', description: null, config: { type: 'rrf' } }],
+      calls: [],
+    };
+    renderTab(state);
+
+    expect(screen.queryByText(/^Reranker$/i)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /search/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('doc-single')).toBeInTheDocument();
+    });
+    const searchCall = state.calls.find((c) => c.path.includes('/searches'))!;
+    expect((searchCall.body as any).rerankerName).toBeNull();
   });
 
   it('filters sparse embeddings and submits sparse embedding output', async () => {
@@ -381,7 +492,7 @@ describe('QueryTab', () => {
       expect(screen.getByText(/bm25/)).toBeInTheDocument();
     });
 
-    const embeddingSelect = container.querySelector('select.zv-form-select') as HTMLSelectElement;
+    const embeddingSelect = within(queryCard(container)).getByRole('combobox') as HTMLSelectElement;
     expect(Array.from(embeddingSelect.options).map((o) => o.value)).toEqual(['', 'bm25']);
 
     await user.selectOptions(embeddingSelect, 'bm25');
@@ -437,15 +548,18 @@ describe('QueryTab', () => {
       expect(screen.getByText(/local-dense/)).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole('button', { name: '+' }));
+    const addQueryButton = screen.getByRole('button', { name: /add query/i });
+    expect(addQueryButton).toBeDisabled();
+    await user.selectOptions(screen.getByLabelText(/select column/i), 'vector:embedding_alt');
+    expect(addQueryButton).toBeEnabled();
+    await user.click(addQueryButton);
     await waitFor(() => {
       expect(container.querySelectorAll('.zv-vq-card')).toHaveLength(2);
     });
 
-    const selects = container.querySelectorAll('select.zv-form-select');
-    await user.selectOptions(selects[0], 'local-dense');
-    await user.selectOptions(selects[1], 'local-dense');
-    await user.selectOptions(selects[2], 'weighted');
+    await user.selectOptions(within(queryCard(container, 0)).getByRole('combobox'), 'local-dense');
+    await user.selectOptions(within(queryCard(container, 1)).getByRole('combobox'), 'local-dense');
+    await user.selectOptions(selectWithOption(container, 'weighted'), 'weighted');
 
     const textInputs = screen.getAllByPlaceholderText(/enter query text/i);
     await user.click(textInputs[0]);
@@ -464,6 +578,323 @@ describe('QueryTab', () => {
     expect(body.queries).toHaveLength(2);
     expect(body.queries.map((q: any) => q.field)).toEqual(['embedding', 'embedding_alt']);
     expect(body.queries.every((q: any) => Array.isArray(q.vector) && q.vector.length === 4)).toBe(true);
+    expect(body.queries.every((q: any) => q.param?.type === 'HNSW')).toBe(true);
+  });
+
+  it('defaults the reranker to rrf when a query becomes multiquery', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = {
+      searchResults: [{ id: 'doc-rrf', score: 0.99, fields: {} }],
+      embeddings: [],
+      rerankers: [],
+      calls: [],
+    };
+    const { container } = renderTab(state, {
+      collection: {
+        schema: {
+          ...COLLECTION.schema,
+          vectors: [
+            ...COLLECTION.schema.vectors,
+            {
+              name: 'embedding_alt',
+              dataType: 'VECTOR_FP32' as const,
+              dimension: 4,
+              indexParam: { indexType: 'HNSW', metric: 'COSINE', params: {} },
+            },
+          ],
+        },
+      },
+    });
+
+    expect(screen.queryByText(/^Reranker$/i)).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText(/select column/i), 'vector:embedding_alt');
+    await user.click(screen.getByRole('button', { name: /add query/i }));
+
+    await waitFor(() => {
+      expect(selectWithOption(container, 'rrf')).toHaveValue('rrf');
+    });
+
+    const vectorInputs = screen.getAllByPlaceholderText(/\[0\.1/);
+    await user.click(vectorInputs[0]);
+    await user.paste('[0.1, 0.2, 0.3, 0.4]');
+    await user.click(vectorInputs[1]);
+    await user.paste('[0.4, 0.3, 0.2, 0.1]');
+    await user.click(screen.getByRole('button', { name: /search/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('doc-rrf')).toBeInTheDocument();
+    });
+    expect((state.calls.find((c) => c.path.includes('/searches'))!.body as any).rerankerName).toBe('rrf');
+  });
+
+  it('hides and clears the reranker when multiquery is reduced to one query', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = {
+      searchResults: [{ id: 'doc-single-after-remove', score: 0.8, fields: {} }],
+      embeddings: [],
+      rerankers: [{ name: 'rrf', description: null, config: { type: 'rrf' } }],
+      calls: [],
+    };
+    const { container } = renderTab(state, {
+      collection: {
+        schema: {
+          ...COLLECTION.schema,
+          vectors: [
+            ...COLLECTION.schema.vectors,
+            {
+              name: 'embedding_alt',
+              dataType: 'VECTOR_FP32' as const,
+              dimension: 4,
+              indexParam: { indexType: 'HNSW', metric: 'COSINE', params: {} },
+            },
+          ],
+        },
+      },
+    });
+
+    await user.selectOptions(screen.getByLabelText(/select column/i), 'vector:embedding_alt');
+    await user.click(screen.getByRole('button', { name: /add query/i }));
+    await waitFor(() => {
+      expect(selectWithOption(container, 'rrf')).toHaveValue('rrf');
+    });
+
+    await user.click(within(queryCard(container, 1)).getByRole('button', { name: /remove/i }));
+    await waitFor(() => {
+      expect(container.querySelectorAll('.zv-vq-card')).toHaveLength(1);
+    });
+    expect(screen.queryByText(/^Reranker$/i)).not.toBeInTheDocument();
+
+    const vectorInput = screen.getByPlaceholderText(/\[0\.1/) as HTMLTextAreaElement;
+    await user.click(vectorInput);
+    await user.paste('[0.1, 0.2, 0.3, 0.4]');
+    await user.click(screen.getByRole('button', { name: /search/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('doc-single-after-remove')).toBeInTheDocument();
+    });
+    const body = state.calls.find((c) => c.path.includes('/searches'))!.body as any;
+    expect(body.rerankerName).toBeNull();
+  });
+
+  it('submits an FTS match-string query with default operator', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = {
+      searchResults: [{ id: 'doc-fts', score: 1.2, fields: { title: 'FTS' } }],
+      embeddings: [],
+      rerankers: [],
+      calls: [],
+    };
+    const { container } = renderTab(state, {
+      collection: {
+        schema: {
+          name: 'demo',
+          vectors: [],
+          fields: [
+            {
+              name: 'content',
+              dataType: 'STRING' as const,
+              nullable: false,
+              indexParam: { indexType: 'FTS' },
+            },
+          ],
+        },
+      },
+    });
+
+    expect(screen.getAllByText('content').length).toBeGreaterThan(0);
+    expect(screen.getByText(/STRING FTS/i)).toBeInTheDocument();
+    const ftsInput = screen.getByPlaceholderText(/search words/i);
+    await user.click(ftsInput);
+    await user.paste('hello world');
+    await user.selectOptions(selectWithOption(container, 'AND'), 'AND');
+    await user.click(screen.getByRole('button', { name: /search/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('doc-fts')).toBeInTheDocument();
+    });
+    const searchCall = state.calls.find((c) => c.path.includes('/searches'))!;
+    expect((searchCall.body as any).queries).toEqual([
+      {
+        field: 'content',
+        fts: { matchString: 'hello world' },
+        param: { type: 'FTS', defaultOperator: 'AND' },
+      },
+    ]);
+  });
+
+  it('submits a hybrid FTS and vector query with reranker', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = {
+      searchResults: [{ id: 'doc-hybrid', score: 0.99, fields: {} }],
+      embeddings: [],
+      rerankers: [{ name: 'rrf', description: null, config: { type: 'rrf' } }],
+      calls: [],
+    };
+    const { container } = renderTab(state, {
+      collection: {
+        schema: {
+          ...COLLECTION.schema,
+          fields: [
+            ...COLLECTION.schema.fields,
+            {
+              name: 'content',
+              dataType: 'STRING' as const,
+              nullable: false,
+              indexParam: { indexType: 'FTS' },
+            },
+          ],
+        },
+      },
+    });
+
+    const vectorInput = screen.getByPlaceholderText(/\[0\.1/) as HTMLTextAreaElement;
+    await user.click(vectorInput);
+    await user.paste('[0.1, 0.2, 0.3, 0.4]');
+    await user.selectOptions(screen.getByLabelText(/select column/i), 'fts:content');
+    await user.click(screen.getByRole('button', { name: /add query/i }));
+    await user.click(screen.getByPlaceholderText(/search words/i));
+    await user.paste('hybrid text');
+    await user.selectOptions(selectWithOption(container, 'rrf'), 'rrf');
+    await user.click(screen.getByRole('button', { name: /search/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('doc-hybrid')).toBeInTheDocument();
+    });
+    const body = state.calls.find((c) => c.path.includes('/searches'))!.body as any;
+    expect(body.rerankerName).toBe('rrf');
+    expect(body.queries).toEqual([
+      {
+        field: 'embedding',
+        vector: [0.1, 0.2, 0.3, 0.4],
+        param: {
+          type: 'HNSW',
+          ef: 300,
+          radius: 0,
+          isLinear: false,
+          isUsingRefiner: false,
+        },
+      },
+      {
+        field: 'content',
+        fts: { matchString: 'hybrid text' },
+        param: { type: 'FTS', defaultOperator: 'OR' },
+      },
+    ]);
+  });
+
+  it('submits HNSW query params from stateful controls', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = {
+      searchResults: [{ id: 'doc-hnsw', score: 0.7, fields: {} }],
+      embeddings: [],
+      rerankers: [],
+      calls: [],
+    };
+    const { container } = renderTab(state);
+    const card = container.querySelector('.zv-vq-card') as HTMLElement;
+    const vectorInput = screen.getByPlaceholderText(/\[0\.1/) as HTMLTextAreaElement;
+    await user.click(vectorInput);
+    await user.paste('[0.1, 0.2, 0.3, 0.4]');
+
+    const spinboxes = within(card).getAllByRole('spinbutton');
+    await user.clear(spinboxes[0]);
+    await user.type(spinboxes[0], '77');
+    await user.clear(spinboxes[1]);
+    await user.type(spinboxes[1], '1.5');
+    const checkboxes = within(card).getAllByRole('checkbox');
+    await user.click(checkboxes[0]);
+    await user.click(checkboxes[1]);
+    await user.click(screen.getByRole('button', { name: /search/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('doc-hnsw')).toBeInTheDocument();
+    });
+    const param = ((state.calls.find((c) => c.path.includes('/searches'))!.body as any).queries[0] as any).param;
+    expect(param).toEqual({
+      type: 'HNSW',
+      ef: 77,
+      radius: 1.5,
+      isLinear: true,
+      isUsingRefiner: true,
+    });
+  });
+
+  it('submits IVF query params', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = {
+      searchResults: [{ id: 'doc-ivf', score: 0.7, fields: {} }],
+      embeddings: [],
+      rerankers: [],
+      calls: [],
+    };
+    const { container } = renderTab(state, {
+      collection: {
+        schema: {
+          ...COLLECTION.schema,
+          vectors: [
+            {
+              name: 'embedding',
+              dataType: 'VECTOR_FP32' as const,
+              dimension: 4,
+              indexParam: { indexType: 'IVF', metric: 'COSINE', params: {} },
+            },
+          ],
+        },
+      },
+    });
+    await user.click(screen.getByPlaceholderText(/\[0\.1/));
+    await user.paste('[0.1, 0.2, 0.3, 0.4]');
+    const nprobe = within(container.querySelector('.zv-vq-card') as HTMLElement).getByRole('spinbutton');
+    await user.clear(nprobe);
+    await user.type(nprobe, '32');
+    await user.click(screen.getByRole('button', { name: /search/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('doc-ivf')).toBeInTheDocument();
+    });
+    expect(((state.calls.find((c) => c.path.includes('/searches'))!.body as any).queries[0] as any).param).toEqual({
+      type: 'IVF',
+      nprobe: 32,
+    });
+  });
+
+  it('submits DiskANN query params', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = {
+      searchResults: [{ id: 'doc-diskann', score: 0.7, fields: {} }],
+      embeddings: [],
+      rerankers: [],
+      calls: [],
+    };
+    const { container } = renderTab(state, {
+      collection: {
+        schema: {
+          ...COLLECTION.schema,
+          vectors: [
+            {
+              name: 'embedding',
+              dataType: 'VECTOR_FP32' as const,
+              dimension: 4,
+              indexParam: { indexType: 'DISKANN', metric: 'COSINE', params: {} },
+            },
+          ],
+        },
+      },
+    });
+    await user.click(screen.getByPlaceholderText(/\[0\.1/));
+    await user.paste('[0.1, 0.2, 0.3, 0.4]');
+    const listSize = within(container.querySelector('.zv-vq-card') as HTMLElement).getByRole('spinbutton');
+    await user.clear(listSize);
+    await user.type(listSize, '450');
+    await user.click(screen.getByRole('button', { name: /search/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('doc-diskann')).toBeInTheDocument();
+    });
+    expect(((state.calls.find((c) => c.path.includes('/searches'))!.body as any).queries[0] as any).param).toEqual({
+      type: 'DISKANN',
+      listSize: 450,
+    });
   });
 
   it('shows HNSW query params section', () => {

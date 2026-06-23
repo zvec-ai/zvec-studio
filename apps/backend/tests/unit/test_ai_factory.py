@@ -45,6 +45,7 @@ class TestRerankerFactory:
         )
         inst = svc.get_reranker_instance("rrf", topn=5)
         assert type(inst).__name__ == "RrfReRanker"
+        assert inst.rank_constant == 60
 
     def test_weighted_builds_with_metric_and_weights(self, tmp_path: Path) -> None:
         reg, svc = _svc(tmp_path)
@@ -62,6 +63,7 @@ class TestRerankerFactory:
         )
         inst = svc.get_reranker_instance("w", topn=10, weights={"a": 1.0, "b": 0.0})
         assert type(inst).__name__ == "WeightedReRanker"
+        assert inst.weights == [1.0, 0.0]
 
 
 class TestLazyImportFallback:

@@ -822,6 +822,22 @@ export interface components {
             /** @default query */
             encodingType: components["schemas"]["EncodingType"];
         };
+        /**
+         * DiskAnnQueryParamSpec
+         * @description Maps to ``zvec.DiskAnnQueryParam(list_size)``.
+         */
+        DiskAnnQueryParamSpec: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "DISKANN";
+            /**
+             * Listsize
+             * @default 300
+             */
+            listSize: number;
+        };
         /** DocumentBatchDeleteRequest */
         DocumentBatchDeleteRequest: {
             /** Ids */
@@ -1091,6 +1107,32 @@ export interface components {
              */
             entries?: components["schemas"]["FsEntry"][];
         };
+        /**
+         * FtsQueryParamSpec
+         * @description Maps to ``zvec.FtsQueryParam(default_operator)``.
+         */
+        FtsQueryParamSpec: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "FTS";
+            /** Defaultoperator */
+            defaultOperator?: ("OR" | "AND") | null;
+        };
+        /**
+         * FtsSpec
+         * @description Full-text query source for one FTS route.
+         *
+         *     ``matchString`` is natural-language input. ``queryString`` is the advanced
+         *     boolean/phrase expression syntax exposed by Zvec. Exactly one must be set.
+         */
+        FtsSpec: {
+            /** Matchstring */
+            matchString?: string | null;
+            /** Querystring */
+            queryString?: string | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1182,7 +1224,7 @@ export interface components {
          * @description Index families exposed by the Zvec SDK.
          * @enum {string}
          */
-        IndexType: "HNSW" | "FLAT" | "IVF" | "HNSW_RABITQ" | "VAMANA" | "INVERT";
+        IndexType: "HNSW" | "FLAT" | "IVF" | "HNSW_RABITQ" | "VAMANA" | "DISKANN" | "INVERT" | "FTS";
         /**
          * IvfQueryParamSpec
          * @description Maps to ``zvec.IVFQueryParam(nprobe)``.
@@ -1446,6 +1488,8 @@ export interface components {
          * @description Body for ``POST /collections/{name}/fields/{field}/index``.
          */
         ScalarIndexCreateRequest: {
+            /** @default INVERT */
+            indexType: components["schemas"]["IndexType"];
             /**
              * Enablerangeoptimization
              * @default false
@@ -1456,10 +1500,26 @@ export interface components {
              * @default false
              */
             enableExtendedWildcard: boolean;
+            /**
+             * Tokenizername
+             * @default standard
+             */
+            tokenizerName: string;
+            /** Filters */
+            filters?: string[];
+            /**
+             * Extraparams
+             * @default
+             */
+            extraParams: string;
         };
         /**
          * ScalarIndexParam
-         * @description Inverted index parameters attached to a scalar field.
+         * @description Scalar index parameters attached to a field.
+         *
+         *     ``INVERT`` accelerates scalar filtering. ``FTS`` enables BM25 full-text
+         *     search over ``STRING`` fields and uses tokenizer settings during both
+         *     indexing and querying.
          */
         ScalarIndexParam: {
             /** @default INVERT */
@@ -1474,6 +1534,18 @@ export interface components {
              * @default false
              */
             enableExtendedWildcard: boolean;
+            /**
+             * Tokenizername
+             * @default standard
+             */
+            tokenizerName: string;
+            /** Filters */
+            filters?: string[];
+            /**
+             * Extraparams
+             * @default
+             */
+            extraParams: string;
         };
         /**
          * SearchRequest
@@ -1594,13 +1666,14 @@ export interface components {
         };
         /**
          * VectorQuerySpec
-         * @description One ANN query targeting a single vector field.
+         * @description One SDK ``Query`` route.
          *
-         *     Exactly one of ``id`` or ``vector`` must be supplied:
+         *     Exactly one of ``id``, ``vector`` or ``fts`` must be supplied:
          *
          *     - ``id`` performs a "by-id" lookup — the SDK loads the stored vector for
          *       that document and uses it as the query vector.
          *     - ``vector`` supplies an explicit query vector.
+         *     - ``fts`` performs full-text search against an FTS-indexed string field.
          */
         VectorQuerySpec: {
             /**
@@ -1620,11 +1693,13 @@ export interface components {
             vector?: number[] | {
                 [key: string]: number;
             } | null;
+            /** @description Full-text query source. */
+            fts?: components["schemas"]["FtsSpec"] | null;
             /**
              * Param
-             * @description Optional per-query index parameter (HNSW/IVF/HNSW_RABITQ/VAMANA).
+             * @description Optional per-query parameter (HNSW/IVF/HNSW_RABITQ/VAMANA/DISKANN/FTS).
              */
-            param?: (components["schemas"]["HnswQueryParamSpec"] | components["schemas"]["IvfQueryParamSpec"] | components["schemas"]["HnswRabitqQueryParamSpec"] | components["schemas"]["VamanaQueryParamSpec"]) | null;
+            param?: (components["schemas"]["HnswQueryParamSpec"] | components["schemas"]["IvfQueryParamSpec"] | components["schemas"]["HnswRabitqQueryParamSpec"] | components["schemas"]["VamanaQueryParamSpec"] | components["schemas"]["DiskAnnQueryParamSpec"] | components["schemas"]["FtsQueryParamSpec"]) | null;
         };
         /**
          * VectorSchema

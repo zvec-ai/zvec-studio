@@ -169,6 +169,69 @@ describe('<CreateCollectionDialog />', () => {
     });
   });
 
+  it('submits an FTS-only collection schema payload', async () => {
+    const state: FakeState = { calls: [] };
+    const apiClient = makeApiClient(state);
+    renderWithProviders(<Harness />, { apiClient });
+
+    await userEvent.type(screen.getByTestId('zv-create-name'), 'ftsOnly');
+    await userEvent.type(screen.getByTestId('zv-create-path'), '/tmp/ftsOnly');
+    const fieldName = screen.getByLabelText('Name') as HTMLInputElement;
+    await userEvent.clear(fieldName);
+    await userEvent.type(fieldName, 'content');
+    await userEvent.selectOptions(screen.getByLabelText('Type'), 'STRING');
+    await userEvent.click(screen.getByLabelText('Index'));
+    await userEvent.selectOptions(screen.getByLabelText('Index type'), 'FTS');
+    await userEvent.click(screen.getByTestId('zv-create-submit'));
+
+    await waitFor(() => {
+      expect(state.calls.some((c) => c.method === 'POST' && c.path === '/collections')).toBe(true);
+    });
+    const post = state.calls.find((c) => c.method === 'POST')!;
+    const body = post.body as { schema: { vectors: unknown[]; fields: Array<Record<string, any>> } };
+    expect(body.schema.vectors).toEqual([]);
+    expect(body.schema.fields).toEqual([
+      {
+        name: 'content',
+        dataType: 'STRING',
+        nullable: false,
+        indexParam: {
+          indexType: 'FTS',
+          enableRangeOptimization: false,
+          enableExtendedWildcard: false,
+          tokenizerName: 'standard',
+          filters: ['lowercase'],
+          extraParams: '',
+        },
+      },
+    ]);
+  });
+
+  it('submits DiskANN vector index params when creating a collection', async () => {
+    const state: FakeState = { calls: [] };
+    const apiClient = makeApiClient(state);
+    renderWithProviders(<Harness />, { apiClient });
+
+    await userEvent.type(screen.getByTestId('zv-create-name'), 'diskannCol');
+    await userEvent.type(screen.getByTestId('zv-create-path'), '/tmp/diskannCol');
+    await userEvent.selectOptions(screen.getByLabelText('Index'), 'DISKANN');
+    await userEvent.click(screen.getByTestId('zv-create-submit'));
+
+    await waitFor(() => {
+      expect(state.calls.some((c) => c.method === 'POST' && c.path === '/collections')).toBe(true);
+    });
+    const post = state.calls.find((c) => c.method === 'POST')!;
+    const body = post.body as { schema: { vectors: Array<{ indexParam: { indexType: string; params: Record<string, unknown> } }> } };
+    expect(body.schema.vectors[0]?.indexParam).toMatchObject({
+      indexType: 'DISKANN',
+      params: {
+        maxDegree: 100,
+        listSize: 50,
+        pqChunkNum: 0,
+      },
+    });
+  });
+
   it('keeps the dialog open when the server reports an error', async () => {
     const state: FakeState = {
       createError: fakeError('COLLECTION_ALREADY_EXISTS'),

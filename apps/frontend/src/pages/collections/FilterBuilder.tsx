@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, CloseButton } from '@/components/ui';
 
@@ -9,6 +9,7 @@ interface FieldDef {
 
 interface FilterBuilderProps {
   fields: ReadonlyArray<FieldDef>;
+  value?: string;
   onApply?: (expr: string) => void;
   onChange?: (expr: string) => void;
 }
@@ -99,10 +100,10 @@ function makeCondition(fields: ReadonlyArray<FieldDef>): FilterCondition {
   };
 }
 
-export function FilterBuilder({ fields, onApply, onChange }: FilterBuilderProps): JSX.Element {
+export function FilterBuilder({ fields, value, onApply, onChange }: FilterBuilderProps): JSX.Element {
   const { t } = useTranslation();
   const [mode, setMode] = useState<FilterMode>('sql');
-  const [sqlText, setSqlText] = useState('');
+  const [sqlText, setSqlText] = useState(value ?? '');
   const [conditions, setConditions] = useState<FilterCondition[]>(() => [makeCondition(fields)]);
 
   const conditionsRef = useRef(conditions);
@@ -116,6 +117,12 @@ export function FilterBuilder({ fields, onApply, onChange }: FilterBuilderProps)
     () => fields.filter((f) => f.name !== 'id'),
     [fields],
   );
+
+  useEffect(() => {
+    if (value !== undefined && modeRef.current === 'sql' && value !== sqlTextRef.current) {
+      setSqlText(value);
+    }
+  }, [value]);
 
   function handleApply(): void {
     if (modeRef.current === 'sql') {

@@ -81,6 +81,19 @@ const INDEX_TYPES: ReadonlyArray<SelectOption<IndexType>> = [
   { value: 'IVF', label: 'IVF' },
   { value: 'HNSW_RABITQ', label: 'HNSW_RABITQ' },
   { value: 'VAMANA', label: 'VAMANA' },
+  { value: 'DISKANN', label: 'DISKANN' },
+];
+const SCALAR_INDEX_TYPES: ReadonlyArray<SelectOption<'INVERT' | 'FTS'>> = [
+  { value: 'INVERT', label: 'INVERT' },
+  { value: 'FTS', label: 'FTS' },
+];
+const INVERT_ONLY_INDEX_TYPES: ReadonlyArray<SelectOption<'INVERT' | 'FTS'>> = [
+  { value: 'INVERT', label: 'INVERT' },
+];
+const FTS_TOKENIZERS: ReadonlyArray<SelectOption<string>> = [
+  { value: 'standard', label: 'standard' },
+  { value: 'whitespace', label: 'whitespace' },
+  { value: 'jieba', label: 'jieba' },
 ];
 const METRIC_TYPES: ReadonlyArray<SelectOption<MetricType>> = [
   { value: 'COSINE', label: 'COSINE' },
@@ -239,6 +252,9 @@ export function SchemaPanelDdl({ summary, indexCompleteness, completenessColor }
             )}
             {row.indexParam.enableExtendedWildcard && (
               <span className="zv-index-tag">Wildcard</span>
+            )}
+            {row.indexParam.indexType === 'FTS' && (
+              <span className="zv-index-tag">{row.indexParam.tokenizerName ?? 'standard'}</span>
             )}
           </span>
         ) : (
@@ -910,21 +926,36 @@ interface CreateScalarIndexDialogProps {
 function CreateScalarIndexDialog({ target, onClose, collection, toast }: CreateScalarIndexDialogProps): JSX.Element {
   const { t } = useTranslation();
   const mutation = useCreateScalarIndex();
+  const [indexType, setIndexType] = useState<'INVERT' | 'FTS'>('INVERT');
+  const [tokenizerName, setTokenizerName] = useState('standard');
+  const [extraParams, setExtraParams] = useState('');
   const [rangeOpt, setRangeOpt] = useState(false);
   const [wildcard, setWildcard] = useState(false);
+  const targetIsString = target?.dataType === 'STRING';
 
   // Pre-populate with current index values when editing an existing index.
   useEffect(() => {
     if (target?.indexParam) {
-      setRangeOpt(target.indexParam.enableRangeOptimization);
-      setWildcard(target.indexParam.enableExtendedWildcard);
+      const currentType = target.indexParam.indexType === 'FTS' && targetIsString ? 'FTS' : 'INVERT';
+      setIndexType(currentType);
+      setTokenizerName(target.indexParam.tokenizerName ?? 'standard');
+      setExtraParams(target.indexParam.extraParams ?? '');
+      setRangeOpt(Boolean(target.indexParam.enableRangeOptimization));
+      setWildcard(Boolean(target.indexParam.enableExtendedWildcard));
     } else {
+      setIndexType('INVERT');
+      setTokenizerName('standard');
+      setExtraParams('');
       setRangeOpt(false);
       setWildcard(false);
     }
-  }, [target]);
+    if (!targetIsString) setIndexType('INVERT');
+  }, [target, targetIsString]);
 
   function reset(): void {
+    setIndexType('INVERT');
+    setTokenizerName('standard');
+    setExtraParams('');
     setRangeOpt(false);
     setWildcard(false);
   }
@@ -941,10 +972,24 @@ function CreateScalarIndexDialog({ target, onClose, collection, toast }: CreateS
       await mutation.mutateAsync({
         name: collection,
         field: target.name,
-        body: {
-          enableRangeOptimization: rangeOpt,
-          enableExtendedWildcard: wildcard,
-        },
+        body:
+          indexType === 'FTS'
+            ? {
+                indexType: 'FTS',
+                enableRangeOptimization: false,
+                enableExtendedWildcard: false,
+                tokenizerName,
+                filters: ['lowercase'],
+                extraParams,
+              }
+            : {
+                indexType: 'INVERT',
+                enableRangeOptimization: rangeOpt,
+                enableExtendedWildcard: wildcard,
+                tokenizerName: 'standard',
+                filters: ['lowercase'],
+                extraParams: '',
+              },
       });
       toast.push({
         severity: 'info',
@@ -996,22 +1041,52 @@ function CreateScalarIndexDialog({ target, onClose, collection, toast }: CreateS
       <p style={{ marginBottom: '0.75rem', fontSize: 'var(--zv-font-size-sm, 13px)', color: 'var(--zv-color-text-subtle)' }}>
         {t('pages.collections.detail.schema.ddl.createScalarIndexDialog.hint')}
       </p>
-      <Select<string>
-        label={t('pages.collections.detail.schema.ddl.createScalarIndexDialog.rangeLabel')}
-        options={BOOL_OPTIONS}
-        value={rangeOpt ? 'true' : 'false'}
-        onChange={(event) => setRangeOpt(event.target.value === 'true')}
+      <Select<'INVERT' | 'FTS'>
+        label={t('pages.collections.detail.schema.ddl.createScalarIndexDialog.indexTypeLabel')}
+        options={targetIsString ? SCALAR_INDEX_TYPES : INVERT_ONLY_INDEX_TYPES}
+        value={indexType}
+        onChange={(event) => setIndexType(event.target.value as 'INVERT' | 'FTS')}
         disabled={mutation.isPending}
-        data-testid="zv-schema-create-scalar-index-range"
+        data-testid="zv-schema-create-scalar-index-type"
       />
-      <Select<string>
-        label={t('pages.collections.detail.schema.ddl.createScalarIndexDialog.wildcardLabel')}
-        options={BOOL_OPTIONS}
-        value={wildcard ? 'true' : 'false'}
-        onChange={(event) => setWildcard(event.target.value === 'true')}
-        disabled={mutation.isPending}
-        data-testid="zv-schema-create-scalar-index-wildcard"
-      />
+      {indexType === 'FTS' ? (
+        <>
+          <Select<string>
+            label={t('pages.collections.detail.schema.ddl.createScalarIndexDialog.tokenizerLabel')}
+            options={FTS_TOKENIZERS}
+            value={tokenizerName}
+            onChange={(event) => setTokenizerName(event.target.value)}
+            disabled={mutation.isPending}
+            data-testid="zv-schema-create-scalar-index-tokenizer"
+          />
+          <Input
+            label={t('pages.collections.detail.schema.ddl.createScalarIndexDialog.extraParamsLabel')}
+            value={extraParams}
+            onChange={(event) => setExtraParams(event.target.value)}
+            disabled={mutation.isPending}
+            data-testid="zv-schema-create-scalar-index-extra-params"
+          />
+        </>
+      ) : (
+        <>
+          <Select<string>
+            label={t('pages.collections.detail.schema.ddl.createScalarIndexDialog.rangeLabel')}
+            options={BOOL_OPTIONS}
+            value={rangeOpt ? 'true' : 'false'}
+            onChange={(event) => setRangeOpt(event.target.value === 'true')}
+            disabled={mutation.isPending}
+            data-testid="zv-schema-create-scalar-index-range"
+          />
+          <Select<string>
+            label={t('pages.collections.detail.schema.ddl.createScalarIndexDialog.wildcardLabel')}
+            options={BOOL_OPTIONS}
+            value={wildcard ? 'true' : 'false'}
+            onChange={(event) => setWildcard(event.target.value === 'true')}
+            disabled={mutation.isPending}
+            data-testid="zv-schema-create-scalar-index-wildcard"
+          />
+        </>
+      )}
     </Dialog>
   );
 }

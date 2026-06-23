@@ -1,11 +1,12 @@
 """Collection-related Pydantic schemas.
 
-Aligned with the Zvec Python SDK 0.4.x surface:
+Aligned with the Zvec Python SDK 0.5.x surface:
 - ``Doc`` owns the primary key (``id: str``); the application schema does NOT
   declare a primary scalar field.
 - Each ``VectorSchema`` optionally carries its own ``indexParam``; there is no
   collection-level ``indexParams`` in the SDK.
-- Scalar types mirror ``zvec.schema.ScalarDataType`` (no JSON).
+- Scalar fields may carry ``INVERT`` or ``FTS`` indexes. Vectorless collections
+  are valid when they have scalar fields, which enables FTS-only use cases.
 """
 
 from __future__ import annotations
@@ -72,7 +73,9 @@ class IndexType(str, Enum):
     IVF = "IVF"
     HNSW_RABITQ = "HNSW_RABITQ"
     VAMANA = "VAMANA"
+    DISKANN = "DISKANN"
     INVERT = "INVERT"
+    FTS = "FTS"
 
 
 class MetricType(str, Enum):
@@ -105,6 +108,16 @@ class FieldSchema(BaseModel):
             raise ValueError(f"field name '{v}' is reserved by the SDK and cannot be used")
         return v
 
+    @model_validator(mode="after")
+    def _validate_index(self) -> FieldSchema:
+        if self.indexParam is None:
+            return self
+        if self.indexParam.indexType is IndexType.FTS and self.dataType is not ScalarDataType.STRING:
+            raise ValueError("FTS indexes are only supported on STRING fields")
+        if self.indexParam.indexType not in {IndexType.INVERT, IndexType.FTS}:
+            raise ValueError("scalar field index type must be INVERT or FTS")
+        return self
+
 
 class VectorIndexParam(BaseModel):
     """Index build parameters attached to a single vector field."""
@@ -117,13 +130,33 @@ class VectorIndexParam(BaseModel):
 
 
 class ScalarIndexParam(BaseModel):
-    """Inverted index parameters attached to a scalar field."""
+    """Scalar index parameters attached to a field.
+
+    ``INVERT`` accelerates scalar filtering. ``FTS`` enables BM25 full-text
+    search over ``STRING`` fields and uses tokenizer settings during both
+    indexing and querying.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     indexType: IndexType = Field(default=IndexType.INVERT)
     enableRangeOptimization: bool = False
     enableExtendedWildcard: bool = False
+    tokenizerName: str = "standard"
+    filters: list[str] = Field(default_factory=lambda: ["lowercase"])
+    extraParams: str = ""
+
+    @model_validator(mode="after")
+    def _validate_scalar_index(self) -> ScalarIndexParam:
+        if self.indexType not in {IndexType.INVERT, IndexType.FTS}:
+            raise ValueError("scalar index type must be INVERT or FTS")
+        if self.indexType is IndexType.FTS:
+            if self.tokenizerName not in {"standard", "whitespace", "jieba"}:
+                raise ValueError("FTS tokenizerName must be standard, whitespace, or jieba")
+            unsupported = set(self.filters) - {"lowercase"}
+            if unsupported:
+                raise ValueError(f"unsupported FTS token filters: {sorted(unsupported)}")
+        return self
 
 
 class VectorSchema(BaseModel):
@@ -155,7 +188,7 @@ class CollectionSchema(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
-    vectors: list[VectorSchema] = Field(default_factory=list, min_length=1)
+    vectors: list[VectorSchema] = Field(default_factory=list)
     fields: list[FieldSchema] = Field(default_factory=list)
 
     @field_validator("name")
@@ -185,6 +218,8 @@ class CollectionSchema(BaseModel):
             raise ValueError(
                 f"name collision between vector and scalar fields: {sorted(overlap)}"
             )
+        if not self.vectors and not self.fields:
+            raise ValueError("collection schema must contain at least one vector or scalar field")
         return self
 
 
@@ -334,8 +369,24 @@ class ScalarIndexCreateRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    indexType: IndexType = IndexType.INVERT
     enableRangeOptimization: bool = False
     enableExtendedWildcard: bool = False
+    tokenizerName: str = "standard"
+    filters: list[str] = Field(default_factory=lambda: ["lowercase"])
+    extraParams: str = ""
+
+    @model_validator(mode="after")
+    def _validate_scalar_index(self) -> ScalarIndexCreateRequest:
+        if self.indexType not in {IndexType.INVERT, IndexType.FTS}:
+            raise ValueError("scalar index type must be INVERT or FTS")
+        if self.indexType is IndexType.FTS:
+            if self.tokenizerName not in {"standard", "whitespace", "jieba"}:
+                raise ValueError("FTS tokenizerName must be standard, whitespace, or jieba")
+            unsupported = set(self.filters) - {"lowercase"}
+            if unsupported:
+                raise ValueError(f"unsupported FTS token filters: {sorted(unsupported)}")
+        return self
 
 
 # ---------------------------------------------------------------------------

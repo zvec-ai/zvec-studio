@@ -1,14 +1,16 @@
-"""Vector search request / response schemas.
+"""Search request / response schemas.
 
-Aligned with the Zvec Python SDK 0.4.x ``Collection.query`` surface:
+Aligned with the Zvec Python SDK 0.5.x ``Collection.query`` surface:
 
-- ``query`` accepts a list of ``VectorQuery`` (multi-vector ANN) and an
-  optional ``ReRanker`` (multi-vector fusion or cross-encoder rescoring).
-- Each ``VectorQuery`` may target a different vector field, may be specified
-  by either an explicit ``vector`` payload or an existing document ``id``,
-  and may carry its own per-query index parameters
+- ``query`` accepts one or more ``Query`` routes. Each route targets either a
+  vector field (explicit vector or existing document ``id``) or an FTS-indexed
+  ``STRING`` field.
+- Multiple routes are executed as a SDK ``MultiQuery`` and require a reranker
+  for result fusion.
+- Vector routes may carry per-index query parameters
   (``HnswQueryParam`` / ``IVFQueryParam`` / ``HnswRabitqQueryParam`` /
-  ``VamanaQueryParam``).
+  ``VamanaQueryParam`` / ``DiskAnnQueryParam``); FTS routes may carry
+  ``FtsQueryParam``.
 
 The legacy single-vector form (``vector`` + ``vectorField`` at the top level)
 is still accepted and is folded into a one-element ``queries`` list by a
@@ -34,6 +36,8 @@ class QueryParamKind(str, Enum):
     IVF = "IVF"
     HNSW_RABITQ = "HNSW_RABITQ"
     VAMANA = "VAMANA"
+    DISKANN = "DISKANN"
+    FTS = "FTS"
 
 
 class HnswQueryParamSpec(BaseModel):
@@ -81,11 +85,31 @@ class VamanaQueryParamSpec(BaseModel):
     isUsingRefiner: bool = False
 
 
+class DiskAnnQueryParamSpec(BaseModel):
+    """Maps to ``zvec.DiskAnnQueryParam(list_size)``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal[QueryParamKind.DISKANN] = QueryParamKind.DISKANN
+    listSize: Annotated[int, Field(ge=1, le=10_000)] = 300
+
+
+class FtsQueryParamSpec(BaseModel):
+    """Maps to ``zvec.FtsQueryParam(default_operator)``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal[QueryParamKind.FTS] = QueryParamKind.FTS
+    defaultOperator: Literal["OR", "AND"] | None = None
+
+
 QueryParamSpec = Annotated[
     HnswQueryParamSpec
     | IvfQueryParamSpec
     | HnswRabitqQueryParamSpec
-    | VamanaQueryParamSpec,
+    | VamanaQueryParamSpec
+    | DiskAnnQueryParamSpec
+    | FtsQueryParamSpec,
     Field(discriminator="type"),
 ]
 
@@ -94,14 +118,36 @@ DenseVector = Annotated[list[float], Field(min_length=1, max_length=32_768)]
 VectorPayload = DenseVector | SparseVector
 
 
-class VectorQuerySpec(BaseModel):
-    """One ANN query targeting a single vector field.
+class FtsSpec(BaseModel):
+    """Full-text query source for one FTS route.
 
-    Exactly one of ``id`` or ``vector`` must be supplied:
+    ``matchString`` is natural-language input. ``queryString`` is the advanced
+    boolean/phrase expression syntax exposed by Zvec. Exactly one must be set.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    matchString: str | None = None
+    queryString: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_one_text_source(self) -> FtsSpec:
+        has_match = bool(self.matchString and self.matchString.strip())
+        has_query = bool(self.queryString and self.queryString.strip())
+        if has_match == has_query:
+            raise ValueError("FtsSpec: exactly one of 'matchString' or 'queryString' must be provided")
+        return self
+
+
+class VectorQuerySpec(BaseModel):
+    """One SDK ``Query`` route.
+
+    Exactly one of ``id``, ``vector`` or ``fts`` must be supplied:
 
     - ``id`` performs a "by-id" lookup — the SDK loads the stored vector for
       that document and uses it as the query vector.
     - ``vector`` supplies an explicit query vector.
+    - ``fts`` performs full-text search against an FTS-indexed string field.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -114,17 +160,30 @@ class VectorQuerySpec(BaseModel):
     vector: VectorPayload | None = (
         Field(default=None, description="Explicit query vector.")
     )
+    fts: FtsSpec | None = Field(default=None, description="Full-text query source.")
     param: QueryParamSpec | None = Field(
         default=None,
-        description="Optional per-query index parameter (HNSW/IVF/HNSW_RABITQ/VAMANA).",
+        description=(
+            "Optional per-query parameter "
+            "(HNSW/IVF/HNSW_RABITQ/VAMANA/DISKANN/FTS)."
+        ),
     )
 
     @model_validator(mode="after")
     def _validate_one_of(self) -> VectorQuerySpec:
-        if (self.id is None) == (self.vector is None):
+        sources = [
+            self.id is not None,
+            self.vector is not None,
+            self.fts is not None,
+        ]
+        if sum(sources) != 1:
             raise ValueError(
-                "VectorQuerySpec: exactly one of 'id' or 'vector' must be provided"
+                "VectorQuerySpec: exactly one of 'id', 'vector' or 'fts' must be provided"
             )
+        if self.fts is not None and self.param is not None and not isinstance(self.param, FtsQueryParamSpec):
+            raise ValueError("FTS queries may only use FTS query params")
+        if self.fts is None and isinstance(self.param, FtsQueryParamSpec):
+            raise ValueError("FTS query params require an FTS query")
         return self
 
 

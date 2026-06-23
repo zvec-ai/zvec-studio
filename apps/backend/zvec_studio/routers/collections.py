@@ -24,6 +24,7 @@ from zvec_studio.schemas import (
     RecentCollectionListResponse,
     RecentForgetRequest,
     ScalarIndexCreateRequest,
+    ScalarIndexParam,
     VectorIndexParam,
 )
 from zvec_studio.storage import CollectionRecord, SdkBackend
@@ -339,11 +340,18 @@ def create_scalar_index(
     path: str | None = Query(default=None),
 ) -> CollectionSummary:
     b = body or ScalarIndexCreateRequest()
+    param = ScalarIndexParam(
+        indexType=b.indexType,
+        enableRangeOptimization=b.enableRangeOptimization,
+        enableExtendedWildcard=b.enableExtendedWildcard,
+        tokenizerName=b.tokenizerName,
+        filters=b.filters,
+        extraParams=b.extraParams,
+    )
     record = backend.create_scalar_index(
         name,
         field_name=field,
-        enable_range_optimization=b.enableRangeOptimization,
-        enable_extended_wildcard=b.enableExtendedWildcard,
+        index_param=param,
         path=path,
     )
     return _summary(record, backend)

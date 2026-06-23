@@ -76,6 +76,9 @@ from zvec_studio.schemas.document import (
     DocumentUpsertResponse,
 )
 from zvec_studio.schemas.search import (
+    DiskAnnQueryParamSpec,
+    FtsQueryParamSpec,
+    FtsSpec,
     HnswQueryParamSpec,
     HnswRabitqQueryParamSpec,
     IvfQueryParamSpec,
@@ -102,6 +105,7 @@ __all__ = [
     "DefaultLocalDenseConfig",
     "DefaultLocalRerankerConfig",
     "DefaultLocalSparseConfig",
+    "DiskAnnQueryParamSpec",
     "DocumentBatchDeleteRequest",
     "DocumentBatchDeleteResponse",
     "DocumentBrowseRequest",
@@ -126,6 +130,8 @@ __all__ = [
     "FieldAddRequest",
     "FieldRenameRequest",
     "FieldSchema",
+    "FtsQueryParamSpec",
+    "FtsSpec",
     "HnswQueryParamSpec",
     "HnswRabitqQueryParamSpec",
     "IndexCreateRequest",

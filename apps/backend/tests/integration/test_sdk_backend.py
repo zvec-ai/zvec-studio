@@ -1,4 +1,4 @@
-"""Integration tests for the real Zvec 0.4.x SDK backend.
+"""Integration tests for the real Zvec SDK backend.
 
 These tests bypass the HTTP layer and exercise :class:`SdkBackend` directly to
 verify that the wrapper plays well with the actual ``zvec`` Python module:
@@ -31,6 +31,7 @@ from zvec_studio.exceptions import (  # noqa: E402  (import after skip)
     InvalidSchemaError,
 )
 from zvec_studio.schemas.collection import CollectionSchema  # noqa: E402
+from zvec_studio.storage import sdk as sdk_module  # noqa: E402
 from zvec_studio.storage.sdk import SdkBackend  # noqa: E402
 
 pytestmark = pytest.mark.integration
@@ -87,6 +88,21 @@ class TestLifecycle:
         target.mkdir()
         with pytest.raises(CollectionAlreadyExistsError):
             backend.create(path=target, schema=_schema("colalpha"))
+
+    def test_create_maps_sdk_runtime_error_to_invalid_schema(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def raise_runtime_error(_path: str, _schema: object) -> object:
+            raise RuntimeError("DiskAnn is not supported on this platform (Linux x86_64 only)")
+
+        monkeypatch.setattr(sdk_module.zvec, "create_and_open", raise_runtime_error)
+        backend = SdkBackend()
+
+        with pytest.raises(InvalidSchemaError) as exc:
+            backend.create(path=tmp_path / "diskann", schema=_schema("colalpha"))
+
+        assert "DiskAnn is not supported" in str(exc.value)
+        assert exc.value.sdk_exception == "RuntimeError"
 
     def test_open_round_trip_after_close(self, tmp_path: Path) -> None:
         backend = SdkBackend()

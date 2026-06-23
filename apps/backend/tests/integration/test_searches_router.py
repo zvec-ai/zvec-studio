@@ -1,4 +1,4 @@
-"""Integration tests for POST /api/v1/collections/{name}/searches (v0.2.0).
+"""Integration tests for POST /api/v1/collections/{name}/searches.
 
 The per-request ``metric`` override was removed: each vector field carries
 its own ``indexParam.metric`` chosen at create time. We validate L2 / COSINE
@@ -58,6 +58,39 @@ def _sparse_collection_payload(name: str) -> dict:
     }
 
 
+def _fts_collection_payload(name: str, *, with_vector: bool = False) -> dict:
+    payload: dict = {
+        "name": name,
+        "vectors": [],
+        "fields": [
+            {
+                "name": "content",
+                "dataType": "STRING",
+                "indexParam": {
+                    "indexType": "FTS",
+                    "tokenizerName": "standard",
+                    "filters": ["lowercase"],
+                },
+            },
+            {"name": "category", "dataType": "STRING", "indexParam": {"indexType": "INVERT"}},
+        ],
+    }
+    if with_vector:
+        payload["vectors"] = [
+            {
+                "name": "embedding",
+                "dataType": "VECTOR_FP32",
+                "dimension": VEC_DIM,
+                "indexParam": {
+                    "indexType": "HNSW",
+                    "metric": "L2",
+                    "params": {"M": 16},
+                },
+            }
+        ]
+    return payload
+
+
 def _doc(i: int, *, base: float = 1.0) -> dict:
     """Vectors aligned along the x-axis so L2 distance equals ``abs(i*base)``."""
     return {
@@ -73,6 +106,13 @@ def _sparse_doc(i: int) -> dict:
         "score": i,
         "embedding": {str(40 + i): 1},
     }
+
+
+def _fts_doc(doc_id: str, content: str, category: str, vec: list[float] | None = None) -> dict:
+    body: dict = {"id": doc_id, "content": content, "category": category}
+    if vec is not None:
+        body["embedding"] = vec
+    return body
 
 
 async def _make_collection(
@@ -98,6 +138,25 @@ async def _make_sparse_collection(
     resp = await client.post(
         f"{API}/collections",
         json={"path": str(path), "schema": _sparse_collection_payload(name)},
+    )
+    assert resp.status_code == 201, resp.text
+    return name
+
+
+async def _make_fts_collection(
+    client: AsyncClient,
+    tmp_path: Path,
+    name: str = "fts_searchables",
+    *,
+    with_vector: bool = False,
+) -> str:
+    path = tmp_path / name
+    resp = await client.post(
+        f"{API}/collections",
+        json={
+            "path": str(path),
+            "schema": _fts_collection_payload(name, with_vector=with_vector),
+        },
     )
     assert resp.status_code == 201, resp.text
     return name
@@ -330,7 +389,7 @@ class TestPerformance:
 
 
 class TestQueriesForm:
-    """Canonical multi-vector ``queries`` form (v0.3 + Zvec SDK 0.4.x)."""
+    """Canonical unified ``queries`` form (Zvec SDK 0.5.x)."""
 
     async def test_single_query_with_explicit_vector(
         self, client: AsyncClient, tmp_path: Path
@@ -441,6 +500,137 @@ class TestQueriesForm:
             },
         )
         assert resp.status_code == 422
+
+    async def test_fts_only_collection_searches_match_string(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        name = await _make_fts_collection(client, tmp_path)
+        await _seed(
+            client,
+            name,
+            [
+                _fts_doc("a", "hello world search", "docs"),
+                _fts_doc("b", "vector database internals", "docs"),
+                _fts_doc("c", "hello product notes", "notes"),
+            ],
+        )
+
+        resp = await client.post(
+            f"{API}/collections/{name}/searches",
+            json={
+                "queries": [
+                    {
+                        "field": "content",
+                        "fts": {"matchString": "hello"},
+                        "param": {"type": "FTS", "defaultOperator": "OR"},
+                    }
+                ],
+                "topK": 5,
+            },
+        )
+
+        assert resp.status_code == 200, resp.text
+        ids = {r["id"] for r in resp.json()["results"]}
+        assert ids == {"a", "c"}
+
+    async def test_fts_query_accepts_scalar_filter(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        name = await _make_fts_collection(client, tmp_path)
+        await _seed(
+            client,
+            name,
+            [
+                _fts_doc("a", "hello world search", "docs"),
+                _fts_doc("b", "hello private notes", "notes"),
+            ],
+        )
+
+        resp = await client.post(
+            f"{API}/collections/{name}/searches",
+            json={
+                "queries": [{"field": "content", "fts": {"queryString": "hello"}}],
+                "filter": "category = 'docs'",
+                "topK": 5,
+            },
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert [r["id"] for r in resp.json()["results"]] == ["a"]
+
+    async def test_legacy_vector_search_on_vectorless_collection_returns_400(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        name = await _make_fts_collection(client, tmp_path)
+        resp = await client.post(
+            f"{API}/collections/{name}/searches",
+            json={"vector": [0.0, 0.0, 0.0, 0.0], "topK": 1},
+        )
+
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "INVALID_SCHEMA"
+
+    async def test_hybrid_fts_and_vector_query_requires_reranker(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        name = await _make_fts_collection(client, tmp_path, name="hybrid", with_vector=True)
+        await _seed(
+            client,
+            name,
+            [
+                _fts_doc("a", "hello world search", "docs", [0.0, 0.0, 0.0, 0.0]),
+                _fts_doc("b", "vector database internals", "docs", [1.0, 0.0, 0.0, 0.0]),
+            ],
+        )
+
+        resp = await client.post(
+            f"{API}/collections/{name}/searches",
+            json={
+                "queries": [
+                    {"field": "content", "fts": {"matchString": "hello"}},
+                    {"field": "embedding", "vector": [0.0, 0.0, 0.0, 0.0]},
+                ],
+                "topK": 2,
+            },
+        )
+
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "INVALID_SCHEMA"
+
+    async def test_hybrid_fts_and_vector_query_with_reranker(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        name = await _make_fts_collection(client, tmp_path, name="hybrid_rrf", with_vector=True)
+        await _seed(
+            client,
+            name,
+            [
+                _fts_doc("a", "hello world search", "docs", [0.0, 0.0, 0.0, 0.0]),
+                _fts_doc("b", "hello vector database", "docs", [1.0, 0.0, 0.0, 0.0]),
+                _fts_doc("c", "unrelated notes", "notes", [5.0, 0.0, 0.0, 0.0]),
+            ],
+        )
+        reranker = await client.post(
+            f"{API}/ai/rerankers",
+            json={"name": "rrf-default", "config": {"type": "rrf", "rankConstant": 60}},
+        )
+        assert reranker.status_code == 201, reranker.text
+
+        resp = await client.post(
+            f"{API}/collections/{name}/searches",
+            json={
+                "queries": [
+                    {"field": "content", "fts": {"matchString": "hello"}},
+                    {"field": "embedding", "vector": [0.0, 0.0, 0.0, 0.0]},
+                ],
+                "rerankerName": "rrf-default",
+                "topK": 2,
+            },
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert {r["id"] for r in resp.json()["results"]} <= {"a", "b", "c"}
+        assert len(resp.json()["results"]) == 2
 
 
 class TestRerankerReference:
