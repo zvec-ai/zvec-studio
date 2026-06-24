@@ -22,8 +22,10 @@ const ALL_DATA_TYPES = [...VECTOR_TYPES, ...SCALAR_TYPES] as const;
 type AnyDataType = (typeof ALL_DATA_TYPES)[number];
 
 const METRICS = ['COSINE', 'L2', 'IP'] as const;
-const INDEX_TYPES = ['HNSW', 'FLAT', 'IVF', 'HNSW_RABITQ', 'VAMANA'] as const;
+const INDEX_TYPES = ['HNSW', 'FLAT', 'IVF', 'HNSW_RABITQ', 'VAMANA', 'DISKANN'] as const;
 const QUANTIZE_TYPES = ['UNDEFINED', 'FP16', 'INT8', 'INT4', 'RABITQ'] as const;
+const SCALAR_INDEX_TYPES = ['INVERT', 'FTS'] as const;
+const FTS_TOKENIZERS = ['standard', 'whitespace', 'jieba'] as const;
 
 function isVectorType(dt: string): boolean {
   return (VECTOR_TYPES as readonly string[]).includes(dt);
@@ -65,9 +67,15 @@ interface FieldDraft {
   nIters: string;
   totalBits: string;
   numClusters: string;
+  maxDegree: string;
+  listSize: string;
+  pqChunkNum: string;
   // Scalar-specific
   nullable: boolean;
   indexed: boolean;
+  scalarIndexType: (typeof SCALAR_INDEX_TYPES)[number];
+  tokenizerName: (typeof FTS_TOKENIZERS)[number];
+  ftsExtraParams: string;
   enableRangeOptimization: boolean;
   enableExtendedWildcard: boolean;
 }
@@ -87,8 +95,14 @@ function makeField(overrides?: Partial<FieldDraft>): FieldDraft {
     nIters: '10',
     totalBits: '7',
     numClusters: '16',
+    maxDegree: '100',
+    listSize: '50',
+    pqChunkNum: '0',
     nullable: false,
     indexed: false,
+    scalarIndexType: 'INVERT',
+    tokenizerName: 'standard',
+    ftsExtraParams: '',
     enableRangeOptimization: false,
     enableExtendedWildcard: false,
     ...overrides,
@@ -118,6 +132,15 @@ function buildVectorParams(f: FieldDraft): Record<string, unknown> {
       if (f.efConstruction) params.efConstruction = Number(f.efConstruction);
       if (f.totalBits) params.totalBits = Number(f.totalBits);
       if (f.numClusters) params.numClusters = Number(f.numClusters);
+      break;
+    case 'VAMANA':
+      if (f.maxDegree) params.maxDegree = Number(f.maxDegree);
+      if (f.listSize) params.searchListSize = Number(f.listSize);
+      break;
+    case 'DISKANN':
+      if (f.maxDegree) params.maxDegree = Number(f.maxDegree);
+      if (f.listSize) params.listSize = Number(f.listSize);
+      if (f.pqChunkNum) params.pqChunkNum = Number(f.pqChunkNum);
       break;
     case 'FLAT':
       break;
@@ -200,6 +223,13 @@ export function CreateCollectionDialog({
       if (patch.indexType === 'HNSW_RABITQ' && !patch.quantizeType) {
         updated.quantizeType = 'RABITQ';
       }
+      if (patch.dataType && isVectorType(patch.dataType)) {
+        updated.indexed = false;
+        updated.scalarIndexType = 'INVERT';
+      }
+      if (patch.dataType && !isVectorType(patch.dataType) && patch.dataType !== 'STRING') {
+        updated.scalarIndexType = 'INVERT';
+      }
       return updated;
     }));
     clearError('fields');
@@ -215,6 +245,7 @@ export function CreateCollectionDialog({
     else if (!COLLECTION_NAME_RE.test(name))
       next.name = t('pages.collections.create.errors.nameFormat');
     if (!path.trim()) next.path = t('pages.collections.create.errors.pathRequired');
+    if (fields.length === 0) next.fields = t('pages.collections.create.errors.fieldsRequired');
     for (const f of fields) {
       if (!f.name.trim() || !FIELD_NAME_RE.test(f.name)) {
         next[`field_${f.id}`] = t('pages.collections.create.errors.fieldNameRequired');
@@ -269,9 +300,12 @@ export function CreateCollectionDialog({
         ...(f.indexed
           ? {
               indexParam: {
-                indexType: 'INVERT' as const,
-                enableRangeOptimization: f.enableRangeOptimization,
-                enableExtendedWildcard: f.enableExtendedWildcard,
+                indexType: f.scalarIndexType,
+                enableRangeOptimization: f.scalarIndexType === 'INVERT' ? f.enableRangeOptimization : false,
+                enableExtendedWildcard: f.scalarIndexType === 'INVERT' ? f.enableExtendedWildcard : false,
+                tokenizerName: f.scalarIndexType === 'FTS' ? f.tokenizerName : 'standard',
+                filters: ['lowercase'],
+                extraParams: f.scalarIndexType === 'FTS' ? f.ftsExtraParams : '',
               },
             }
           : {}),
@@ -443,6 +477,19 @@ export function CreateCollectionDialog({
                         <Input label="nIters" type="number" value={field.nIters} onChange={(e) => updateField(field.id, { nIters: e.target.value })} />
                       </div>
                     )}
+                    {field.indexType === 'VAMANA' && (
+                      <div className="zv-create__index-params">
+                        <Input label="maxDegree" type="number" value={field.maxDegree} onChange={(e) => updateField(field.id, { maxDegree: e.target.value })} />
+                        <Input label="searchListSize" type="number" value={field.listSize} onChange={(e) => updateField(field.id, { listSize: e.target.value })} />
+                      </div>
+                    )}
+                    {field.indexType === 'DISKANN' && (
+                      <div className="zv-create__index-params">
+                        <Input label="maxDegree" type="number" value={field.maxDegree} onChange={(e) => updateField(field.id, { maxDegree: e.target.value })} />
+                        <Input label="listSize" type="number" value={field.listSize} onChange={(e) => updateField(field.id, { listSize: e.target.value })} />
+                        <Input label="pqChunkNum" type="number" value={field.pqChunkNum} onChange={(e) => updateField(field.id, { pqChunkNum: e.target.value })} />
+                      </div>
+                    )}
                   </>
                 )}
 
@@ -466,22 +513,46 @@ export function CreateCollectionDialog({
                     </label>
                     {field.indexed && (
                       <>
-                        <label className="zv-create__checkbox">
-                          <input
-                            type="checkbox"
-                            checked={field.enableRangeOptimization}
-                            onChange={(e) => updateField(field.id, { enableRangeOptimization: e.target.checked })}
-                          />
-                          {t('pages.collections.create.rangeOptimization')}
-                        </label>
-                        <label className="zv-create__checkbox">
-                          <input
-                            type="checkbox"
-                            checked={field.enableExtendedWildcard}
-                            onChange={(e) => updateField(field.id, { enableExtendedWildcard: e.target.checked })}
-                          />
-                          {t('pages.collections.create.extendedWildcard')}
-                        </label>
+                        <Select
+                          label={t('pages.collections.create.scalarIndexType')}
+                          value={field.scalarIndexType}
+                          onChange={(e) => updateField(field.id, { scalarIndexType: e.target.value as (typeof SCALAR_INDEX_TYPES)[number] })}
+                          options={(field.dataType === 'STRING' ? SCALAR_INDEX_TYPES : ['INVERT']).map((i) => ({ value: i, label: i }))}
+                        />
+                        {field.scalarIndexType === 'FTS' ? (
+                          <div className="zv-create__index-params">
+                            <Select
+                              label={t('pages.collections.create.tokenizerName')}
+                              value={field.tokenizerName}
+                              onChange={(e) => updateField(field.id, { tokenizerName: e.target.value as (typeof FTS_TOKENIZERS)[number] })}
+                              options={FTS_TOKENIZERS.map((i) => ({ value: i, label: i }))}
+                            />
+                            <Input
+                              label={t('pages.collections.create.extraParams')}
+                              value={field.ftsExtraParams}
+                              onChange={(e) => updateField(field.id, { ftsExtraParams: e.target.value })}
+                            />
+                          </div>
+                        ) : (
+                          <>
+                            <label className="zv-create__checkbox">
+                              <input
+                                type="checkbox"
+                                checked={field.enableRangeOptimization}
+                                onChange={(e) => updateField(field.id, { enableRangeOptimization: e.target.checked })}
+                              />
+                              {t('pages.collections.create.rangeOptimization')}
+                            </label>
+                            <label className="zv-create__checkbox">
+                              <input
+                                type="checkbox"
+                                checked={field.enableExtendedWildcard}
+                                onChange={(e) => updateField(field.id, { enableExtendedWildcard: e.target.checked })}
+                              />
+                              {t('pages.collections.create.extendedWildcard')}
+                            </label>
+                          </>
+                        )}
                       </>
                     )}
                   </div>

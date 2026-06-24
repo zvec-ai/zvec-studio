@@ -224,6 +224,35 @@ describe('SchemaPanelDdl', () => {
     });
   });
 
+  it('creates a DiskANN vector index payload', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = { calls: [] };
+    renderWithProviders(<SchemaPanelDdl summary={makeSummary()} />, {
+      apiClient: makeApiClient(state),
+    });
+
+    await user.click(screen.getByTestId('zv-schema-create-index-embedding'));
+    await user.selectOptions(await screen.findByTestId('zv-schema-create-index-type'), 'DISKANN');
+    await user.selectOptions(screen.getByTestId('zv-schema-create-index-metric'), 'L2');
+    fireEvent.change(screen.getByTestId('zv-schema-create-index-params'), {
+      target: { value: '{"maxDegree":100,"listSize":64,"pqChunkNum":2}' },
+    });
+    await user.click(screen.getByTestId('zv-schema-create-index-submit'));
+
+    await waitFor(() => {
+      expect(state.calls).toContainEqual({
+        method: 'POST',
+        path: '/collections/demo/indexes',
+        body: {
+          vectorField: 'embedding',
+          indexType: 'DISKANN',
+          metric: 'L2',
+          params: { maxDegree: 100, listSize: 64, pqChunkNum: 2 },
+        },
+      });
+    });
+  });
+
   it('blocks invalid vector index params before calling the API', async () => {
     const user = userEvent.setup();
     const state: FakeState = { calls: [] };
@@ -257,8 +286,12 @@ describe('SchemaPanelDdl', () => {
         method: 'POST',
         path: '/collections/demo/fields/title/index',
         body: {
+          indexType: 'INVERT',
           enableRangeOptimization: true,
           enableExtendedWildcard: true,
+          tokenizerName: 'standard',
+          filters: ['lowercase'],
+          extraParams: '',
         },
       });
     });
@@ -294,6 +327,36 @@ describe('SchemaPanelDdl', () => {
 
     await waitFor(() => {
       expect(state.calls.some((c) => c.method === 'DELETE' && c.path === '/collections/demo/fields/title/index')).toBe(true);
+    });
+  });
+
+  it('creates an FTS scalar index payload', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = { calls: [] };
+    renderWithProviders(<SchemaPanelDdl summary={makeSummary()} />, {
+      apiClient: makeApiClient(state),
+    });
+
+    await user.click(screen.getByTestId('zv-schema-create-scalar-index-title'));
+    await user.selectOptions(await screen.findByTestId('zv-schema-create-scalar-index-type'), 'FTS');
+    await user.selectOptions(screen.getByTestId('zv-schema-create-scalar-index-tokenizer'), 'whitespace');
+    await user.click(screen.getByTestId('zv-schema-create-scalar-index-extra-params'));
+    await user.paste('{"case":"fold"}');
+    await user.click(screen.getByTestId('zv-schema-create-scalar-index-submit'));
+
+    await waitFor(() => {
+      expect(state.calls).toContainEqual({
+        method: 'POST',
+        path: '/collections/demo/fields/title/index',
+        body: {
+          indexType: 'FTS',
+          enableRangeOptimization: false,
+          enableExtendedWildcard: false,
+          tokenizerName: 'whitespace',
+          filters: ['lowercase'],
+          extraParams: '{"case":"fold"}',
+        },
+      });
     });
   });
 });

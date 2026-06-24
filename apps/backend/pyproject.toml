@@ -31,9 +31,9 @@ dependencies = [
     "orjson>=3.10,<4.0",
     "typing-extensions>=4.12",
     # Zvec embedded vector database SDK (core runtime dependency).
-    "zvec>=0.4,<0.5",
+    "zvec>=0.5,<0.6",
     # Required by zvec for numpy-backed vector payloads.
-    "numpy>=1.23",
+    "numpy>=1.23,<2.5",
 ]
 
 [project.optional-dependencies]

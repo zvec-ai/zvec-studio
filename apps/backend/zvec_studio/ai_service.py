@@ -56,7 +56,6 @@ from zvec_studio.schemas import (
     QwenSparseConfig,
     RerankCandidate,
     RerankerConfig,
-    RerankerMetric,
     RrfRerankerConfig,
     WeightedRerankerConfig,
     is_dense_embedding,
@@ -439,28 +438,14 @@ class AIService:
             if isinstance(cfg, RrfRerankerConfig):
                 from zvec import RrfReRanker
 
-                return RrfReRanker(
-                    topn=topn,
-                    rerank_field=rerank_field,
-                    rank_constant=cfg.rankConstant,
-                )
+                return RrfReRanker(rank_constant=cfg.rankConstant)
             if isinstance(cfg, WeightedRerankerConfig):
-                from zvec import MetricType as SdkMetricType
                 from zvec import WeightedReRanker
 
                 # Per-call weights override persisted defaults.
                 effective_weights = weights if weights is not None else cfg.weights
-                metric = {
-                    RerankerMetric.L2: SdkMetricType.L2,
-                    RerankerMetric.IP: SdkMetricType.IP,
-                    RerankerMetric.COSINE: SdkMetricType.COSINE,
-                }[cfg.metric]
-                return WeightedReRanker(
-                    topn=topn,
-                    rerank_field=rerank_field,
-                    metric=metric,
-                    weights=effective_weights,
-                )
+                weight_values = list(effective_weights.values()) if effective_weights else []
+                return WeightedReRanker(weights=weight_values)
         except ImportError as exc:
             raise _wrap_import_error(exc, feature=cfg.type.value, cfg=cfg) from exc
         raise AIFunctionInvocationError(

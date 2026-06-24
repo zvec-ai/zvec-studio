@@ -1,7 +1,7 @@
-"""Integration tests for the Collection management HTTP endpoints (v0.2.0).
+"""Integration tests for the Collection management HTTP endpoints.
 
 These tests run against the real Zvec SDK via :class:`SdkBackend`, which is
-the only backend in v0.2.0. The previous in-memory test double was removed
+the only backend. The previous in-memory test double was removed
 once the SDK became mandatory.
 """
 
@@ -110,13 +110,43 @@ class TestCreate:
         self, client: AsyncClient, tmp_path: Path
     ) -> None:
         bad = _payload("bad")
-        # Empty vectors list is invalid in v0.2.0 (no top-level indexParams).
+        # Zvec 0.5 allows vectorless scalar collections, but not a completely
+        # empty schema.
         bad["vectors"] = []
+        bad["fields"] = []
         resp = await client.post(
             f"{API}/collections",
             json={"path": str(tmp_path / "bad"), "schema": bad},
         )
         assert resp.status_code == 422
+
+    async def test_vectorless_fts_schema_returns_201(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        schema = {
+            "name": "ftscol",
+            "vectors": [],
+            "fields": [
+                {
+                    "name": "content",
+                    "dataType": "STRING",
+                    "indexParam": {
+                        "indexType": "FTS",
+                        "tokenizerName": "standard",
+                        "filters": ["lowercase"],
+                    },
+                }
+            ],
+        }
+        resp = await client.post(
+            f"{API}/collections",
+            json={"path": str(tmp_path / "ftscol"), "schema": schema},
+        )
+
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["schema"]["vectors"] == []
+        assert body["schema"]["fields"][0]["indexParam"]["indexType"] == "FTS"
 
     async def test_validation_error_detail_contains_specific_message(
         self, client: AsyncClient, tmp_path: Path
@@ -498,6 +528,48 @@ class TestScalarIndexDDL:
         )
         assert resp.status_code == 400
 
+    async def test_create_fts_scalar_index_after_collection_creation(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        await _create(client, tmp_path / "c", "sidx_fts")
+
+        create = await client.post(
+            f"{API}/collections/sidx_fts/fields/title/index",
+            json={
+                "indexType": "FTS",
+                "tokenizerName": "standard",
+                "filters": ["lowercase"],
+            },
+        )
+
+        assert create.status_code == 201, create.text
+        field = next(f for f in create.json()["schema"]["fields"] if f["name"] == "title")
+        assert field["indexParam"]["indexType"] == "FTS"
+        assert field["indexParam"]["tokenizerName"] == "standard"
+        assert field["indexParam"]["filters"] == ["lowercase"]
+
+        insert = await client.post(
+            f"{API}/collections/sidx_fts/documents",
+            json={"documents": [{"id": "doc1", "embedding": [0.1, 0.2, 0.3, 0.4], "title": "hello world"}]},
+        )
+        assert insert.status_code == 201, insert.text
+
+        search = await client.post(
+            f"{API}/collections/sidx_fts/searches",
+            json={
+                "queries": [
+                    {
+                        "field": "title",
+                        "fts": {"matchString": "hello"},
+                        "param": {"type": "FTS", "defaultOperator": "OR"},
+                    }
+                ],
+                "topK": 10,
+            },
+        )
+        assert search.status_code == 200, search.text
+        assert [r["id"] for r in search.json()["results"]] == ["doc1"]
+
     async def test_drop_scalar_index_unknown_field_returns_400(
         self, client: AsyncClient, tmp_path: Path
     ) -> None:
@@ -529,6 +601,31 @@ class TestScalarIndexDDL:
         field2 = next(f for f in edit.json()["schema"]["fields"] if f["name"] == "title")
         assert field2["indexParam"]["enableRangeOptimization"] is True
         assert field2["indexParam"]["enableExtendedWildcard"] is True
+
+    async def test_create_fts_scalar_index_on_non_string_returns_400(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        schema = _payload("sidx_fts_bad")
+        schema["fields"] = [{"name": "score", "dataType": "INT64"}]
+        create_collection = await client.post(
+            f"{API}/collections",
+            json={"path": str(tmp_path / "c"), "schema": schema},
+        )
+        assert create_collection.status_code == 201, create_collection.text
+
+        resp = await client.post(
+            f"{API}/collections/sidx_fts_bad/fields/score/index",
+            json={
+                "indexType": "FTS",
+                "tokenizerName": "standard",
+                "filters": ["lowercase"],
+            },
+        )
+
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["code"] == "INVALID_SCHEMA"
+        assert "FTS index can only be created on STRING fields" in body["detail"]
 
 
 class TestCloseEdgeCases:

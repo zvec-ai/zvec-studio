@@ -11,10 +11,22 @@ import { Routes, Route } from 'react-router-dom';
 import { renderWithProviders } from '@/test-utils/render';
 
 import {
+  CollectionsPlaceholder,
   DocumentsPlaceholder,
   SearchPlaceholder,
   NotFoundPage,
 } from './Placeholders';
+
+describe('CollectionsPlaceholder', () => {
+  it('renders translated copy', () => {
+    renderWithProviders(<CollectionsPlaceholder />);
+
+    expect(screen.getByTestId('page-collections')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /collections/i })).toBeInTheDocument();
+    expect(screen.getByText(/inspect schema/i)).toBeInTheDocument();
+    expect(screen.queryByText('pages.collections.placeholder')).not.toBeInTheDocument();
+  });
+});
 
 describe('DocumentsPlaceholder', () => {
   it('renders with the correct testId', () => {

@@ -1,10 +1,11 @@
-"""Unit tests for v2 Collection Pydantic schemas (Zvec 0.4.x aligned).
+"""Unit tests for Collection Pydantic schemas (Zvec 0.5.x aligned).
 
 The v0.2.0 contract drops ``isPrimary`` / ``description`` / ``JSON`` /
-collection-level ``indexParams`` and adds:
+collection-level ``indexParams`` and keeps:
 - per-vector ``indexParam`` ({indexType, metric, params})
 - reserved field names ``{"id", "_id"}``
 - stricter collection-name regex (start with letter, len ≥ 3).
+- Zvec 0.5.0 FTS scalar indexes and DiskANN vector params.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from zvec_studio.schemas.collection import (
     IndexType,
     MetricType,
     ScalarDataType,
+    ScalarIndexParam,
     VectorDataType,
     VectorIndexParam,
     VectorSchema,
@@ -74,6 +76,33 @@ class TestFieldSchema:
         with pytest.raises(ValidationError):
             FieldSchema.model_validate({"name": "blob", "dataType": "JSON"})
 
+    def test_fts_index_requires_string_field(self) -> None:
+        with pytest.raises(ValidationError):
+            FieldSchema.model_validate(
+                {
+                    "name": "year",
+                    "dataType": "INT64",
+                    "indexParam": {"indexType": "FTS"},
+                }
+            )
+
+    def test_accepts_fts_index_on_string_field(self) -> None:
+        f = FieldSchema.model_validate(
+            {
+                "name": "content",
+                "dataType": "STRING",
+                "indexParam": {
+                    "indexType": "FTS",
+                    "tokenizerName": "jieba",
+                    "filters": ["lowercase"],
+                    "extraParams": '{"cut_mode":"search"}',
+                },
+            }
+        )
+        assert f.indexParam is not None
+        assert f.indexParam.indexType is IndexType.FTS
+        assert f.indexParam.tokenizerName == "jieba"
+
 
 class TestVectorSchema:
     def test_valid_vector(self) -> None:
@@ -124,12 +153,40 @@ class TestVectorIndexParam:
         )
         assert p.params == {"M": 32, "efConstruction": 200}
 
+    def test_diskann_params_passthrough(self) -> None:
+        p = VectorIndexParam.model_validate(
+            {
+                "indexType": "DISKANN",
+                "metric": "COSINE",
+                "params": {"maxDegree": 80, "listSize": 50, "pqChunkNum": 8, "quantizeType": "FP16"},
+            }
+        )
+        assert p.indexType is IndexType.DISKANN
+        assert p.params["maxDegree"] == 80
+
     def test_extra_forbidden_at_top_level(self) -> None:
         # Extras must live under ``params`` so we don't drift from SDK shape.
         with pytest.raises(ValidationError):
             VectorIndexParam.model_validate(
                 {"indexType": "HNSW", "metric": "L2", "efConstruction": 200}
             )
+
+
+class TestScalarIndexParam:
+    def test_invert_defaults(self) -> None:
+        p = ScalarIndexParam()
+        assert p.indexType is IndexType.INVERT
+        assert p.enableRangeOptimization is False
+
+    def test_fts_defaults(self) -> None:
+        p = ScalarIndexParam.model_validate({"indexType": "FTS"})
+        assert p.indexType is IndexType.FTS
+        assert p.tokenizerName == "standard"
+        assert p.filters == ["lowercase"]
+
+    def test_rejects_unknown_fts_filter(self) -> None:
+        with pytest.raises(ValidationError):
+            ScalarIndexParam.model_validate({"indexType": "FTS", "filters": ["stem"]})
 
 
 class TestCollectionSchema:
@@ -145,9 +202,21 @@ class TestCollectionSchema:
         # Re-validation must succeed without mutation.
         CollectionSchema.model_validate(dumped)
 
-    def test_requires_at_least_one_vector(self) -> None:
+    def test_allows_vectorless_fts_collection(self) -> None:
         payload = _valid_schema_payload()
         payload["vectors"] = []
+        payload["fields"] = [
+            {"name": "content", "dataType": "STRING", "indexParam": {"indexType": "FTS"}}
+        ]
+        schema = CollectionSchema.model_validate(payload)
+        assert schema.vectors == []
+        assert schema.fields[0].indexParam is not None
+        assert schema.fields[0].indexParam.indexType is IndexType.FTS
+
+    def test_rejects_empty_schema(self) -> None:
+        payload = _valid_schema_payload()
+        payload["vectors"] = []
+        payload["fields"] = []
         with pytest.raises(ValidationError):
             CollectionSchema.model_validate(payload)
 
@@ -176,7 +245,8 @@ class TestCollectionSchema:
             CollectionSchema.model_validate(payload)
 
     def test_no_scalar_fields_is_ok(self) -> None:
-        # Zvec 0.4.x allows vector-only collections; v0.2.0 follows suit.
+        # Zvec allows vector-only collections; Studio also allows scalar-only
+        # collections when at least one scalar field is present.
         payload = _valid_schema_payload()
         payload["fields"] = []
         schema = CollectionSchema.model_validate(payload)

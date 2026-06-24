@@ -1,4 +1,4 @@
-import { useState, useMemo, type FormEvent } from 'react';
+import { useEffect, useState, useMemo, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, CloseButton } from '@/components/ui';
@@ -7,7 +7,7 @@ import type { CollectionSummary } from '@/features/collections/api';
 import type { SearchRequest, SearchResponse, SearchResult } from '@/features/searches/api';
 import { useSearchDocuments } from '@/features/searches/hooks';
 import { useListEmbeddings, useEmbed, useListRerankers } from '@/features/ai/hooks';
-import type { EmbedResponse } from '@/features/ai/api';
+import type { EmbedResponse, RerankerFunctionRecord } from '@/features/ai/api';
 import { getEmbeddingDimension, getEmbeddingTag } from '@/features/ai/utils';
 import { FilterBuilder } from './FilterBuilder';
 import {
@@ -18,23 +18,56 @@ import {
   randomVectorText,
   vectorPlaceholder,
   vectorTagLabel,
-  type RawVectorValue,
 } from './vector-utils';
 
 interface VQState {
   field: string;
+  routeType: 'vector' | 'fts';
   mode: 'vector' | 'id' | 'text';
   embedding: string;
   vectorText: string;
   idText: string;
   queryText: string;
+  ftsMode: 'match' | 'query';
+  ftsText: string;
+  defaultOperator: 'OR' | 'AND';
+  hnswEf: string;
+  hnswRadius: string;
+  hnswLinear: boolean;
+  hnswRefiner: boolean;
+  ivfNprobe: string;
+  vamanaEfSearch: string;
+  diskAnnListSize: string;
 }
 
 export interface QueryTabProps {
   collection: CollectionSummary;
 }
 
+interface AddableQueryField {
+  field: string;
+  routeType: 'vector' | 'fts';
+  label: string;
+}
+
+interface QueryTabStoredState {
+  queries: VQState[];
+  topK: number;
+  filter: string;
+  outputFields: string[];
+  includeVector: boolean;
+  rerankerName: string;
+  results: SearchResult[];
+  tookMs: number | null;
+}
+
 const SCORE_PRECISION = 4;
+const DEFAULT_MULTIQUERY_RERANKER = 'rrf';
+const DEFAULT_MULTIQUERY_RERANKER_RECORD: RerankerFunctionRecord = {
+  name: DEFAULT_MULTIQUERY_RERANKER,
+  description: 'Reciprocal Rank Fusion',
+  config: { type: 'rrf', rankConstant: 60 },
+};
 
 const CopyIcon = (
   <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -42,6 +75,159 @@ const CopyIcon = (
     <path d="M10.5 5.5V3a1.5 1.5 0 0 0-1.5-1.5H3A1.5 1.5 0 0 0 1.5 3v6A1.5 1.5 0 0 0 3 10.5h2.5" />
   </svg>
 );
+
+function makeVectorQuery(field: string): VQState {
+  return {
+    field,
+    routeType: 'vector',
+    mode: 'vector',
+    embedding: '',
+    vectorText: '',
+    idText: '',
+    queryText: '',
+    ftsMode: 'match',
+    ftsText: '',
+    defaultOperator: 'OR',
+    hnswEf: '300',
+    hnswRadius: '0',
+    hnswLinear: false,
+    hnswRefiner: false,
+    ivfNprobe: '10',
+    vamanaEfSearch: '200',
+    diskAnnListSize: '300',
+  };
+}
+
+function makeFtsQuery(field: string): VQState {
+  return {
+    ...makeVectorQuery(field),
+    routeType: 'fts',
+    ftsMode: 'match',
+    ftsText: '',
+    defaultOperator: 'OR',
+  };
+}
+
+function makeDefaultQueries(
+  vectors: NonNullable<CollectionSummary['schema']['vectors']>,
+  ftsFields: NonNullable<CollectionSummary['schema']['fields']>,
+): VQState[] {
+  if (vectors.length > 0) return [makeVectorQuery(vectors[0].name)];
+  if (ftsFields.length > 0) return [makeFtsQuery(ftsFields[0].name)];
+  return [];
+}
+
+function queryStorageKey(collection: CollectionSummary): string {
+  return `zvec-studio.query-tab.${collection.path}.${collection.name}`;
+}
+
+function normalizeStoredQuery(
+  q: unknown,
+  vectors: NonNullable<CollectionSummary['schema']['vectors']>,
+  ftsFields: NonNullable<CollectionSummary['schema']['fields']>,
+): VQState | null {
+  if (!q || typeof q !== 'object') return null;
+  const candidate = q as Partial<VQState>;
+  if (typeof candidate.field !== 'string' || !candidate.field) return null;
+
+  const hasVectorField =
+    candidate.routeType === 'vector' && vectors.some((v) => v.name === candidate.field);
+  const hasFtsField =
+    candidate.routeType === 'fts' && ftsFields.some((f) => f.name === candidate.field);
+  if (!hasVectorField && !hasFtsField) return null;
+
+  const base = hasVectorField ? makeVectorQuery(candidate.field) : makeFtsQuery(candidate.field);
+  return {
+    ...base,
+    mode: candidate.mode === 'id' || candidate.mode === 'text' || candidate.mode === 'vector'
+      ? candidate.mode
+      : base.mode,
+    embedding: typeof candidate.embedding === 'string' ? candidate.embedding : base.embedding,
+    vectorText: typeof candidate.vectorText === 'string' ? candidate.vectorText : base.vectorText,
+    idText: typeof candidate.idText === 'string' ? candidate.idText : base.idText,
+    queryText: typeof candidate.queryText === 'string' ? candidate.queryText : base.queryText,
+    ftsMode: candidate.ftsMode === 'query' || candidate.ftsMode === 'match'
+      ? candidate.ftsMode
+      : base.ftsMode,
+    ftsText: typeof candidate.ftsText === 'string' ? candidate.ftsText : base.ftsText,
+    defaultOperator: candidate.defaultOperator === 'AND' ? 'AND' : base.defaultOperator,
+    hnswEf: typeof candidate.hnswEf === 'string' ? candidate.hnswEf : base.hnswEf,
+    hnswRadius: typeof candidate.hnswRadius === 'string' ? candidate.hnswRadius : base.hnswRadius,
+    hnswLinear: typeof candidate.hnswLinear === 'boolean' ? candidate.hnswLinear : base.hnswLinear,
+    hnswRefiner: typeof candidate.hnswRefiner === 'boolean' ? candidate.hnswRefiner : base.hnswRefiner,
+    ivfNprobe: typeof candidate.ivfNprobe === 'string' ? candidate.ivfNprobe : base.ivfNprobe,
+    vamanaEfSearch: typeof candidate.vamanaEfSearch === 'string' ? candidate.vamanaEfSearch : base.vamanaEfSearch,
+    diskAnnListSize: typeof candidate.diskAnnListSize === 'string' ? candidate.diskAnnListSize : base.diskAnnListSize,
+  };
+}
+
+function loadStoredState(
+  key: string,
+  vectors: NonNullable<CollectionSummary['schema']['vectors']>,
+  ftsFields: NonNullable<CollectionSummary['schema']['fields']>,
+): QueryTabStoredState | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<QueryTabStoredState>;
+    const storedQueries = Array.isArray(parsed.queries)
+      ? parsed.queries
+        .map((q) => normalizeStoredQuery(q, vectors, ftsFields))
+        .filter((q): q is VQState => q !== null)
+      : [];
+    return {
+      queries: storedQueries.length > 0 ? storedQueries : makeDefaultQueries(vectors, ftsFields),
+      topK: typeof parsed.topK === 'number' ? parsed.topK : 10,
+      filter: typeof parsed.filter === 'string' ? parsed.filter : '',
+      outputFields: Array.isArray(parsed.outputFields) ? parsed.outputFields.filter((v): v is string => typeof v === 'string') : [],
+      includeVector: Boolean(parsed.includeVector),
+      rerankerName: typeof parsed.rerankerName === 'string' ? parsed.rerankerName : '',
+      results: Array.isArray(parsed.results) ? parsed.results as SearchResult[] : [],
+      tookMs: typeof parsed.tookMs === 'number' ? parsed.tookMs : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredState(key: string, state: QueryTabStoredState): void {
+  if (typeof window === 'undefined') return;
+  window.sessionStorage.setItem(key, JSON.stringify(state));
+}
+
+function numericParam(value: string, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function buildVectorQueryParam(q: VQState, indexType: string | undefined): Record<string, unknown> | undefined {
+  switch (indexType) {
+    case 'HNSW':
+    case 'HNSW_RABITQ':
+      return {
+        type: indexType,
+        ef: numericParam(q.hnswEf, 300),
+        radius: numericParam(q.hnswRadius, 0),
+        isLinear: q.hnswLinear,
+        isUsingRefiner: q.hnswRefiner,
+      };
+    case 'IVF':
+      return { type: 'IVF', nprobe: numericParam(q.ivfNprobe, 10) };
+    case 'VAMANA':
+      return {
+        type: 'VAMANA',
+        efSearch: numericParam(q.vamanaEfSearch, 200),
+        radius: numericParam(q.hnswRadius, 0),
+        isLinear: q.hnswLinear,
+        isUsingRefiner: q.hnswRefiner,
+      };
+    case 'DISKANN':
+      return { type: 'DISKANN', listSize: numericParam(q.diskAnnListSize, 300) };
+    default:
+      return undefined;
+  }
+}
 
 function formatCellValue(value: unknown): string {
   if (value === null || value === undefined) return '—';
@@ -58,32 +244,33 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
   const { t } = useTranslation();
   const toast = useToast();
   const vectors = useMemo(() => collection.schema.vectors ?? [], [collection.schema.vectors]);
+  const ftsFields = useMemo(
+    () =>
+      (collection.schema.fields ?? []).filter(
+        (f) => f.dataType === 'STRING' && f.indexParam?.indexType === 'FTS',
+      ),
+    [collection.schema.fields],
+  );
   const searchMutation = useSearchDocuments(collection.name);
   const embeddings = useListEmbeddings();
   const rerankers = useListRerankers();
   const embedMutation = useEmbed();
+  const storageKey = queryStorageKey(collection);
+  const initialStoredState = useMemo(
+    () => loadStoredState(storageKey, vectors, ftsFields),
+    [storageKey, vectors, ftsFields],
+  );
 
-  const [queries, setQueries] = useState<VQState[]>(() => {
-    if (vectors.length === 0) return [];
-    return [
-      {
-        field: vectors[0].name,
-        mode: 'vector',
-        embedding: '',
-        vectorText: '',
-        idText: '',
-        queryText: '',
-      },
-    ];
-  });
+  const [queries, setQueries] = useState<VQState[]>(() => initialStoredState?.queries ?? makeDefaultQueries(vectors, ftsFields));
 
-  const [topK, setTopK] = useState(10);
-  const [filter, setFilter] = useState('');
-  const [outputFields, setOutputFields] = useState<string[]>([]);
-  const [includeVector, setIncludeVector] = useState(false);
-  const [rerankerName, setRerankerName] = useState('');
-  const [results, setResults] = useState<SearchResult[]>([]);
-  const [tookMs, setTookMs] = useState<number | null>(null);
+  const [topK, setTopK] = useState(initialStoredState?.topK ?? 10);
+  const [filter, setFilter] = useState(initialStoredState?.filter ?? '');
+  const [outputFields, setOutputFields] = useState<string[]>(() => initialStoredState?.outputFields ?? []);
+  const [includeVector, setIncludeVector] = useState(initialStoredState?.includeVector ?? false);
+  const [rerankerName, setRerankerName] = useState(initialStoredState?.rerankerName ?? '');
+  const [results, setResults] = useState<SearchResult[]>(() => initialStoredState?.results ?? []);
+  const [tookMs, setTookMs] = useState<number | null>(initialStoredState?.tookMs ?? null);
+  const [addFieldKey, setAddFieldKey] = useState('');
 
   const resultColumnKeys = useMemo(() => {
     if (results.length === 0) return [] as string[];
@@ -117,18 +304,67 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
   }
 
   const allEmbeddings = useMemo(() => embeddings.data?.items ?? [], [embeddings.data]);
-  const rerankerItems = useMemo(() => rerankers.data?.items ?? [], [rerankers.data]);
+  const listedRerankerItems = useMemo(() => rerankers.data?.items ?? [], [rerankers.data]);
+  const rerankerItems = useMemo(
+    () =>
+      listedRerankerItems.some((r) => r.name === DEFAULT_MULTIQUERY_RERANKER)
+        ? listedRerankerItems
+        : [DEFAULT_MULTIQUERY_RERANKER_RECORD, ...listedRerankerItems],
+    [listedRerankerItems],
+  );
 
   const usedFields = useMemo(() => new Set(queries.map((q) => q.field)), [queries]);
+  const isMultiQuery = queries.length > 1;
 
   const availableFieldsForAdd = useMemo(
-    () => vectors.filter((v) => !usedFields.has(v.name)),
-    [vectors, usedFields],
+    (): AddableQueryField[] => [
+      ...vectors
+        .filter((v) => !usedFields.has(v.name))
+        .map((v) => ({
+          field: v.name,
+          routeType: 'vector' as const,
+          label: `${v.name} (${vectorTagLabel(v)})`,
+        })),
+      ...ftsFields
+        .filter((f) => !usedFields.has(f.name))
+        .map((f) => ({ field: f.name, routeType: 'fts' as const, label: `${f.name} (FTS)` })),
+    ],
+    [vectors, ftsFields, usedFields],
   );
+
+  useEffect(() => {
+    if (addFieldKey && !availableFieldsForAdd.some((f) => `${f.routeType}:${f.field}` === addFieldKey)) {
+      setAddFieldKey('');
+    }
+  }, [addFieldKey, availableFieldsForAdd]);
+
+  useEffect(() => {
+    if (!isMultiQuery && rerankerName) {
+      setRerankerName('');
+      return;
+    }
+    if (isMultiQuery && !rerankerName) {
+      setRerankerName(DEFAULT_MULTIQUERY_RERANKER);
+    }
+  }, [isMultiQuery, rerankerName]);
+
+  useEffect(() => {
+    saveStoredState(storageKey, {
+      queries,
+      topK,
+      filter,
+      outputFields,
+      includeVector,
+      rerankerName: isMultiQuery ? rerankerName : '',
+      results,
+      tookMs,
+    });
+  }, [storageKey, queries, topK, filter, outputFields, includeVector, isMultiQuery, rerankerName, results, tookMs]);
 
   const queryDimMismatches = useMemo(
     () =>
       queries.map((q) => {
+        if (q.routeType !== 'vector') return false;
         if (!q.embedding) return false;
         const vec = vectors.find((v) => v.name === q.field);
         if (!vec || !isDenseVectorType(vec.dataType)) return false;
@@ -150,29 +386,35 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
   }
 
   function addQuery(): void {
-    const next = availableFieldsForAdd[0];
+    const next = availableFieldsForAdd.find((f) => `${f.routeType}:${f.field}` === addFieldKey);
     if (!next) return;
     setQueries((prev) => [
       ...prev,
-      {
-        field: next.name,
-        mode: 'vector',
-        embedding: '',
-        vectorText: '',
-        idText: '',
-        queryText: '',
-      },
+      next.routeType === 'vector' ? makeVectorQuery(next.field) : makeFtsQuery(next.field),
     ]);
+    setAddFieldKey('');
   }
 
   async function handleSearch(e: FormEvent): Promise<void> {
     e.preventDefault();
 
-    const querySpecs: Array<{ field: string; vector?: RawVectorValue; id?: string }> = [];
+    const querySpecs: Array<Record<string, unknown>> = [];
 
     for (const q of queries) {
+      if (q.routeType === 'fts') {
+        const text = q.ftsText.trim();
+        if (!text) continue;
+        querySpecs.push({
+          field: q.field,
+          fts: q.ftsMode === 'match' ? { matchString: text } : { queryString: text },
+          param: { type: 'FTS', defaultOperator: q.defaultOperator },
+        });
+        continue;
+      }
+
       const vecSchema = vectors.find((v) => v.name === q.field);
       if (!vecSchema) continue;
+      const param = buildVectorQueryParam(q, vecSchema.indexParam?.indexType);
       if (q.embedding && q.mode === 'text') {
         if (!q.queryText.trim()) continue;
         try {
@@ -184,7 +426,7 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
           if (isDenseVectorType(vecSchema.dataType) && res.kind !== 'dense') continue;
           const vec = res.vectors[0];
           if (!vec) continue;
-          querySpecs.push({ field: q.field, vector: vec });
+          querySpecs.push({ field: q.field, vector: vec, ...(param ? { param } : {}) });
         } catch (err) {
           toast.push({
             severity: 'error',
@@ -195,23 +437,23 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
         }
       } else if (q.mode === 'id') {
         if (!q.idText.trim()) continue;
-        querySpecs.push({ field: q.field, id: q.idText.trim() });
+        querySpecs.push({ field: q.field, id: q.idText.trim(), ...(param ? { param } : {}) });
       } else {
         const vec = parseRawVector(q.vectorText, vecSchema);
         if (!vec) continue;
-        querySpecs.push({ field: q.field, vector: vec });
+        querySpecs.push({ field: q.field, vector: vec, ...(param ? { param } : {}) });
       }
     }
 
     if (querySpecs.length === 0) return;
 
     const body: SearchRequest = {
-      queries: querySpecs,
+      queries: querySpecs as SearchRequest['queries'],
       topK,
       filter: filter.trim() || null,
       outputFields: outputFields.includes('__none__') ? [] : outputFields.length > 0 ? outputFields : null,
       includeVector,
-      rerankerName: rerankerName || null,
+      rerankerName: querySpecs.length > 1 ? (rerankerName || DEFAULT_MULTIQUERY_RERANKER) : null,
     };
 
     try {
@@ -231,19 +473,37 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
     <div className="zv-query-layout">
       <form className="zv-query-form" onSubmit={(e) => void handleSearch(e)} noValidate>
         <div className="zv-section-head">
-          <span className="zv-query-section-title">{t('pages.collections.detail.query.vectorQueries')}</span>
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={availableFieldsForAdd.length === 0}
-            onClick={addQuery}
-          >
-            +
-          </Button>
+          <span className="zv-query-section-title">{t('pages.collections.detail.query.queryRoutes')}</span>
+          <div className="zv-query-add-control">
+            <select
+              className="zv-form-select"
+              value={addFieldKey}
+              onChange={(e) => setAddFieldKey(e.target.value)}
+              disabled={availableFieldsForAdd.length === 0}
+              aria-label={t('pages.collections.detail.query.selectColumn')}
+            >
+              <option value="">{t('pages.collections.detail.query.selectColumn')}</option>
+              {availableFieldsForAdd.map((f) => (
+                <option key={`${f.routeType}:${f.field}`} value={`${f.routeType}:${f.field}`}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!addFieldKey}
+              onClick={addQuery}
+              aria-label={t('pages.collections.detail.query.addQuery')}
+            >
+              +
+            </Button>
+          </div>
         </div>
 
         {queries.map((q, idx) => {
           const vecSchema = vectors.find((v) => v.name === q.field);
+          const ftsField = ftsFields.find((f) => f.name === q.field);
           const indexType = vecSchema?.indexParam?.indexType;
           const matchingEmbeddings = allEmbeddings.filter((emb) => embeddingMatchesVector(emb, vecSchema));
 
@@ -255,11 +515,14 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
           const fieldDim = vecSchema?.dimension ?? null;
 
         return (
-            <div className="zv-vq-card" key={q.field}>
+            <div className="zv-vq-card" key={`${q.routeType}:${q.field}`}>
               <div className="zv-vq-card__head">
                 <span className="zv-vq-field-name">{q.field}</span>
-                {vecSchema && (
+                {q.routeType === 'vector' && vecSchema && (
                   <span className="zv-vq-field-tag">{vectorTagLabel(vecSchema)}</span>
+                )}
+                {q.routeType === 'fts' && ftsField && (
+                  <span className="zv-vq-field-tag">{t('pages.collections.detail.query.ftsFieldTag')}</span>
                 )}
                 <CloseButton
                   className="zv-vq-remove"
@@ -267,6 +530,50 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
                 />
               </div>
 
+              {q.routeType === 'fts' ? (
+                <>
+                  <div className="zv-input-mode-tabs">
+                    <button
+                      type="button"
+                      className={`zv-input-mode-tab${q.ftsMode === 'match' ? ' zv-input-mode-tab--active' : ''}`}
+                      onClick={() => updateQuery(idx, { ftsMode: 'match' })}
+                    >
+                      {t('pages.collections.detail.query.modeFtsMatch')}
+                    </button>
+                    <button
+                      type="button"
+                      className={`zv-input-mode-tab${q.ftsMode === 'query' ? ' zv-input-mode-tab--active' : ''}`}
+                      onClick={() => updateQuery(idx, { ftsMode: 'query' })}
+                    >
+                      {t('pages.collections.detail.query.modeFtsQuery')}
+                    </button>
+                  </div>
+                  <div className="zv-form-group" style={{ marginTop: 10 }}>
+                    <textarea
+                      className="zv-form-textarea"
+                      placeholder={
+                        q.ftsMode === 'match'
+                          ? t('pages.collections.detail.query.ftsMatchPlaceholder')
+                          : t('pages.collections.detail.query.ftsQueryPlaceholder')
+                      }
+                      value={q.ftsText}
+                      onChange={(e) => updateQuery(idx, { ftsText: e.target.value })}
+                    />
+                  </div>
+                  <div className="zv-form-group">
+                    <label className="zv-form-label">{t('pages.collections.detail.query.defaultOperator')}</label>
+                    <select
+                      className="zv-form-select"
+                      value={q.defaultOperator}
+                      onChange={(e) => updateQuery(idx, { defaultOperator: e.target.value as 'OR' | 'AND' })}
+                    >
+                      <option value="OR">OR</option>
+                      <option value="AND">AND</option>
+                    </select>
+                  </div>
+                </>
+              ) : (
+                <>
               <div className="zv-form-group">
                 <label className="zv-form-label">{t('pages.collections.detail.query.embedding')}</label>
                 <select
@@ -360,32 +667,54 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
                   />
                 </div>
               )}
+                </>
+              )}
 
-              {(indexType === 'HNSW' || indexType === 'HNSW_RABITQ') && (
+              {q.routeType === 'vector' && (indexType === 'HNSW' || indexType === 'HNSW_RABITQ') && (
                 <details className="zv-query-params-toggle">
                   <summary className="zv-query-params-summary">{t('pages.collections.detail.query.queryParams')}</summary>
                   <div className="zv-query-params-body">
                     <div className="zv-form-row">
                       <div className="zv-form-group">
                         <label className="zv-form-label">{t('pages.collections.detail.query.ef')}</label>
-                        <input className="zv-form-input" type="number" defaultValue={300} min={1} />
+                        <input
+                          className="zv-form-input"
+                          type="number"
+                          value={q.hnswEf}
+                          min={1}
+                          onChange={(e) => updateQuery(idx, { hnswEf: e.target.value })}
+                        />
                         <span className="zv-form-hint">{t('pages.collections.detail.query.efHint')}</span>
                       </div>
                       <div className="zv-form-group">
                         <label className="zv-form-label">{t('pages.collections.detail.query.radius')}</label>
-                        <input className="zv-form-input" type="number" defaultValue={0} step="any" />
+                        <input
+                          className="zv-form-input"
+                          type="number"
+                          value={q.hnswRadius}
+                          step="any"
+                          onChange={(e) => updateQuery(idx, { hnswRadius: e.target.value })}
+                        />
                         <span className="zv-form-hint">{t('pages.collections.detail.query.radiusHint')}</span>
                       </div>
                     </div>
                     <div className="zv-form-row">
                       <div className="zv-form-group">
                         <label className="zv-checkbox-label">
-                          <input type="checkbox" /> {t('pages.collections.detail.query.isLinear')}
+                          <input
+                            type="checkbox"
+                            checked={q.hnswLinear}
+                            onChange={(e) => updateQuery(idx, { hnswLinear: e.target.checked })}
+                          /> {t('pages.collections.detail.query.isLinear')}
                         </label>
                       </div>
                       <div className="zv-form-group">
                         <label className="zv-checkbox-label">
-                          <input type="checkbox" /> {t('pages.collections.detail.query.isUsingRefiner')}
+                          <input
+                            type="checkbox"
+                            checked={q.hnswRefiner}
+                            onChange={(e) => updateQuery(idx, { hnswRefiner: e.target.checked })}
+                          /> {t('pages.collections.detail.query.isUsingRefiner')}
                         </label>
                       </div>
                     </div>
@@ -393,14 +722,89 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
                 </details>
               )}
 
-              {indexType === 'IVF' && (
+              {q.routeType === 'vector' && indexType === 'IVF' && (
                 <details className="zv-query-params-toggle">
                   <summary className="zv-query-params-summary">{t('pages.collections.detail.query.queryParams')}</summary>
                   <div className="zv-query-params-body">
                     <div className="zv-form-group">
                       <label className="zv-form-label">{t('pages.collections.detail.query.nprobe')}</label>
-                      <input className="zv-form-input" type="number" defaultValue={10} min={1} />
+                      <input
+                        className="zv-form-input"
+                        type="number"
+                        value={q.ivfNprobe}
+                        min={1}
+                        onChange={(e) => updateQuery(idx, { ivfNprobe: e.target.value })}
+                      />
                       <span className="zv-form-hint">{t('pages.collections.detail.query.nprobeHint')}</span>
+                    </div>
+                  </div>
+                </details>
+              )}
+
+              {q.routeType === 'vector' && indexType === 'VAMANA' && (
+                <details className="zv-query-params-toggle">
+                  <summary className="zv-query-params-summary">{t('pages.collections.detail.query.queryParams')}</summary>
+                  <div className="zv-query-params-body">
+                    <div className="zv-form-row">
+                      <div className="zv-form-group">
+                        <label className="zv-form-label">{t('pages.collections.detail.query.efSearch')}</label>
+                        <input
+                          className="zv-form-input"
+                          type="number"
+                          value={q.vamanaEfSearch}
+                          min={1}
+                          onChange={(e) => updateQuery(idx, { vamanaEfSearch: e.target.value })}
+                        />
+                      </div>
+                      <div className="zv-form-group">
+                        <label className="zv-form-label">{t('pages.collections.detail.query.radius')}</label>
+                        <input
+                          className="zv-form-input"
+                          type="number"
+                          value={q.hnswRadius}
+                          step="any"
+                          onChange={(e) => updateQuery(idx, { hnswRadius: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                    <div className="zv-form-row">
+                      <div className="zv-form-group">
+                        <label className="zv-checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={q.hnswLinear}
+                            onChange={(e) => updateQuery(idx, { hnswLinear: e.target.checked })}
+                          /> {t('pages.collections.detail.query.isLinear')}
+                        </label>
+                      </div>
+                      <div className="zv-form-group">
+                        <label className="zv-checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={q.hnswRefiner}
+                            onChange={(e) => updateQuery(idx, { hnswRefiner: e.target.checked })}
+                          /> {t('pages.collections.detail.query.isUsingRefiner')}
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </details>
+              )}
+
+              {q.routeType === 'vector' && indexType === 'DISKANN' && (
+                <details className="zv-query-params-toggle">
+                  <summary className="zv-query-params-summary">{t('pages.collections.detail.query.queryParams')}</summary>
+                  <div className="zv-query-params-body">
+                    <div className="zv-form-group">
+                      <label className="zv-form-label">{t('pages.collections.detail.query.diskAnnListSize')}</label>
+                      <input
+                        className="zv-form-input"
+                        type="number"
+                        value={q.diskAnnListSize}
+                        min={1}
+                        onChange={(e) => updateQuery(idx, { diskAnnListSize: e.target.value })}
+                      />
+                      <span className="zv-form-hint">{t('pages.collections.detail.query.diskAnnListSizeHint')}</span>
                     </div>
                   </div>
                 </details>
@@ -410,21 +814,23 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
           );
         })}
 
-        <div className="zv-form-group">
-          <label className="zv-form-label">{t('pages.collections.detail.query.reranker')}</label>
-          <select
-            className="zv-form-select"
-            value={rerankerName}
-            onChange={(e) => setRerankerName(e.target.value)}
-          >
-            <option value="">{t('pages.collections.detail.query.rerankerNone')}</option>
-            {rerankerItems.map((r) => (
-              <option key={r.name} value={r.name}>
-                {r.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        {isMultiQuery && (
+          <div className="zv-form-group">
+            <label className="zv-form-label">{t('pages.collections.detail.query.reranker')}</label>
+            <select
+              className="zv-form-select"
+              value={rerankerName}
+              onChange={(e) => setRerankerName(e.target.value)}
+            >
+              <option value="">{t('pages.collections.detail.query.rerankerNone')}</option>
+              {rerankerItems.map((r) => (
+                <option key={r.name} value={r.name}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <hr style={{ border: 'none', borderTop: '1px solid var(--zv-color-border)', margin: '10px 0' }} />
 
@@ -504,7 +910,7 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
 
         <div className="zv-form-group">
           <label className="zv-form-label">{t('pages.collections.detail.query.filter')}</label>
-          <FilterBuilder fields={collection.schema.fields ?? []} onChange={(expr) => setFilter(expr)} />
+          <FilterBuilder fields={collection.schema.fields ?? []} value={filter} onChange={(expr) => setFilter(expr)} />
         </div>
 
         <Button

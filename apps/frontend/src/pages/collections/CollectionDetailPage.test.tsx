@@ -10,7 +10,7 @@
  * - destroy flow (confirmation gate, navigates home).
  */
 import type { JSX } from 'react';
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient } from '@tanstack/react-query';
@@ -148,7 +148,33 @@ function renderDetail(name: string, apiClient: ApiClient) {
   );
 }
 
+function installMemorySessionStorage(): void {
+  const store = new Map<string, string>();
+  const fake: Storage = {
+    get length() {
+      return store.size;
+    },
+    clear: () => store.clear(),
+    getItem: (key) => (store.has(key) ? store.get(key)! : null),
+    key: (index) => Array.from(store.keys())[index] ?? null,
+    removeItem: (key) => {
+      store.delete(key);
+    },
+    setItem: (key, value) => {
+      store.set(key, String(value));
+    },
+  };
+  Object.defineProperty(window, 'sessionStorage', {
+    configurable: true,
+    value: fake,
+  });
+}
+
 describe('CollectionDetailPage', () => {
+  beforeEach(() => {
+    installMemorySessionStorage();
+  });
+
   it('renders overview tab with collection info and schema', async () => {
     const state: FakeState = {
       collections: new Map([['demo', { summary: fakeSummary('demo') }]]),
@@ -175,7 +201,16 @@ describe('CollectionDetailPage', () => {
     await screen.findByText(/\/tmp\/demo/);
 
     await user.click(screen.getByText('Query'));
-    expect(screen.getByText('Vector Queries')).toBeInTheDocument();
+    expect(screen.getByText('Queries')).toBeInTheDocument();
+    const vectorInput = screen.getByPlaceholderText(/\[0\.1/) as HTMLTextAreaElement;
+    await user.click(vectorInput);
+    await user.paste('[0.1, 0.2, 0.3, 0.4]');
+
+    await user.click(screen.getByTestId('zv-detail-tab-browse'));
+    expect(screen.getByText(/42 docs/i)).toBeInTheDocument();
+
+    await user.click(screen.getByTestId('zv-detail-tab-query'));
+    expect(screen.getByPlaceholderText(/\[0\.1/)).toHaveValue('[0.1, 0.2, 0.3, 0.4]');
 
     await user.click(screen.getByText('Write'));
     expect(screen.getByText('Insert')).toBeInTheDocument();

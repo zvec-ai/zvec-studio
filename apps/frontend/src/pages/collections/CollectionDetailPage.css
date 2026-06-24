@@ -1196,6 +1196,16 @@ details[open] .zv-query-params-summary::before {
   font-size: var(--zv-font-size-section, 15px);
   font-weight: 600;
 }
+.zv-query-add-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+.zv-query-add-control .zv-form-select {
+  max-width: 220px;
+  min-width: 180px;
+}
 
 /* ── Section head ── */
 .zv-section-head {
@@ -1203,6 +1213,22 @@ details[open] .zv-query-params-summary::before {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
+}
+
+@media (max-width: 640px) {
+  .zv-query-form .zv-section-head {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .zv-query-add-control {
+    margin-left: 0;
+  }
+  .zv-query-add-control .zv-form-select {
+    flex: 1;
+    min-width: 0;
+    max-width: none;
+  }
 }
 
 /* ── Danger zone ── */

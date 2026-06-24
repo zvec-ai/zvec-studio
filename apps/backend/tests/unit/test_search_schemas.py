@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`zvec_studio.schemas.search` (v0.2.0).
+"""Unit tests for :mod:`zvec_studio.schemas.search` (Zvec 0.5.0).
 
 The legacy per-request ``metric`` override was removed: metric is fixed at
 collection-create time on each vector's ``indexParam``. Document ids are
@@ -70,6 +70,87 @@ class TestSearchRequest:
 
         assert req.queries is not None
         assert req.queries[0].vector == {"42": 1.0}
+
+    def test_accepts_fts_match_query_payload(self) -> None:
+        req = SearchRequest.model_validate(
+            {
+                "queries": [
+                    {
+                        "field": "content",
+                        "fts": {"matchString": "machine learning"},
+                        "param": {"type": "FTS", "defaultOperator": "AND"},
+                    }
+                ]
+            }
+        )
+
+        assert req.queries is not None
+        assert req.queries[0].fts is not None
+        assert req.queries[0].fts.matchString == "machine learning"
+
+    def test_accepts_diskann_query_param_payload(self) -> None:
+        req = SearchRequest.model_validate(
+            {
+                "queries": [
+                    {
+                        "field": "embedding",
+                        "vector": [0.1, 0.2],
+                        "param": {"type": "DISKANN", "listSize": 120},
+                    }
+                ]
+            }
+        )
+
+        assert req.queries is not None
+        assert req.queries[0].param is not None
+        assert req.queries[0].param.type == "DISKANN"
+
+    def test_fts_requires_exactly_one_text_source(self) -> None:
+        with pytest.raises(ValidationError):
+            SearchRequest.model_validate(
+                {
+                    "queries": [
+                        {
+                            "field": "content",
+                            "fts": {"matchString": "hello", "queryString": "hello"},
+                        }
+                    ]
+                }
+            )
+
+    def test_query_requires_one_of_vector_id_or_fts(self) -> None:
+        with pytest.raises(ValidationError):
+            SearchRequest.model_validate(
+                {"queries": [{"field": "embedding", "vector": [0.1], "fts": {"matchString": "hello"}}]}
+            )
+
+    def test_fts_param_requires_fts_source(self) -> None:
+        with pytest.raises(ValidationError):
+            SearchRequest.model_validate(
+                {
+                    "queries": [
+                        {
+                            "field": "embedding",
+                            "vector": [0.1],
+                            "param": {"type": "FTS", "defaultOperator": "OR"},
+                        }
+                    ]
+                }
+            )
+
+    def test_fts_source_rejects_vector_query_param(self) -> None:
+        with pytest.raises(ValidationError):
+            SearchRequest.model_validate(
+                {
+                    "queries": [
+                        {
+                            "field": "content",
+                            "fts": {"queryString": "hello"},
+                            "param": {"type": "HNSW", "ef": 10},
+                        }
+                    ]
+                }
+            )
 
     def test_sparse_vector_cannot_be_empty(self) -> None:
         with pytest.raises(ValidationError):

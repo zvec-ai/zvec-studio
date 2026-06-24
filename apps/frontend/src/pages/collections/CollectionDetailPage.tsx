@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
@@ -30,6 +30,11 @@ export function CollectionDetailPage(): JSX.Element {
   const pathHint = searchParams.get('path') ?? undefined;
   const tabParam = searchParams.get('tab') ?? '';
   const activeTab: Tab = VALID_TABS.has(tabParam) ? (tabParam as Tab) : 'overview';
+  const visitedOwner = `${name ?? ''}:${pathHint ?? ''}`;
+  const [visitedTabs, setVisitedTabs] = useState<{ owner: string; tabs: Set<Tab> }>(() => ({
+    owner: visitedOwner,
+    tabs: new Set([activeTab]),
+  }));
   const collectionQuery = useCollection(name, pathHint);
   const recentQuery = useListRecent();
   const openCollection = useOpenCollection();
@@ -47,6 +52,18 @@ export function CollectionDetailPage(): JSX.Element {
   }
 
   const autoOpenAttempted = useRef<string | null>(null);
+
+  useEffect(() => {
+    setVisitedTabs((prev) => {
+      if (prev.owner !== visitedOwner) {
+        return { owner: visitedOwner, tabs: new Set([activeTab]) };
+      }
+      if (prev.tabs.has(activeTab)) return prev;
+      const next = new Set(prev.tabs);
+      next.add(activeTab);
+      return { owner: prev.owner, tabs: next };
+    });
+  }, [activeTab, visitedOwner]);
 
   const is404 =
     collectionQuery.isError &&
@@ -96,6 +113,9 @@ export function CollectionDetailPage(): JSX.Element {
   }
 
   const collection = collectionQuery.data;
+  const collectionTabKey = `${collection.path}:${collection.name}`;
+  const shouldRenderTab = (tab: Tab): boolean =>
+    activeTab === tab || (visitedTabs.owner === visitedOwner && visitedTabs.tabs.has(tab));
 
   return (
     <div>
@@ -112,10 +132,26 @@ export function CollectionDetailPage(): JSX.Element {
         ))}
       </div>
 
-      {activeTab === 'overview' && <OverviewTab collection={collection} />}
-      {activeTab === 'browse' && <BrowseTab collection={collection} />}
-      {activeTab === 'query' && <QueryTab collection={collection} />}
-      {activeTab === 'write' && <MutateTab collection={collection} />}
+      {shouldRenderTab('overview') && (
+        <div hidden={activeTab !== 'overview'}>
+          <OverviewTab key={`overview:${collectionTabKey}`} collection={collection} />
+        </div>
+      )}
+      {shouldRenderTab('browse') && (
+        <div hidden={activeTab !== 'browse'}>
+          <BrowseTab key={`browse:${collectionTabKey}`} collection={collection} />
+        </div>
+      )}
+      {shouldRenderTab('query') && (
+        <div hidden={activeTab !== 'query'}>
+          <QueryTab key={`query:${collectionTabKey}`} collection={collection} />
+        </div>
+      )}
+      {shouldRenderTab('write') && (
+        <div hidden={activeTab !== 'write'}>
+          <MutateTab key={`write:${collectionTabKey}`} collection={collection} />
+        </div>
+      )}
     </div>
   );
 }

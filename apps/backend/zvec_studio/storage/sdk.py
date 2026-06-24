@@ -36,12 +36,8 @@ from zvec import (
     DataType as SdkDataType,
 )
 from zvec import (
-    Doc as SdkDoc,
-)
-from zvec import (
-    FieldSchema as SdkFieldSchema,
-)
-from zvec import (
+    DiskAnnIndexParam,
+    DiskAnnQueryParam,
     FlatIndexParam,
     HnswIndexParam,
     HnswQueryParam,
@@ -54,10 +50,16 @@ from zvec import (
     VamanaQueryParam,
 )
 from zvec import (
+    Doc as SdkDoc,
+)
+from zvec import (
+    FieldSchema as SdkFieldSchema,
+)
+from zvec import (
     MetricType as SdkMetricType,
 )
 from zvec import (
-    VectorQuery as SdkVectorQuery,
+    Query as SdkQuery,
 )
 from zvec import (
     VectorSchema as SdkVectorSchema,
@@ -75,7 +77,9 @@ from zvec_studio.exceptions import (
 from zvec_studio.schemas import (
     CollectionSchema,
     CollectionStats,
+    DiskAnnQueryParamSpec,
     FieldSchema,
+    FtsQueryParamSpec,
     HnswQueryParamSpec,
     HnswRabitqQueryParamSpec,
     IndexType,
@@ -89,6 +93,11 @@ from zvec_studio.schemas import (
     VectorIndexParam,
     VectorQuerySpec,
 )
+
+_ZVEC_EXPORTS = vars(zvec)
+FtsIndexParam: type[Any] = _ZVEC_EXPORTS["FtsIndexParam"]
+FtsQueryParam: type[Any] = _ZVEC_EXPORTS["FtsQueryParam"]
+SdkFts: type[Any] = _ZVEC_EXPORTS["Fts"]
 
 
 def _exc_msg(exc: BaseException) -> str:
@@ -162,7 +171,30 @@ _INDEX_CLS: dict[IndexType, type] = {
     IndexType.IVF: IVFIndexParam,
     IndexType.HNSW_RABITQ: HnswRabitqIndexParam,
     IndexType.VAMANA: VamanaIndexParam,
+    IndexType.DISKANN: DiskAnnIndexParam,
     IndexType.INVERT: InvertIndexParam,
+}
+
+_SDK_VECTOR_INDEX_TYPES: tuple[tuple[type, IndexType], ...] = (
+    (HnswIndexParam, IndexType.HNSW),
+    (FlatIndexParam, IndexType.FLAT),
+    (IVFIndexParam, IndexType.IVF),
+    (HnswRabitqIndexParam, IndexType.HNSW_RABITQ),
+    (VamanaIndexParam, IndexType.VAMANA),
+    (DiskAnnIndexParam, IndexType.DISKANN),
+)
+
+_SDK_VECTOR_INDEX_TYPE_BY_CLASS_NAME: dict[str, IndexType] = {
+    cls.__name__: index_type for cls, index_type in _SDK_VECTOR_INDEX_TYPES
+}
+
+_SDK_SCALAR_INDEX_TYPES: tuple[tuple[type, IndexType], ...] = (
+    (InvertIndexParam, IndexType.INVERT),
+    (FtsIndexParam, IndexType.FTS),
+)
+
+_SDK_SCALAR_INDEX_TYPE_BY_CLASS_NAME: dict[str, IndexType] = {
+    cls.__name__: index_type for cls, index_type in _SDK_SCALAR_INDEX_TYPES
 }
 
 _CAMEL_TO_SNAKE_RE = re.compile(r"(?<!^)(?=[A-Z])")
@@ -179,14 +211,33 @@ def _normalize_param_keys(params: dict[str, Any]) -> dict[str, Any]:
     return {_CAMEL_TO_SNAKE_RE.sub("_", k).lower(): v for k, v in params.items()}
 
 
+def _coerce_quantize_type(value: Any) -> Any:
+    if isinstance(value, str):
+        try:
+            return getattr(zvec.QuantizeType, value)
+        except AttributeError as exc:
+            raise InvalidSchemaError(
+                f"Unsupported quantizeType: {value}",
+                extra={"quantizeType": value},
+            ) from exc
+    return value
+
+
 def _build_index_param(spec: VectorIndexParam | None) -> Any:
     if spec is None:
         return HnswIndexParam()
-    cls = _INDEX_CLS[spec.indexType]
+    cls = _INDEX_CLS.get(spec.indexType)
+    if cls is None or spec.indexType in {IndexType.INVERT, IndexType.FTS}:
+        raise InvalidSchemaError(
+            f"Index type {spec.indexType.value} is not valid for vector fields.",
+            extra={"indexType": spec.indexType.value},
+        )
     kwargs: dict[str, Any] = {"metric_type": _METRIC_TO_SDK[spec.metric]}
     # Accept either snake_case or camelCase keys from clients; the SDK only
     # speaks snake_case.
     kwargs.update(_normalize_param_keys(spec.params))
+    if "quantize_type" in kwargs:
+        kwargs["quantize_type"] = _coerce_quantize_type(kwargs["quantize_type"])
     try:
         return cls(**kwargs)
     except TypeError as exc:
@@ -196,9 +247,34 @@ def _build_index_param(spec: VectorIndexParam | None) -> Any:
         ) from exc
 
 
+def _build_scalar_index_param(spec: ScalarIndexParam | None) -> Any | None:
+    if spec is None:
+        return None
+    if spec.indexType is IndexType.INVERT:
+        return InvertIndexParam(
+            enable_range_optimization=spec.enableRangeOptimization,
+            enable_extended_wildcard=spec.enableExtendedWildcard,
+        )
+    if spec.indexType is IndexType.FTS:
+        return FtsIndexParam(
+            tokenizer_name=spec.tokenizerName,
+            filters=spec.filters,
+            extra_params=spec.extraParams,
+        )
+    raise InvalidSchemaError(
+        f"Index type {spec.indexType.value} is not valid for scalar fields.",
+        extra={"indexType": spec.indexType.value},
+    )
+
+
 def _to_sdk_schema(schema: CollectionSchema) -> SdkCollectionSchema:
     sdk_fields = [
-        SdkFieldSchema(f.name, _SCALAR_TO_SDK[f.dataType], nullable=f.nullable)
+        SdkFieldSchema(
+            f.name,
+            _SCALAR_TO_SDK[f.dataType],
+            nullable=f.nullable,
+            index_param=_build_scalar_index_param(f.indexParam),
+        )
         for f in schema.fields
     ]
     sdk_vectors = [
@@ -213,7 +289,7 @@ def _to_sdk_schema(schema: CollectionSchema) -> SdkCollectionSchema:
     return SdkCollectionSchema(
         name=schema.name,
         fields=sdk_fields or None,
-        vectors=sdk_vectors,
+        vectors=sdk_vectors or None,
     )
 
 
@@ -289,19 +365,30 @@ def _from_sdk_index_param(ip: Any) -> VectorIndexParam | None:
     """Convert a SDK index param object back to Studio VectorIndexParam."""
     if ip is None:
         return None
-    # ip.type is an IndexType enum (HNSW, FLAT, IVF, HNSW_RABITQ)
-    idx_type_name = str(getattr(ip, "type", "HNSW"))
-    # Extract just the name portion, e.g. "IndexType.HNSW" → "HNSW"
-    if "." in idx_type_name:
-        idx_type_name = idx_type_name.rsplit(".", 1)[-1]
-    index_type = IndexType(idx_type_name)
+    index_type = _sdk_vector_index_type(ip)
 
     metric_sdk = getattr(ip, "metric_type", None)
     metric = _SDK_METRIC_TO_STUDIO.get(metric_sdk, MetricType.COSINE) if metric_sdk else MetricType.COSINE
 
     # Gather extra params (m, ef_construction, nlist, etc.)
     params: dict[str, Any] = {}
-    for attr in ("m", "ef_construction", "nlist", "nprobe", "quantize_type", "use_contiguous_memory"):
+    for attr in (
+        "m",
+        "ef_construction",
+        "n_list",
+        "n_iters",
+        "use_soar",
+        "nlist",
+        "nprobe",
+        "quantize_type",
+        "use_contiguous_memory",
+        "total_bits",
+        "num_clusters",
+        "sample_count",
+        "max_degree",
+        "list_size",
+        "pq_chunk_num",
+    ):
         val = getattr(ip, attr, None)
         if val is not None and attr not in ("metric_type", "type"):
             # Skip defaults that are noise
@@ -314,11 +401,79 @@ def _from_sdk_index_param(ip: Any) -> VectorIndexParam | None:
     return VectorIndexParam(indexType=index_type, metric=metric, params=params)
 
 
+def _sdk_type_name(ip: Any) -> str | None:
+    raw_type = getattr(ip, "type", None)
+    if raw_type is None:
+        return None
+    type_name = str(raw_type)
+    if "." in type_name:
+        type_name = type_name.rsplit(".", 1)[-1]
+    return type_name
+
+
+def _sdk_vector_index_type(ip: Any) -> IndexType:
+    for cls, index_type in _SDK_VECTOR_INDEX_TYPES:
+        if isinstance(ip, cls):
+            return index_type
+    by_name = _SDK_VECTOR_INDEX_TYPE_BY_CLASS_NAME.get(type(ip).__name__)
+    if by_name is not None:
+        return by_name
+
+    type_name = _sdk_type_name(ip)
+    if type_name is not None:
+        try:
+            index_type = IndexType(type_name)
+        except ValueError:
+            pass
+        else:
+            if index_type in {
+                IndexType.HNSW,
+                IndexType.FLAT,
+                IndexType.IVF,
+                IndexType.HNSW_RABITQ,
+                IndexType.VAMANA,
+                IndexType.DISKANN,
+            }:
+                return index_type
+
+    raise InvalidSchemaError(
+        f"Unsupported SDK vector index param type: {type(ip).__name__}",
+        extra={"sdkClass": type(ip).__name__, "sdkIndexType": type_name},
+    )
+
+
+def _sdk_scalar_index_type(ip: Any) -> IndexType:
+    for cls, index_type in _SDK_SCALAR_INDEX_TYPES:
+        if isinstance(ip, cls):
+            return index_type
+    by_name = _SDK_SCALAR_INDEX_TYPE_BY_CLASS_NAME.get(type(ip).__name__)
+    if by_name is not None:
+        return by_name
+
+    type_name = _sdk_type_name(ip)
+    if type_name in {"INVERT", "FTS"}:
+        return IndexType(type_name)
+
+    raise InvalidSchemaError(
+        f"Unsupported SDK scalar index param type: {type(ip).__name__}",
+        extra={"sdkClass": type(ip).__name__, "sdkIndexType": type_name},
+    )
+
+
 def _from_sdk_scalar_index_param(ip: Any) -> ScalarIndexParam | None:
-    """Convert a SDK scalar (inverted) index param to Studio ScalarIndexParam."""
+    """Convert a SDK scalar index param to Studio ScalarIndexParam."""
     if ip is None:
         return None
+    index_type = _sdk_scalar_index_type(ip)
+    if index_type is IndexType.FTS:
+        return ScalarIndexParam(
+            indexType=IndexType.FTS,
+            tokenizerName=getattr(ip, "tokenizer_name", "standard"),
+            filters=list(getattr(ip, "filters", ["lowercase"]) or ["lowercase"]),
+            extraParams=getattr(ip, "extra_params", ""),
+        )
     return ScalarIndexParam(
+        indexType=IndexType.INVERT,
         enableRangeOptimization=getattr(ip, "enable_range_optimization", False),
         enableExtendedWildcard=getattr(ip, "enable_extended_wildcard", False),
     )
@@ -700,7 +855,10 @@ class SdkBackend:
         # column have no value to fill in otherwise. We always make added
         # columns nullable to keep the API ergonomic.
         sdk_field = SdkFieldSchema(
-            field.name, _SCALAR_TO_SDK[field.dataType], nullable=True
+            field.name,
+            _SCALAR_TO_SDK[field.dataType],
+            nullable=True,
+            index_param=_build_scalar_index_param(field.indexParam),
         )
         try:
             record.sdk_obj.add_column(
@@ -815,8 +973,7 @@ class SdkBackend:
         name: str,
         *,
         field_name: str,
-        enable_range_optimization: bool = False,
-        enable_extended_wildcard: bool = False,
+        index_param: ScalarIndexParam,
         path: str | None = None,
     ) -> CollectionRecord:
         record = self.get(name, path=path)
@@ -826,17 +983,18 @@ class SdkBackend:
                 f"Scalar field '{field_name}' does not exist on '{name}'.",
                 extra={"name": name, "field": field_name},
             )
+        if index_param.indexType is IndexType.FTS and field_obj.dataType is not ScalarDataType.STRING:
+            raise InvalidSchemaError(
+                f"FTS index can only be created on STRING fields, got {field_obj.dataType.value}.",
+                extra={"name": name, "field": field_name, "dataType": field_obj.dataType.value},
+            )
         try:
-            import zvec as _zvec
             # If the field already has an index, drop it first (SDK does not
             # support in-place overwrite) so that "Edit Index" works correctly.
             if field_obj.indexParam is not None:
                 record.sdk_obj.drop_index(field_name)
-            param = _zvec.InvertIndexParam(
-                enable_range_optimization=enable_range_optimization,
-                enable_extended_wildcard=enable_extended_wildcard,
-            )
-            record.sdk_obj.create_index(field_name, param, _zvec.IndexOption())
+            param = _build_scalar_index_param(index_param)
+            record.sdk_obj.create_index(field_name, param, zvec.IndexOption())
         except (ValueError, RuntimeError) as exc:
             raise InvalidSchemaError(
                 f"Zvec create_index (scalar) failed: {_exc_msg(exc)}",
@@ -887,16 +1045,18 @@ class SdkBackend:
             sdk_schema = _to_sdk_schema(schema)
             try:
                 sdk_obj = zvec.create_and_open(str(path), sdk_schema)
-            except ValueError as exc:
-                msg = str(exc)
-                if "exists" in msg:
+            except (ValueError, RuntimeError) as exc:
+                msg = _exc_msg(exc)
+                if isinstance(exc, ValueError) and "exists" in msg:
                     raise CollectionAlreadyExistsError(
                         f"Zvec rejected path {path}: {msg}",
                         extra={"path": str(path)},
+                        sdk_exception=type(exc).__name__,
                     ) from exc
                 raise InvalidSchemaError(
                     f"Zvec rejected schema/path: {msg}",
                     extra={"path": str(path), "name": schema.name},
+                    sdk_exception=type(exc).__name__,
                 ) from exc
             record = CollectionRecord(
                 name=schema.name,
@@ -1129,7 +1289,6 @@ class SdkBackend:
         cap = 100_000
         try:
             preview = record.sdk_obj.query(
-                vectors=None,
                 topk=cap,
                 filter=filter_expr,
                 include_vector=False,
@@ -1168,7 +1327,6 @@ class SdkBackend:
         # before asserting filter-validation behaviour.
         try:
             docs = record.sdk_obj.query(
-                vectors=None,
                 topk=limit,
                 filter=filter_expr,
                 include_vector=include_vector,
@@ -1181,7 +1339,7 @@ class SdkBackend:
             ) from exc
         return [_doc_to_dict(d, include_vector=include_vector) for d in docs]
 
-    # ---- vector search ----
+    # ---- search ----
 
     def search(
         self,
@@ -1196,14 +1354,14 @@ class SdkBackend:
         include_vector: bool = False,
         reranker: Any | None = None,
     ) -> list[tuple[str, float, dict[str, Any]]]:
-        """Run an ANN query.
+        """Run a vector, FTS, or hybrid query.
 
         Either ``queries`` (canonical multi-vector form) or the legacy single
         ``legacy_vector`` (+ optional ``legacy_vector_field``) must be set.
-        Each :class:`VectorQuerySpec` may target a different vector field, may
-        be specified by ``id`` or ``vector``, and may carry per-query index
-        parameters. ``reranker`` is an opaque ``zvec.ReRanker`` instance built
-        by :class:`zvec_studio.ai_service.AIService`.
+        Each :class:`VectorQuerySpec` may target a vector field or an FTS
+        scalar field and may carry per-query index parameters. ``reranker`` is
+        an opaque ``zvec.ReRanker`` instance built by
+        :class:`zvec_studio.ai_service.AIService`.
         """
         record = self.get(name)
         resolved = self._resolve_query_specs(
@@ -1215,7 +1373,7 @@ class SdkBackend:
         sdk_queries = [self._build_sdk_query(record, q) for q in resolved]
         try:
             docs = record.sdk_obj.query(
-                vectors=sdk_queries,
+                queries=sdk_queries,
                 topk=top_k,
                 filter=filter_expr,
                 include_vector=include_vector,
@@ -1223,10 +1381,13 @@ class SdkBackend:
                 reranker=reranker,
             )
         except ValueError as exc:
-            raise InvalidFilterExpressionError(
-                str(exc),
-                extra={"filter": filter_expr},
-            ) from exc
+            msg = _exc_msg(exc)
+            if filter_expr is not None and "reranker" not in msg.lower():
+                raise InvalidFilterExpressionError(
+                    msg,
+                    extra={"filter": filter_expr},
+                ) from exc
+            raise InvalidSchemaError(msg, extra={"name": name}) from exc
         return [
             (
                 d.id,
@@ -1260,19 +1421,54 @@ class SdkBackend:
                 extra={},
             )
         if legacy_vector_field is None:
+            if not record.schema.vectors:
+                raise InvalidSchemaError(
+                    "Legacy vector search requires at least one vector field; use queries[].fts for FTS-only collections.",
+                    extra={"name": record.name},
+                )
             legacy_vector_field = record.schema.vectors[0].name
         return [VectorQuerySpec(field=legacy_vector_field, vector=legacy_vector)]
 
     @staticmethod
     def _build_sdk_query(
         record: CollectionRecord, spec: VectorQuerySpec
-    ) -> SdkVectorQuery:
-        """Translate a :class:`VectorQuerySpec` to ``zvec.VectorQuery``.
+    ) -> SdkQuery:
+        """Translate a :class:`VectorQuerySpec` to ``zvec.Query``.
 
         Validates that the target field exists and (for explicit-vector
         queries) that the dimension matches the field's declared dimension.
-        Builds the per-query SDK ``*QueryParam`` if one is supplied.
+        FTS routes must target FTS-indexed ``STRING`` fields. Builds the
+        per-query SDK ``*QueryParam`` if one is supplied.
         """
+        if spec.fts is not None:
+            field_def = next((f for f in record.schema.fields if f.name == spec.field), None)
+            if field_def is None:
+                raise InvalidSchemaError(
+                    f"FTS field '{spec.field}' not declared on '{record.name}'.",
+                    extra={"field": spec.field},
+                )
+            if field_def.dataType is not ScalarDataType.STRING:
+                raise InvalidSchemaError(
+                    f"FTS field '{spec.field}' must be STRING, got {field_def.dataType.value}.",
+                    extra={"field": spec.field, "dataType": field_def.dataType.value},
+                )
+            if field_def.indexParam is None or field_def.indexParam.indexType is not IndexType.FTS:
+                raise InvalidSchemaError(
+                    f"Field '{spec.field}' does not have an FTS index.",
+                    extra={"field": spec.field},
+                )
+            fts_kwargs: dict[str, Any] = {
+                "field_name": spec.field,
+                "fts": SdkFts(
+                    match_string=spec.fts.matchString,
+                    query_string=spec.fts.queryString,
+                ),
+            }
+            sdk_param = SdkBackend._build_sdk_query_param(spec.param)
+            if sdk_param is not None:
+                fts_kwargs["param"] = sdk_param
+            return SdkQuery(**fts_kwargs)
+
         matches = [v for v in record.schema.vectors if v.name == spec.field]
         if not matches:
             raise InvalidSchemaError(
@@ -1293,15 +1489,15 @@ class SdkBackend:
                     "vectorField": spec.field,
                 },
             )
-        kwargs: dict[str, Any] = {"field_name": spec.field}
+        vector_kwargs: dict[str, Any] = {"field_name": spec.field}
         if spec.id is not None:
-            kwargs["id"] = spec.id
+            vector_kwargs["id"] = spec.id
         else:
-            kwargs["vector"] = vector
+            vector_kwargs["vector"] = vector
         sdk_param = SdkBackend._build_sdk_query_param(spec.param)
         if sdk_param is not None:
-            kwargs["param"] = sdk_param
-        return SdkVectorQuery(**kwargs)
+            vector_kwargs["param"] = sdk_param
+        return SdkQuery(**vector_kwargs)
 
     @staticmethod
     def _build_sdk_query_param(param: QueryParamSpec | None) -> Any | None:
@@ -1330,6 +1526,10 @@ class SdkBackend:
                 is_linear=param.isLinear,
                 is_using_refiner=param.isUsingRefiner,
             )
+        if isinstance(param, DiskAnnQueryParamSpec):
+            return DiskAnnQueryParam(list_size=param.listSize)
+        if isinstance(param, FtsQueryParamSpec):
+            return FtsQueryParam(default_operator=param.defaultOperator or "")
         raise InvalidSchemaError(  # pragma: no cover - exhaustive
             f"Unsupported query param spec: {type(param).__name__}",
             extra={},
