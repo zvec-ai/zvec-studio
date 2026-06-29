@@ -394,6 +394,9 @@ def _from_sdk_index_param(ip: Any) -> VectorIndexParam | None:
             # Skip defaults that are noise
             if attr == "quantize_type" and str(val) == "QuantizeType.UNDEFINED":
                 continue
+            if attr == "quantize_type":
+                params[attr] = getattr(val, "name", str(val).rsplit(".", 1)[-1])
+                continue
             if attr == "use_contiguous_memory" and val is False:
                 continue
             params[attr] = val

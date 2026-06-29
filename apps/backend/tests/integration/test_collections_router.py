@@ -211,6 +211,28 @@ class TestOpen:
         assert resp.status_code == 200
         assert resp.json()["name"] == "col1"
 
+    async def test_open_quantized_collection_returns_json_safe_schema(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        schema = _payload("qcol")
+        schema["vectors"][0]["indexParam"]["params"]["quantizeType"] = "INT8"
+        path = tmp_path / "quantized"
+
+        create = await client.post(
+            f"{API}/collections",
+            json={"path": str(path), "schema": schema},
+        )
+        assert create.status_code == 201, create.text
+
+        close = await client.delete(f"{API}/collections/qcol")
+        assert close.status_code == 204
+
+        resp = await client.post(f"{API}/collections/open", json={"path": str(path)})
+        assert resp.status_code == 200, resp.text
+        params = resp.json()["schema"]["vectors"][0]["indexParam"]["params"]
+        assert params["quantize_type"] == "INT8"
+        assert "QuantizeType" not in resp.text
+
     async def test_open_missing_path_returns_404(
         self, client: AsyncClient, tmp_path: Path
     ) -> None:

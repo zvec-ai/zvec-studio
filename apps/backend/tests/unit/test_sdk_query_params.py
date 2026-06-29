@@ -2,16 +2,25 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 zvec = pytest.importorskip("zvec")
 
-from zvec_studio.schemas import DiskAnnQueryParamSpec, IndexType, VectorIndexParam  # noqa: E402
+from zvec_studio.schemas import (  # noqa: E402
+    CollectionStats,
+    CollectionSummary,
+    DiskAnnQueryParamSpec,
+    IndexType,
+    VectorIndexParam,
+)
 from zvec_studio.storage.sdk import (  # noqa: E402
     SdkBackend,
     _build_index_param,
     _from_sdk_index_param,
     _from_sdk_scalar_index_param,
+    _from_sdk_schema,
 )
 
 
@@ -76,7 +85,56 @@ def test_diskann_vector_index_round_trips_from_sdk_param() -> None:
     assert param.params["max_degree"] == 80
     assert param.params["list_size"] == 50
     assert param.params["pq_chunk_num"] == 8
-    assert param.params["quantize_type"] == zvec.QuantizeType.FP16
+    assert param.params["quantize_type"] == "FP16"
+    assert '"quantize_type":"FP16"' in param.model_dump_json()
+
+
+def test_quantized_hnsw_index_round_trips_as_json_safe_name() -> None:
+    param = _from_sdk_index_param(
+        zvec.HnswIndexParam(
+            metric_type=zvec.MetricType.COSINE,
+            quantize_type=zvec.QuantizeType.INT8,
+        )
+    )
+
+    assert param is not None
+    assert param.indexType is IndexType.HNSW
+    assert param.params["quantize_type"] == "INT8"
+    assert '"quantize_type":"INT8"' in param.model_dump_json()
+
+
+def test_sdk_schema_with_pybind_enum_index_param_serializes_for_summary() -> None:
+    sdk_schema = zvec.CollectionSchema(
+        name="demo",
+        vectors=[
+            zvec.VectorSchema(
+                "embedding",
+                zvec.DataType.VECTOR_FP32,
+                4,
+                index_param=zvec.HnswIndexParam(
+                    metric_type=zvec.MetricType.COSINE,
+                    quantize_type=zvec.QuantizeType.INT8,
+                ),
+            )
+        ],
+        fields=None,
+    )
+
+    schema = _from_sdk_schema(sdk_schema, Path("/tmp/demo"))
+    summary = CollectionSummary.model_validate(
+        {
+            "name": "demo",
+            "path": "/tmp/demo",
+            "schema": schema,
+            "stats": CollectionStats(),
+        }
+    )
+
+    dumped = summary.model_dump(mode="json", by_alias=True)
+    params = dumped["schema"]["vectors"][0]["indexParam"]["params"]
+    assert params["quantize_type"] == "INT8"
+    assert isinstance(params["quantize_type"], str)
+    assert '"quantize_type":"INT8"' in summary.model_dump_json(by_alias=True)
 
 
 @pytest.mark.parametrize(
