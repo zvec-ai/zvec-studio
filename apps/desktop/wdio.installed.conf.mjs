@@ -130,6 +130,7 @@ export const config = {
           ? {
               webviewOptions: {
                 userDataFolder: webviewDataDir,
+                additionalBrowserArguments: ['remote-debugging-port=0'],
               },
             }
           : {}),
@@ -162,11 +163,14 @@ export const config = {
     process.env.WEBKIT_DISABLE_DMABUF_RENDERER ||= '1';
 
     if (process.platform === 'win32') {
+      process.env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS ||= '--remote-debugging-port=0';
       fs.mkdirSync(webviewDataDir, { recursive: true });
       fs.rmSync(path.join(webviewDataDir, 'DevToolsActivePort'), { force: true });
       fs.writeFileSync(
         webviewDiagnosticsPath,
-        `${new Date().toISOString()} Watching ${webviewDataDir} (identifier=${tauriConfig.identifier})\n`,
+        `${new Date().toISOString()} Watching ${webviewDataDir} ` +
+          `(identifier=${tauriConfig.identifier}, ` +
+          `browserArgs=${process.env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS})\n`,
       );
       // Tauri 2 uses the app's LocalData directory for WebView2. Edge 150 may
       // create this file under EBWebView while EdgeDriver still waits for it at
