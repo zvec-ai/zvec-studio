@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import net from 'node:net';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -13,28 +12,80 @@ const frontendRequire = createRequire(path.join(repoRoot, 'apps', 'frontend', 'p
 const { chromium, expect } = frontendRequire('@playwright/test');
 const artifactsDir = path.join(repoRoot, 'artifacts', 'desktop-smoke');
 const appPath = process.env.DESKTOP_APP_PATH;
-const cdpPort = Number(process.env.WEBVIEW2_CDP_PORT ?? '9222');
-const cdpUrl = `http://127.0.0.1:${cdpPort}`;
+const tauriConfig = JSON.parse(
+  fs.readFileSync(path.join(repoRoot, 'apps', 'desktop', 'src-tauri', 'tauri.conf.json'), 'utf8'),
+);
+const registryKey =
+  'HKCU\\Software\\Policies\\Microsoft\\Edge\\WebView2\\AdditionalBrowserArguments';
+const appExecutableName = appPath ? path.win32.basename(appPath) : undefined;
+const webviewUserDataDir = process.env.LOCALAPPDATA
+  ? path.win32.join(process.env.LOCALAPPDATA, tauriConfig.identifier, 'EBWebView')
+  : undefined;
+const devToolsActivePortPath = webviewUserDataDir
+  ? path.win32.join(webviewUserDataDir, 'DevToolsActivePort')
+  : undefined;
 let appProcess;
 let browser;
+let registryValueCreated = false;
 
-function waitForPort(port, timeoutMs) {
+function enableRemoteDebugging() {
+  if (process.env.GITHUB_ACTIONS !== 'true') {
+    return;
+  }
+
+  const result = spawnSync(
+    'reg.exe',
+    [
+      'add',
+      registryKey,
+      '/v',
+      appExecutableName,
+      '/t',
+      'REG_SZ',
+      '/d',
+      '--remote-debugging-port=0',
+      '/f',
+    ],
+    { encoding: 'utf8' },
+  );
+  if (result.status !== 0) {
+    throw new Error(`Could not enable WebView2 remote debugging: ${result.stderr}`);
+  }
+  registryValueCreated = true;
+}
+
+function disableRemoteDebugging() {
+  if (!registryValueCreated) {
+    return;
+  }
+  spawnSync('reg.exe', ['delete', registryKey, '/v', appExecutableName, '/f'], {
+    stdio: 'ignore',
+  });
+  registryValueCreated = false;
+}
+
+function waitForCdpEndpoint(timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   return new Promise((resolve, reject) => {
     function attempt() {
-      const socket = net.createConnection({ host: '127.0.0.1', port });
-      socket.once('connect', () => {
-        socket.end();
-        resolve();
-      });
-      socket.once('error', (error) => {
-        socket.destroy();
-        if (Date.now() >= deadline) {
+      try {
+        const [portLine] = fs.readFileSync(devToolsActivePortPath, 'utf8').split(/\r?\n/);
+        const port = Number(portLine);
+        if (Number.isInteger(port) && port > 0) {
+          resolve(`http://127.0.0.1:${port}`);
+          return;
+        }
+      } catch (error) {
+        if (error?.code !== 'ENOENT') {
           reject(error);
           return;
         }
-        setTimeout(attempt, 250);
-      });
+      }
+      if (Date.now() >= deadline) {
+        reject(new Error(`Timed out waiting for ${devToolsActivePortPath}`));
+        return;
+      }
+      setTimeout(attempt, 250);
     }
     attempt();
   });
@@ -84,8 +135,13 @@ async function main() {
   if (!appPath || !fs.existsSync(appPath)) {
     throw new Error(`DESKTOP_APP_PATH does not exist: ${appPath}`);
   }
+  if (!devToolsActivePortPath) {
+    throw new Error('LOCALAPPDATA is required for the Windows WebView2 smoke test');
+  }
 
   fs.mkdirSync(artifactsDir, { recursive: true });
+  fs.rmSync(devToolsActivePortPath, { force: true });
+  enableRemoteDebugging();
   const appLog = fs.openSync(path.join(artifactsDir, 'windows-app.log'), 'a');
   const env = {
     ...process.env,
@@ -94,7 +150,6 @@ async function main() {
     ZVEC_READY_TIMEOUT_SECS: process.env.ZVEC_READY_TIMEOUT_SECS ?? '60',
     ZVEC_STUDIO_DATA_DIR:
       process.env.ZVEC_STUDIO_DATA_DIR ?? path.join(artifactsDir, 'windows-data'),
-    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${cdpPort}`,
   };
 
   appProcess = spawn(appPath, [], {
@@ -110,7 +165,7 @@ async function main() {
     }
   });
 
-  await waitForPort(cdpPort, 60000);
+  const cdpUrl = await waitForCdpEndpoint(60000);
   browser = await chromium.connectOverCDP(cdpUrl);
   const page = await waitForPage();
   await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: 60000 });
@@ -153,4 +208,5 @@ try {
 } finally {
   await browser?.close().catch(() => {});
   stopApp();
+  disableRemoteDebugging();
 }
