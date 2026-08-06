@@ -15,27 +15,75 @@ const webviewDataDir =
   process.platform === 'win32' && process.env.LOCALAPPDATA
     ? path.win32.join(process.env.LOCALAPPDATA, tauriConfig.identifier)
     : path.join(artifactsDir, `webview2-${process.pid}-${Date.now()}`);
+const webviewDiagnosticsPath = path.join(artifactsDir, 'webview2-diagnostics.txt');
 let driverProcess;
 let devToolsActivePortTimer;
+let devToolsActivePortCandidate;
+
+function recordWebViewDiagnostic(message) {
+  fs.appendFileSync(webviewDiagnosticsPath, `${new Date().toISOString()} ${message}\n`);
+}
+
+function findNestedDevToolsActivePort(root, maxDepth = 6) {
+  const expectedPath = path.join(root, 'DevToolsActivePort');
+  const pending = [{ directory: root, depth: 0 }];
+
+  while (pending.length > 0) {
+    const { directory, depth } = pending.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(directory, { withFileTypes: true });
+    } catch (error) {
+      if (!['EACCES', 'ENOENT'].includes(error?.code)) {
+        recordWebViewDiagnostic(`Could not inspect ${directory}: ${error}`);
+      }
+      continue;
+    }
+
+    for (const entry of entries) {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isFile() && entry.name === 'DevToolsActivePort' && entryPath !== expectedPath) {
+        return entryPath;
+      }
+      if (entry.isDirectory() && depth < maxDepth) {
+        pending.push({ directory: entryPath, depth: depth + 1 });
+      }
+    }
+  }
+
+  return undefined;
+}
 
 function mirrorNestedDevToolsActivePort() {
-  const nestedPath = path.join(webviewDataDir, 'EBWebView', 'DevToolsActivePort');
   const expectedPath = path.join(webviewDataDir, 'DevToolsActivePort');
-  if (fs.existsSync(expectedPath) || !fs.existsSync(nestedPath)) {
+  if (fs.existsSync(expectedPath)) {
     return;
   }
 
   try {
-    const contents = fs.readFileSync(nestedPath, 'utf8');
-    if (!/^\d+\r?\n/.test(contents)) {
+    const nestedPath = findNestedDevToolsActivePort(webviewDataDir);
+    if (!nestedPath) {
       return;
     }
+
+    const stats = fs.statSync(nestedPath);
+    const candidate = `${nestedPath}:${stats.size}:${stats.mtimeMs}`;
+    if (candidate !== devToolsActivePortCandidate) {
+      devToolsActivePortCandidate = candidate;
+      recordWebViewDiagnostic(
+        `Observed ${nestedPath} (${stats.size} bytes); waiting for a stable write`,
+      );
+      return;
+    }
+
+    const contents = fs.readFileSync(nestedPath);
 
     const temporaryPath = `${expectedPath}.${process.pid}.tmp`;
     fs.writeFileSync(temporaryPath, contents);
     fs.renameSync(temporaryPath, expectedPath);
     clearInterval(devToolsActivePortTimer);
     devToolsActivePortTimer = undefined;
+    recordWebViewDiagnostic(`Mirrored ${nestedPath} to ${expectedPath} (${contents.length} bytes)`);
     console.log('Mirrored nested WebView2 DevToolsActivePort for EdgeDriver compatibility');
   } catch (error) {
     if (error?.code !== 'ENOENT') {
@@ -116,11 +164,15 @@ export const config = {
     if (process.platform === 'win32') {
       fs.mkdirSync(webviewDataDir, { recursive: true });
       fs.rmSync(path.join(webviewDataDir, 'DevToolsActivePort'), { force: true });
+      fs.writeFileSync(
+        webviewDiagnosticsPath,
+        `${new Date().toISOString()} Watching ${webviewDataDir} (identifier=${tauriConfig.identifier})\n`,
+      );
       // Tauri 2 uses the app's LocalData directory for WebView2. Edge 150 may
       // create this file under EBWebView while EdgeDriver still waits for it at
       // that LocalData root. See:
       // https://github.com/MicrosoftEdge/EdgeWebDriver/issues/109
-      devToolsActivePortTimer = setInterval(mirrorNestedDevToolsActivePort, 100);
+      devToolsActivePortTimer = setInterval(mirrorNestedDevToolsActivePort, 250);
       devToolsActivePortTimer.unref();
     }
 
