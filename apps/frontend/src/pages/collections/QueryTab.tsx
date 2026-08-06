@@ -325,7 +325,10 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
 
   const usedFields = useMemo(() => new Set(queries.map((q) => q.field)), [queries]);
   const isMultiQuery = queries.length > 1;
-  const groupableFields = useMemo(() => collection.schema.fields ?? [], [collection.schema.fields]);
+  const groupableFields = useMemo(
+    () => (collection.schema.fields ?? []).filter((field) => !field.dataType.startsWith('ARRAY_')),
+    [collection.schema.fields],
+  );
   const groupByIndexType = queries.length === 1 && queries[0]?.routeType === 'vector'
     ? vectors.find((vector) => vector.name === queries[0]?.field)?.indexParam?.indexType ?? 'HNSW'
     : undefined;

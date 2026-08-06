@@ -228,6 +228,25 @@ describe('QueryTab', () => {
     expect(screen.getByText('news')).toBeInTheDocument();
   });
 
+  it('excludes array fields from group-by choices', () => {
+    const state: FakeState = { searchResults: [], embeddings: [], rerankers: [], calls: [] };
+    renderTab(state, {
+      collection: {
+        schema: {
+          ...COLLECTION.schema,
+          fields: [
+            ...COLLECTION.schema.fields,
+            { name: 'tags', dataType: 'ARRAY_STRING', nullable: false },
+          ],
+        },
+      },
+    });
+
+    const groupBy = screen.getByLabelText('Group by');
+    expect(within(groupBy).getByRole('option', { name: 'title' })).toBeInTheDocument();
+    expect(within(groupBy).queryByRole('option', { name: 'tags' })).not.toBeInTheDocument();
+  });
+
   it('generates and submits a dense random vector from the field dimension', async () => {
     const user = userEvent.setup();
     const state: FakeState = {

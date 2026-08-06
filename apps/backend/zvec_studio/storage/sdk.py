@@ -1476,6 +1476,14 @@ class SdkBackend:
                 f"Group-by field '{group_by_field}' is not declared on '{name}'.",
                 extra={"groupByField": group_by_field},
             )
+        if group_field.dataType in _ARRAY_SCALAR_TYPES:
+            raise InvalidSchemaError(
+                f"Group-by field '{group_by_field}' cannot use an array data type.",
+                extra={
+                    "groupByField": group_by_field,
+                    "dataType": group_field.dataType.value,
+                },
+            )
 
         vector_field = next(
             (field for field in record.schema.vectors if field.name == resolved[0].field),

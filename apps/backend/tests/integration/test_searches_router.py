@@ -500,6 +500,31 @@ class TestGroupBySearch:
         assert resp.status_code == 400
         assert resp.json()["code"] == "INVALID_SCHEMA"
 
+    async def test_rejects_group_by_on_array_field(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        name = "group_array"
+        payload = _group_collection_payload(name)
+        payload["fields"].append({"name": "tags", "dataType": "ARRAY_STRING"})
+        create = await client.post(
+            f"{API}/collections",
+            json={"path": str(tmp_path / name), "schema": payload},
+        )
+        assert create.status_code == 201, create.text
+
+        resp = await client.post(
+            f"{API}/collections/{name}/searches",
+            json={
+                "vector": [0.0, 0.0, 0.0, 0.0],
+                "groupByField": "tags",
+            },
+        )
+
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["code"] == "INVALID_SCHEMA"
+        assert "array data type" in body["detail"]
+
 
 class TestQueriesForm:
     """Canonical unified ``queries`` form (Zvec SDK 0.6.x)."""
