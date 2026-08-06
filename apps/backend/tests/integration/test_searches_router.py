@@ -58,7 +58,38 @@ def _sparse_collection_payload(name: str) -> dict:
     }
 
 
-def _fts_collection_payload(name: str, *, with_vector: bool = False) -> dict:
+def _group_collection_payload(name: str, *, index_type: str = "HNSW") -> dict:
+    return {
+        "name": name,
+        "vectors": [
+            {
+                "name": "embedding",
+                "dataType": "VECTOR_FP32",
+                "dimension": VEC_DIM,
+                "indexParam": {
+                    "indexType": index_type,
+                    "metric": "L2",
+                    "params": {"M": 16} if index_type == "HNSW" else {},
+                },
+            }
+        ],
+        "fields": [
+            {
+                "name": "category",
+                "dataType": "STRING",
+                "indexParam": {"indexType": "INVERT"},
+            }
+        ],
+    }
+
+
+def _fts_collection_payload(
+    name: str,
+    *,
+    with_vector: bool = False,
+    filters: list[str] | None = None,
+    extra_params: str = "",
+) -> dict:
     payload: dict = {
         "name": name,
         "vectors": [],
@@ -69,7 +100,8 @@ def _fts_collection_payload(name: str, *, with_vector: bool = False) -> dict:
                 "indexParam": {
                     "indexType": "FTS",
                     "tokenizerName": "standard",
-                    "filters": ["lowercase"],
+                    "filters": filters if filters is not None else ["lowercase"],
+                    "extraParams": extra_params,
                 },
             },
             {"name": "category", "dataType": "STRING", "indexParam": {"indexType": "INVERT"}},
@@ -143,19 +175,45 @@ async def _make_sparse_collection(
     return name
 
 
-async def _make_fts_collection(
+async def _make_group_collection(
     client: AsyncClient,
     tmp_path: Path,
-    name: str = "fts_searchables",
+    name: str = "group_searchables",
     *,
-    with_vector: bool = False,
+    index_type: str = "HNSW",
 ) -> str:
     path = tmp_path / name
     resp = await client.post(
         f"{API}/collections",
         json={
             "path": str(path),
-            "schema": _fts_collection_payload(name, with_vector=with_vector),
+            "schema": _group_collection_payload(name, index_type=index_type),
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    return name
+
+
+async def _make_fts_collection(
+    client: AsyncClient,
+    tmp_path: Path,
+    name: str = "fts_searchables",
+    *,
+    with_vector: bool = False,
+    filters: list[str] | None = None,
+    extra_params: str = "",
+) -> str:
+    path = tmp_path / name
+    resp = await client.post(
+        f"{API}/collections",
+        json={
+            "path": str(path),
+            "schema": _fts_collection_payload(
+                name,
+                with_vector=with_vector,
+                filters=filters,
+                extra_params=extra_params,
+            ),
         },
     )
     assert resp.status_code == 201, resp.text
@@ -388,8 +446,88 @@ class TestPerformance:
         assert body["took_ms"] < 500.0
 
 
+class TestGroupBySearch:
+    async def test_groups_single_vector_query_by_scalar_field(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        name = await _make_group_collection(client, tmp_path)
+        await _seed(
+            client,
+            name,
+            [
+                {"id": "a-1", "category": "a", "embedding": [0.1, 0.0, 0.0, 0.0]},
+                {"id": "a-2", "category": "a", "embedding": [0.2, 0.0, 0.0, 0.0]},
+                {"id": "b-1", "category": "b", "embedding": [0.15, 0.0, 0.0, 0.0]},
+                {"id": "b-2", "category": "b", "embedding": [0.3, 0.0, 0.0, 0.0]},
+                {"id": "c-1", "category": "c", "embedding": [1.0, 0.0, 0.0, 0.0]},
+            ],
+        )
+
+        resp = await client.post(
+            f"{API}/collections/{name}/searches",
+            json={
+                "queries": [
+                    {"field": "embedding", "vector": [0.0, 0.0, 0.0, 0.0]}
+                ],
+                "groupByField": "category",
+                "groupCount": 2,
+                "topKPerGroup": 2,
+            },
+        )
+
+        assert resp.status_code == 200, resp.text
+        results = resp.json()["results"]
+        values = {result["groupByValue"] for result in results}
+        assert values == {"a", "b"}
+        assert len(results) == 4
+        assert all(result["groupByValue"] for result in results)
+
+    async def test_rejects_group_by_on_unsupported_index(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        name = await _make_group_collection(
+            client, tmp_path, name="group_ivf", index_type="IVF"
+        )
+
+        resp = await client.post(
+            f"{API}/collections/{name}/searches",
+            json={
+                "vector": [0.0, 0.0, 0.0, 0.0],
+                "groupByField": "category",
+            },
+        )
+
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "INVALID_SCHEMA"
+
+    async def test_rejects_group_by_on_array_field(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        name = "group_array"
+        payload = _group_collection_payload(name)
+        payload["fields"].append({"name": "tags", "dataType": "ARRAY_STRING"})
+        create = await client.post(
+            f"{API}/collections",
+            json={"path": str(tmp_path / name), "schema": payload},
+        )
+        assert create.status_code == 201, create.text
+
+        resp = await client.post(
+            f"{API}/collections/{name}/searches",
+            json={
+                "vector": [0.0, 0.0, 0.0, 0.0],
+                "groupByField": "tags",
+            },
+        )
+
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["code"] == "INVALID_SCHEMA"
+        assert "array data type" in body["detail"]
+
+
 class TestQueriesForm:
-    """Canonical unified ``queries`` form (Zvec SDK 0.5.x)."""
+    """Canonical unified ``queries`` form (Zvec SDK 0.6.x)."""
 
     async def test_single_query_with_explicit_vector(
         self, client: AsyncClient, tmp_path: Path
@@ -557,6 +695,42 @@ class TestQueriesForm:
 
         assert resp.status_code == 200, resp.text
         assert [r["id"] for r in resp.json()["results"]] == ["a"]
+
+    async def test_fts_ascii_folding_and_stemmer_filters(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        name = await _make_fts_collection(
+            client,
+            tmp_path,
+            name="fts_filters",
+            filters=["lowercase", "ascii_folding", "stemmer"],
+            extra_params='{"stemmer_lang":"english"}',
+        )
+        await _seed(
+            client,
+            name,
+            [
+                _fts_doc("a", "Café workers are running", "docs"),
+                _fts_doc("b", "Plain product notes", "notes"),
+            ],
+        )
+
+        resp = await client.post(
+            f"{API}/collections/{name}/searches",
+            json={
+                "queries": [
+                    {
+                        "field": "content",
+                        "fts": {"matchString": "cafe run"},
+                        "param": {"type": "FTS", "defaultOperator": "AND"},
+                    }
+                ],
+                "topK": 5,
+            },
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert [result["id"] for result in resp.json()["results"]] == ["a"]
 
     async def test_legacy_vector_search_on_vectorless_collection_returns_400(
         self, client: AsyncClient, tmp_path: Path

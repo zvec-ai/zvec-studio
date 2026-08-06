@@ -234,6 +234,9 @@ export function SearchPanel({ collection, schema }: SearchPanelProps): JSX.Eleme
       vectorField: vectorField ? vectorField : null,
       rerankerName: rerankerName ? rerankerName : null,
       includeVector: false,
+      groupByField: null,
+      groupCount: 2,
+      topKPerGroup: 3,
     };
 
     try {

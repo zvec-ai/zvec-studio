@@ -182,6 +182,8 @@ describe('<CreateCollectionDialog />', () => {
     await userEvent.selectOptions(screen.getByLabelText('Type'), 'STRING');
     await userEvent.click(screen.getByLabelText('Index'));
     await userEvent.selectOptions(screen.getByLabelText('Index type'), 'FTS');
+    await userEvent.click(screen.getByLabelText('ASCII folding'));
+    await userEvent.click(screen.getByLabelText('Language stemmer'));
     await userEvent.click(screen.getByTestId('zv-create-submit'));
 
     await waitFor(() => {
@@ -200,7 +202,7 @@ describe('<CreateCollectionDialog />', () => {
           enableRangeOptimization: false,
           enableExtendedWildcard: false,
           tokenizerName: 'standard',
-          filters: ['lowercase'],
+          filters: ['lowercase', 'ascii_folding', 'stemmer'],
           extraParams: '',
         },
       },
@@ -229,6 +231,27 @@ describe('<CreateCollectionDialog />', () => {
         listSize: 50,
         pqChunkNum: 0,
       },
+    });
+  });
+
+  it('submits random rotation for INT8 quantization', async () => {
+    const state: FakeState = { calls: [] };
+    renderWithProviders(<Harness />, { apiClient: makeApiClient(state) });
+
+    await userEvent.type(screen.getByTestId('zv-create-name'), 'rotatedCol');
+    await userEvent.type(screen.getByTestId('zv-create-path'), '/tmp/rotatedCol');
+    await userEvent.selectOptions(screen.getByLabelText('Quantization'), 'INT8');
+    await userEvent.click(screen.getByLabelText(/Random rotation/));
+    await userEvent.click(screen.getByTestId('zv-create-submit'));
+
+    await waitFor(() => {
+      expect(state.calls.some((call) => call.method === 'POST' && call.path === '/collections')).toBe(true);
+    });
+    const post = state.calls.find((call) => call.method === 'POST')!;
+    const body = post.body as { schema: { vectors: Array<{ indexParam: { params: Record<string, unknown> } }> } };
+    expect(body.schema.vectors[0]?.indexParam.params).toMatchObject({
+      quantizeType: 'INT8',
+      quantizerParam: { enableRotate: true },
     });
   });
 

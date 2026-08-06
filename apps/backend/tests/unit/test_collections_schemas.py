@@ -1,11 +1,11 @@
-"""Unit tests for Collection Pydantic schemas (Zvec 0.5.x aligned).
+"""Unit tests for Collection Pydantic schemas (Zvec 0.6.x aligned).
 
 The v0.2.0 contract drops ``isPrimary`` / ``description`` / ``JSON`` /
 collection-level ``indexParams`` and keeps:
 - per-vector ``indexParam`` ({indexType, metric, params})
 - reserved field names ``{"id", "_id"}``
 - stricter collection-name regex (start with letter, len ≥ 3).
-- Zvec 0.5.0 FTS scalar indexes and DiskANN vector params.
+- Zvec 0.6.x FTS scalar indexes and DiskANN vector params.
 """
 
 from __future__ import annotations
@@ -183,6 +183,17 @@ class TestScalarIndexParam:
         assert p.indexType is IndexType.FTS
         assert p.tokenizerName == "standard"
         assert p.filters == ["lowercase"]
+
+    def test_accepts_zvec_06_fts_filters(self) -> None:
+        p = ScalarIndexParam.model_validate(
+            {
+                "indexType": "FTS",
+                "filters": ["lowercase", "ascii_folding", "stemmer"],
+                "extraParams": '{"stemmer_lang":"english"}',
+            }
+        )
+
+        assert p.filters == ["lowercase", "ascii_folding", "stemmer"]
 
     def test_rejects_unknown_fts_filter(self) -> None:
         with pytest.raises(ValidationError):

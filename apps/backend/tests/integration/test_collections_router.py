@@ -110,7 +110,7 @@ class TestCreate:
         self, client: AsyncClient, tmp_path: Path
     ) -> None:
         bad = _payload("bad")
-        # Zvec 0.5 allows vectorless scalar collections, but not a completely
+        # Zvec 0.6 allows vectorless scalar collections, but not a completely
         # empty schema.
         bad["vectors"] = []
         bad["fields"] = []
@@ -216,6 +216,9 @@ class TestOpen:
     ) -> None:
         schema = _payload("qcol")
         schema["vectors"][0]["indexParam"]["params"]["quantizeType"] = "INT8"
+        schema["vectors"][0]["indexParam"]["params"]["quantizerParam"] = {
+            "enableRotate": True
+        }
         path = tmp_path / "quantized"
 
         create = await client.post(
@@ -231,6 +234,7 @@ class TestOpen:
         assert resp.status_code == 200, resp.text
         params = resp.json()["schema"]["vectors"][0]["indexParam"]["params"]
         assert params["quantize_type"] == "INT8"
+        assert params["quantizer_param"] == {"enable_rotate": True}
         assert "QuantizeType" not in resp.text
 
     async def test_open_missing_path_returns_404(

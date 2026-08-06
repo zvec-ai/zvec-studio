@@ -51,20 +51,43 @@ def search(
             body.rerankerName, topn=body.topK
         )
     resolved_name = backend.get(name, path=path).name
-    hits = backend.search(
-        resolved_name,
-        queries=body.queries,
-        legacy_vector=body.vector,
-        legacy_vector_field=body.vectorField,
-        top_k=body.topK,
-        filter_expr=body.filter,
-        output_fields=body.outputFields,
-        include_vector=body.includeVector,
-        reranker=reranker,
-    )
+    if body.groupByField is not None:
+        grouped_hits = backend.group_by_search(
+            resolved_name,
+            queries=body.queries,
+            legacy_vector=body.vector,
+            legacy_vector_field=body.vectorField,
+            group_by_field=body.groupByField,
+            group_count=body.groupCount,
+            top_k_per_group=body.topKPerGroup,
+            filter_expr=body.filter,
+            output_fields=body.outputFields,
+            include_vector=body.includeVector,
+        )
+        results = [
+            SearchResult(
+                id=doc_id,
+                score=score,
+                fields=fields,
+                groupByValue=group_value,
+            )
+            for doc_id, score, fields, group_value in grouped_hits
+        ]
+    else:
+        hits = backend.search(
+            resolved_name,
+            queries=body.queries,
+            legacy_vector=body.vector,
+            legacy_vector_field=body.vectorField,
+            top_k=body.topK,
+            filter_expr=body.filter,
+            output_fields=body.outputFields,
+            include_vector=body.includeVector,
+            reranker=reranker,
+        )
+        results = [
+            SearchResult(id=doc_id, score=score, fields=fields)
+            for doc_id, score, fields in hits
+        ]
     took_ms = (time.perf_counter() - started) * 1000.0
-    results = [
-        SearchResult(id=doc_id, score=score, fields=fields)
-        for doc_id, score, fields in hits
-    ]
     return SearchResponse(results=results, took_ms=took_ms, traceId=get_trace_id() or None)

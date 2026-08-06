@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 **Frontend**
+- Zvec 0.6 Group-By search controls and grouped result display.
+- FTS ASCII folding and language stemmer controls.
+- Optional random rotation for INT8/INT4 quantization.
 - Multi-vector field support in Create Collection dialog — users can now
   define multiple vector fields per collection, each with its own index
   type, metric, and quantization settings.
@@ -23,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   zh → en with `localStorage` persistence.
 
 ### Changed
+
+**Backend**
+- Upgraded the Zvec SDK runtime to 0.6.x and added Group-By search, expanded
+  FTS token filters, and `QuantizerParam` adaptation.
 
 **Frontend**
 - All raw `<button className="zv-btn">` instances replaced with the

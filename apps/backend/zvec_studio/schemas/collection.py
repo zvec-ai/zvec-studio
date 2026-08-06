@@ -1,6 +1,6 @@
 """Collection-related Pydantic schemas.
 
-Aligned with the Zvec Python SDK 0.5.x surface:
+Aligned with the Zvec Python SDK 0.6.x surface:
 - ``Doc`` owns the primary key (``id: str``); the application schema does NOT
   declare a primary scalar field.
 - Each ``VectorSchema`` optionally carries its own ``indexParam``; there is no
@@ -25,6 +25,8 @@ _COLLECTION_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{2,63}$")
 # Field names colliding with Zvec's built-in ``Doc.id``. The SDK injects ``id``
 # automatically; user-defined columns must not shadow it.
 _RESERVED_FIELD_NAMES: frozenset[str] = frozenset({"id", "_id"})
+_FTS_TOKENIZERS: frozenset[str] = frozenset({"standard", "whitespace", "jieba"})
+_FTS_FILTERS: frozenset[str] = frozenset({"lowercase", "ascii_folding", "stemmer"})
 
 # Collection names that collide with REST sub-resources of ``/collections``.
 # These literals would otherwise be ambiguous against ``GET /collections/{name}``
@@ -151,9 +153,9 @@ class ScalarIndexParam(BaseModel):
         if self.indexType not in {IndexType.INVERT, IndexType.FTS}:
             raise ValueError("scalar index type must be INVERT or FTS")
         if self.indexType is IndexType.FTS:
-            if self.tokenizerName not in {"standard", "whitespace", "jieba"}:
+            if self.tokenizerName not in _FTS_TOKENIZERS:
                 raise ValueError("FTS tokenizerName must be standard, whitespace, or jieba")
-            unsupported = set(self.filters) - {"lowercase"}
+            unsupported = set(self.filters) - _FTS_FILTERS
             if unsupported:
                 raise ValueError(f"unsupported FTS token filters: {sorted(unsupported)}")
         return self
@@ -381,9 +383,9 @@ class ScalarIndexCreateRequest(BaseModel):
         if self.indexType not in {IndexType.INVERT, IndexType.FTS}:
             raise ValueError("scalar index type must be INVERT or FTS")
         if self.indexType is IndexType.FTS:
-            if self.tokenizerName not in {"standard", "whitespace", "jieba"}:
+            if self.tokenizerName not in _FTS_TOKENIZERS:
                 raise ValueError("FTS tokenizerName must be standard, whitespace, or jieba")
-            unsupported = set(self.filters) - {"lowercase"}
+            unsupported = set(self.filters) - _FTS_FILTERS
             if unsupported:
                 raise ValueError(f"unsupported FTS token filters: {sorted(unsupported)}")
         return self

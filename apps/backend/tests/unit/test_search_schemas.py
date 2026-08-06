@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`zvec_studio.schemas.search` (Zvec 0.5.0).
+"""Unit tests for :mod:`zvec_studio.schemas.search` (Zvec 0.6.x).
 
 The legacy per-request ``metric`` override was removed: metric is fixed at
 collection-create time on each vector's ``indexParam``. Document ids are
@@ -121,7 +121,11 @@ class TestSearchRequest:
     def test_query_requires_one_of_vector_id_or_fts(self) -> None:
         with pytest.raises(ValidationError):
             SearchRequest.model_validate(
-                {"queries": [{"field": "embedding", "vector": [0.1], "fts": {"matchString": "hello"}}]}
+                {
+                    "queries": [
+                        {"field": "embedding", "vector": [0.1], "fts": {"matchString": "hello"}}
+                    ]
+                }
             )
 
     def test_fts_param_requires_fts_source(self) -> None:
@@ -160,6 +164,55 @@ class TestSearchRequest:
         with pytest.raises(ValidationError):
             SearchRequest.model_validate({"vector": [0.1], "unexpected": True})
 
+    def test_accepts_group_by_single_vector_query(self) -> None:
+        req = SearchRequest.model_validate(
+            {
+                "queries": [{"field": "embedding", "vector": [0.1]}],
+                "groupByField": "category",
+                "groupCount": 5,
+                "topKPerGroup": 2,
+            }
+        )
+
+        assert req.groupByField == "category"
+        assert req.groupCount == 5
+        assert req.topKPerGroup == 2
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {
+                "queries": [
+                    {"field": "embedding", "vector": [0.1]},
+                    {"field": "other", "vector": [0.1]},
+                ],
+                "groupByField": "category",
+            },
+            {
+                "queries": [{"field": "content", "fts": {"matchString": "hi"}}],
+                "groupByField": "category",
+            },
+            {
+                "queries": [{"field": "embedding", "vector": [0.1]}],
+                "groupByField": "category",
+                "rerankerName": "rrf",
+            },
+            {
+                "queries": [
+                    {
+                        "field": "embedding",
+                        "vector": [0.1],
+                        "param": {"type": "HNSW", "isUsingRefiner": True},
+                    }
+                ],
+                "groupByField": "category",
+            },
+        ],
+    )
+    def test_rejects_incompatible_group_by_modes(self, body: dict) -> None:
+        with pytest.raises(ValidationError):
+            SearchRequest.model_validate(body)
+
 
 class TestSearchResponse:
     def test_serializes_results(self) -> None:
@@ -181,3 +234,13 @@ class TestSearchResponse:
     def test_trace_id_is_optional(self) -> None:
         resp = SearchResponse(results=[], took_ms=0.0)
         assert resp.traceId is None
+
+    def test_serializes_group_by_value(self) -> None:
+        result = SearchResult(
+            id="doc-1",
+            score=0.1,
+            fields={"category": "news"},
+            groupByValue="news",
+        )
+
+        assert result.model_dump()["groupByValue"] == "news"

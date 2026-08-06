@@ -15,7 +15,7 @@ import type { ApiClient } from '@/lib/api-client';
 import { QueryTab } from './QueryTab';
 
 interface FakeState {
-  searchResults: Array<{ id: string; score: number; fields: Record<string, unknown> }>;
+  searchResults: Array<{ id: string; score: number; fields: Record<string, unknown>; groupByValue?: string }>;
   embeddings: Array<{ name: string; description: string | null; config: Record<string, unknown> }>;
   rerankers: Array<{ name: string; description: string | null; config: Record<string, unknown> }>;
   calls: Array<{ method: string; path: string; body?: unknown }>;
@@ -194,6 +194,57 @@ describe('QueryTab', () => {
 
     expect(screen.getByText('0.9500')).toBeInTheDocument();
     expect(screen.getByText('0.8500')).toBeInTheDocument();
+  });
+
+  it('submits group-by parameters and renders group values', async () => {
+    const user = userEvent.setup();
+    const state: FakeState = {
+      searchResults: [
+        { id: 'doc-1', score: 0.95, fields: { title: 'First' }, groupByValue: 'news' },
+      ],
+      embeddings: [],
+      rerankers: [],
+      calls: [],
+    };
+    renderTab(state);
+
+    await user.selectOptions(screen.getByLabelText('Group by'), 'title');
+    const groupsInput = screen.getByLabelText('Groups');
+    fireEvent.change(groupsInput, { target: { value: '4' } });
+    const perGroupInput = screen.getByLabelText('Top K / group');
+    fireEvent.change(perGroupInput, { target: { value: '2' } });
+    const vectorInput = screen.getByPlaceholderText(/\[0\.1/);
+    await user.click(vectorInput);
+    await user.paste('[0.1, 0.2, 0.3, 0.4]');
+    await user.click(screen.getByRole('button', { name: /search/i }));
+
+    await waitFor(() => expect(screen.getByText('doc-1')).toBeInTheDocument());
+    const body = state.calls.find((call) => call.path.includes('/searches'))!.body as any;
+    expect(body).toMatchObject({
+      groupByField: 'title',
+      groupCount: 4,
+      topKPerGroup: 2,
+    });
+    expect(screen.getByText('news')).toBeInTheDocument();
+  });
+
+  it('excludes array fields from group-by choices', () => {
+    const state: FakeState = { searchResults: [], embeddings: [], rerankers: [], calls: [] };
+    renderTab(state, {
+      collection: {
+        schema: {
+          ...COLLECTION.schema,
+          fields: [
+            ...COLLECTION.schema.fields,
+            { name: 'tags', dataType: 'ARRAY_STRING', nullable: false },
+          ],
+        },
+      },
+    });
+
+    const groupBy = screen.getByLabelText('Group by');
+    expect(within(groupBy).getByRole('option', { name: 'title' })).toBeInTheDocument();
+    expect(within(groupBy).queryByRole('option', { name: 'tags' })).not.toBeInTheDocument();
   });
 
   it('generates and submits a dense random vector from the field dimension', async () => {

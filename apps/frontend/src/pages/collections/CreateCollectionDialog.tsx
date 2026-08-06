@@ -61,6 +61,7 @@ interface FieldDraft {
   metric: (typeof METRICS)[number];
   indexType: (typeof INDEX_TYPES)[number];
   quantizeType: (typeof QUANTIZE_TYPES)[number];
+  enableRotate: boolean;
   m: string;
   efConstruction: string;
   nList: string;
@@ -75,6 +76,8 @@ interface FieldDraft {
   indexed: boolean;
   scalarIndexType: (typeof SCALAR_INDEX_TYPES)[number];
   tokenizerName: (typeof FTS_TOKENIZERS)[number];
+  ftsAsciiFolding: boolean;
+  ftsStemmer: boolean;
   ftsExtraParams: string;
   enableRangeOptimization: boolean;
   enableExtendedWildcard: boolean;
@@ -89,6 +92,7 @@ function makeField(overrides?: Partial<FieldDraft>): FieldDraft {
     metric: 'COSINE',
     indexType: 'HNSW',
     quantizeType: 'UNDEFINED',
+    enableRotate: false,
     m: '50',
     efConstruction: '500',
     nList: '',
@@ -102,6 +106,8 @@ function makeField(overrides?: Partial<FieldDraft>): FieldDraft {
     indexed: false,
     scalarIndexType: 'INVERT',
     tokenizerName: 'standard',
+    ftsAsciiFolding: false,
+    ftsStemmer: false,
     ftsExtraParams: '',
     enableRangeOptimization: false,
     enableExtendedWildcard: false,
@@ -117,6 +123,13 @@ function buildVectorParams(f: FieldDraft): Record<string, unknown> {
   const params: Record<string, unknown> = {};
   if (f.quantizeType !== 'UNDEFINED') {
     params.quantizeType = f.quantizeType;
+  }
+  if (
+    f.enableRotate &&
+    (f.quantizeType === 'INT8' || f.quantizeType === 'INT4') &&
+    (f.indexType === 'HNSW' || f.indexType === 'FLAT' || f.indexType === 'VAMANA')
+  ) {
+    params.quantizerParam = { enableRotate: true };
   }
   switch (f.indexType) {
     case 'HNSW':
@@ -304,7 +317,13 @@ export function CreateCollectionDialog({
                 enableRangeOptimization: f.scalarIndexType === 'INVERT' ? f.enableRangeOptimization : false,
                 enableExtendedWildcard: f.scalarIndexType === 'INVERT' ? f.enableExtendedWildcard : false,
                 tokenizerName: f.scalarIndexType === 'FTS' ? f.tokenizerName : 'standard',
-                filters: ['lowercase'],
+                filters: f.scalarIndexType === 'FTS'
+                  ? [
+                      'lowercase',
+                      ...(f.ftsAsciiFolding ? ['ascii_folding'] : []),
+                      ...(f.ftsStemmer ? ['stemmer'] : []),
+                    ]
+                  : ['lowercase'],
                 extraParams: f.scalarIndexType === 'FTS' ? f.ftsExtraParams : '',
               },
             }
@@ -459,6 +478,18 @@ export function CreateCollectionDialog({
                       />
                     </div>
 
+                    {(field.quantizeType === 'INT8' || field.quantizeType === 'INT4') &&
+                      (field.indexType === 'HNSW' || field.indexType === 'FLAT' || field.indexType === 'VAMANA') && (
+                        <label className="zv-create__checkbox">
+                          <input
+                            type="checkbox"
+                            checked={field.enableRotate}
+                            onChange={(e) => updateField(field.id, { enableRotate: e.target.checked })}
+                          />
+                          {t('pages.collections.create.enableRotate')}
+                        </label>
+                      )}
+
                     {(field.indexType === 'HNSW' || field.indexType === 'HNSW_RABITQ') && (
                       <div className="zv-create__index-params">
                         <Input label="M" type="number" value={field.m} onChange={(e) => updateField(field.id, { m: e.target.value })} />
@@ -527,6 +558,22 @@ export function CreateCollectionDialog({
                               onChange={(e) => updateField(field.id, { tokenizerName: e.target.value as (typeof FTS_TOKENIZERS)[number] })}
                               options={FTS_TOKENIZERS.map((i) => ({ value: i, label: i }))}
                             />
+                            <label className="zv-create__checkbox">
+                              <input
+                                type="checkbox"
+                                checked={field.ftsAsciiFolding}
+                                onChange={(e) => updateField(field.id, { ftsAsciiFolding: e.target.checked })}
+                              />
+                              {t('pages.collections.create.asciiFolding')}
+                            </label>
+                            <label className="zv-create__checkbox">
+                              <input
+                                type="checkbox"
+                                checked={field.ftsStemmer}
+                                onChange={(e) => updateField(field.id, { ftsStemmer: e.target.checked })}
+                              />
+                              {t('pages.collections.create.stemmer')}
+                            </label>
                             <Input
                               label={t('pages.collections.create.extraParams')}
                               value={field.ftsExtraParams}

@@ -118,7 +118,12 @@ typed client.
         "indexParam": {
           "indexType": "HNSW",
           "metric": "COSINE",
-          "params": {"M": 50, "efConstruction": 500}
+          "params": {
+            "M": 50,
+            "efConstruction": 500,
+            "quantizeType": "INT8",
+            "quantizerParam": {"enableRotate": true}
+          }
         }
       },
       {
@@ -138,6 +143,11 @@ typed client.
 Multiple vector fields are supported, each with its own index type
 (FLAT, HNSW, IVF, HNSW_RABITQ), metric (L2, IP, COSINE), and
 optional quantization (FP16, INT8, INT4, RABITQ).
+Zvec 0.6 random rotation is available for INT8/INT4 through
+`quantizerParam.enableRotate` on FLAT, HNSW, and VAMANA indexes. FTS scalar
+indexes accept `lowercase`, `ascii_folding`, and `stemmer` filters; configure
+the stemmer language through `extraParams`, for example
+`{"stemmer_lang":"english"}`.
 
 ---
 
@@ -217,6 +227,26 @@ Content-Type: application/json
 - `rerankerName` references a registered reranker (see AI Extension below).
 - Legacy single-vector form (`vector` + `vectorField`) is still supported; mutually exclusive with `queries`.
 
+### Group-by search
+
+Zvec 0.6 can return the nearest documents per scalar-field group for a single
+vector query:
+
+```json
+{
+  "queries": [
+    { "field": "dense", "vector": [0.1, 0.2, "..."] }
+  ],
+  "groupByField": "category",
+  "groupCount": 10,
+  "topKPerGroup": 3
+}
+```
+
+Group-by is supported for FLAT, HNSW, and HNSW_RABITQ indexes. It cannot be
+combined with FTS, multi-query, rerankers, or refiner search. Each returned
+result includes `groupByValue`.
+
 ### Response
 
 ```json
@@ -225,7 +255,7 @@ Content-Type: application/json
     {"id": "cat",    "score": 0.98, "fields": {"title": "cat"}},
     {"id": "kitten", "score": 0.92, "fields": {"title": "kitten"}}
   ],
-  "tookMs": 3,
+  "took_ms": 3,
   "traceId": "01HQY8R2FJDN5WXBN2RY5MQZ1T"
 }
 ```

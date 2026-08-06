@@ -53,6 +53,9 @@ interface AddableQueryField {
 interface QueryTabStoredState {
   queries: VQState[];
   topK: number;
+  groupByField: string;
+  groupCount: number;
+  topKPerGroup: number;
   filter: string;
   outputFields: string[];
   includeVector: boolean;
@@ -179,6 +182,9 @@ function loadStoredState(
     return {
       queries: storedQueries.length > 0 ? storedQueries : makeDefaultQueries(vectors, ftsFields),
       topK: typeof parsed.topK === 'number' ? parsed.topK : 10,
+      groupByField: typeof parsed.groupByField === 'string' ? parsed.groupByField : '',
+      groupCount: typeof parsed.groupCount === 'number' ? parsed.groupCount : 2,
+      topKPerGroup: typeof parsed.topKPerGroup === 'number' ? parsed.topKPerGroup : 3,
       filter: typeof parsed.filter === 'string' ? parsed.filter : '',
       outputFields: Array.isArray(parsed.outputFields) ? parsed.outputFields.filter((v): v is string => typeof v === 'string') : [],
       includeVector: Boolean(parsed.includeVector),
@@ -264,6 +270,9 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
   const [queries, setQueries] = useState<VQState[]>(() => initialStoredState?.queries ?? makeDefaultQueries(vectors, ftsFields));
 
   const [topK, setTopK] = useState(initialStoredState?.topK ?? 10);
+  const [groupByField, setGroupByField] = useState(initialStoredState?.groupByField ?? '');
+  const [groupCount, setGroupCount] = useState(initialStoredState?.groupCount ?? 2);
+  const [topKPerGroup, setTopKPerGroup] = useState(initialStoredState?.topKPerGroup ?? 3);
   const [filter, setFilter] = useState(initialStoredState?.filter ?? '');
   const [outputFields, setOutputFields] = useState<string[]>(() => initialStoredState?.outputFields ?? []);
   const [includeVector, setIncludeVector] = useState(initialStoredState?.includeVector ?? false);
@@ -286,6 +295,7 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
     }
     return out;
   }, [results]);
+  const hasGroupedResults = results.some((result) => result.groupByValue != null);
 
   function copyText(text: string): void {
     void navigator.clipboard.writeText(text);
@@ -315,6 +325,19 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
 
   const usedFields = useMemo(() => new Set(queries.map((q) => q.field)), [queries]);
   const isMultiQuery = queries.length > 1;
+  const groupableFields = useMemo(
+    () => (collection.schema.fields ?? []).filter((field) => !field.dataType.startsWith('ARRAY_')),
+    [collection.schema.fields],
+  );
+  const groupByIndexType = queries.length === 1 && queries[0]?.routeType === 'vector'
+    ? vectors.find((vector) => vector.name === queries[0]?.field)?.indexParam?.indexType ?? 'HNSW'
+    : undefined;
+  const canGroupBy =
+    queries.length === 1 &&
+    queries[0]?.routeType === 'vector' &&
+    !queries[0].hnswRefiner &&
+    ['FLAT', 'HNSW', 'HNSW_RABITQ'].includes(groupByIndexType ?? '') &&
+    groupableFields.length > 0;
 
   const availableFieldsForAdd = useMemo(
     (): AddableQueryField[] => [
@@ -349,9 +372,16 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
   }, [isMultiQuery, rerankerName]);
 
   useEffect(() => {
+    if (!canGroupBy && groupByField) setGroupByField('');
+  }, [canGroupBy, groupByField]);
+
+  useEffect(() => {
     saveStoredState(storageKey, {
       queries,
       topK,
+      groupByField: canGroupBy ? groupByField : '',
+      groupCount,
+      topKPerGroup,
       filter,
       outputFields,
       includeVector,
@@ -359,7 +389,7 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
       results,
       tookMs,
     });
-  }, [storageKey, queries, topK, filter, outputFields, includeVector, isMultiQuery, rerankerName, results, tookMs]);
+  }, [storageKey, queries, topK, groupByField, groupCount, topKPerGroup, filter, outputFields, includeVector, isMultiQuery, canGroupBy, rerankerName, results, tookMs]);
 
   const queryDimMismatches = useMemo(
     () =>
@@ -454,6 +484,9 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
       outputFields: outputFields.includes('__none__') ? [] : outputFields.length > 0 ? outputFields : null,
       includeVector,
       rerankerName: querySpecs.length > 1 ? (rerankerName || DEFAULT_MULTIQUERY_RERANKER) : null,
+      groupByField: canGroupBy && groupByField ? groupByField : null,
+      groupCount,
+      topKPerGroup,
     };
 
     try {
@@ -835,20 +868,72 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
         <hr style={{ border: 'none', borderTop: '1px solid var(--zv-color-border)', margin: '10px 0' }} />
 
         <div className="zv-query-inline-row">
+          {canGroupBy && groupByField ? (
+            <>
+              <div className="zv-query-inline-field">
+                <label className="zv-form-label" htmlFor="zv-query-group-count">{t('pages.collections.detail.query.groupCount')}</label>
+                <input
+                  id="zv-query-group-count"
+                  className="zv-form-input"
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={groupCount}
+                  style={{ width: 72 }}
+                  onChange={(e) => {
+                    const value = Number(e.target.value);
+                    if (Number.isFinite(value)) setGroupCount(Math.max(1, Math.min(100, Math.round(value))));
+                  }}
+                />
+              </div>
+              <div className="zv-query-inline-field">
+                <label className="zv-form-label" htmlFor="zv-query-topk-per-group">{t('pages.collections.detail.query.topKPerGroup')}</label>
+                <input
+                  id="zv-query-topk-per-group"
+                  className="zv-form-input"
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={topKPerGroup}
+                  style={{ width: 72 }}
+                  onChange={(e) => {
+                    const value = Number(e.target.value);
+                    if (Number.isFinite(value)) setTopKPerGroup(Math.max(1, Math.min(100, Math.round(value))));
+                  }}
+                />
+              </div>
+            </>
+          ) : (
+            <div className="zv-query-inline-field">
+              <label className="zv-form-label">{t('pages.collections.detail.query.topK')}</label>
+              <input
+                className="zv-form-input"
+                type="number"
+                min={1}
+                max={100}
+                value={topK}
+                style={{ width: 72 }}
+                onChange={(e) => {
+                  const value = Number(e.target.value);
+                  if (Number.isFinite(value)) setTopK(Math.max(1, Math.min(100, Math.round(value))));
+                }}
+              />
+            </div>
+          )}
           <div className="zv-query-inline-field">
-            <label className="zv-form-label">{t('pages.collections.detail.query.topK')}</label>
-            <input
-              className="zv-form-input"
-              type="number"
-              min={1}
-              max={100}
-              value={topK}
-              style={{ width: 72 }}
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                if (Number.isFinite(v)) setTopK(Math.max(1, Math.min(100, Math.round(v))));
-              }}
-            />
+            <label className="zv-form-label" htmlFor="zv-query-group-by">{t('pages.collections.detail.query.groupBy')}</label>
+            <select
+              id="zv-query-group-by"
+              className="zv-form-select"
+              value={groupByField}
+              onChange={(e) => setGroupByField(e.target.value)}
+              disabled={!canGroupBy}
+            >
+              <option value="">{t('pages.collections.detail.query.groupByNone')}</option>
+              {groupableFields.map((field) => (
+                <option key={field.name} value={field.name}>{field.name}</option>
+              ))}
+            </select>
           </div>
           <div className="zv-query-inline-field">
             <label className="zv-form-label">{t('pages.collections.detail.query.includeVector')}</label>
@@ -950,6 +1035,7 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
                 <thead>
                   <tr>
                     <th>#</th>
+                    {hasGroupedResults && <th>{t('pages.collections.detail.query.group')}</th>}
                     <th>score</th>
                     <th>id</th>
                     {resultColumnKeys.map((key) => (
@@ -962,6 +1048,7 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
                   {results.map((item, idx) => (
                     <tr key={item.id}>
                       <td><span className={`zv-qr-rank-inline${idx < 3 ? ' zv-qr-rank-inline--top' : ''}`}>{idx + 1}</span></td>
+                      {hasGroupedResults && <td>{item.groupByValue ?? '—'}</td>}
                       <td><span className="zv-qr-score-inline">{item.score.toFixed(SCORE_PRECISION)}</span></td>
                       <td>
                         <div className="zv-cell-copy">
