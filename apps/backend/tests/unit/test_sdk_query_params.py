@@ -8,6 +8,7 @@ import pytest
 
 zvec = pytest.importorskip("zvec")
 
+from zvec_studio.exceptions import InvalidSchemaError  # noqa: E402
 from zvec_studio.schemas import (  # noqa: E402
     CollectionStats,
     CollectionSummary,
@@ -101,6 +102,50 @@ def test_quantized_hnsw_index_round_trips_as_json_safe_name() -> None:
     assert param.indexType is IndexType.HNSW
     assert param.params["quantize_type"] == "INT8"
     assert '"quantize_type":"INT8"' in param.model_dump_json()
+
+
+def test_rotated_quantizer_param_maps_to_sdk_and_round_trips() -> None:
+    spec = VectorIndexParam.model_validate(
+        {
+            "indexType": "HNSW",
+            "metric": "COSINE",
+            "params": {
+                "quantizeType": "INT8",
+                "quantizerParam": {"enableRotate": True},
+            },
+        }
+    )
+
+    sdk_param = _build_index_param(spec)
+
+    assert sdk_param.quantizer_param.enable_rotate is True
+    round_tripped = _from_sdk_index_param(sdk_param)
+    assert round_tripped is not None
+    assert round_tripped.params["quantizer_param"] == {"enable_rotate": True}
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        {
+            "indexType": "HNSW",
+            "params": {
+                "quantizeType": "FP16",
+                "quantizerParam": {"enableRotate": True},
+            },
+        },
+        {
+            "indexType": "IVF",
+            "params": {
+                "quantizeType": "INT8",
+                "quantizerParam": {"enableRotate": True},
+            },
+        },
+    ],
+)
+def test_rotated_quantizer_rejects_unsupported_combinations(spec: dict) -> None:
+    with pytest.raises(InvalidSchemaError, match="Random rotation"):
+        _build_index_param(VectorIndexParam.model_validate(spec))
 
 
 def test_sdk_schema_with_pybind_enum_index_param_serializes_for_summary() -> None:

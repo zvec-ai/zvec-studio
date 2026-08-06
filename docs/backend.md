@@ -1,6 +1,6 @@
 # Backend Reference
 
-> `apps/backend/zvec_studio/` — ~6.5 KLOC. Python ≥ 3.10, FastAPI 0.115+, Pydantic v2, Zvec SDK 0.4.x.
+> `apps/backend/zvec_studio/` — ~6.5 KLOC. Python ≥ 3.10, FastAPI 0.115+, Pydantic v2, Zvec SDK 0.6.x.
 
 For the module map and request flow, see [architecture.md](architecture.md).
 For the HTTP endpoint reference, see [api.md](api.md).

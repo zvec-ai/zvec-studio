@@ -46,7 +46,7 @@ HTTP so both runtimes share one test surface.
 | `routers/ai.py`         | AI extension: embedding & reranker CRUD + `:embed` / `:rerank` verbs |
 | `routers/fs.py`         | Directory picker for the desktop UI |
 | `schemas/`              | Pydantic v2 request / response models, field names aligned with the SDK |
-| `storage/sdk.py`        | `SdkBackend`: the only adapter, talks to `zvec` SDK 0.4.x |
+| `storage/sdk.py`        | `SdkBackend`: the only adapter, talks to `zvec` SDK 0.6.x |
 | `ai_store.py`           | Persistent AI function registry (`~/.zvec-studio/ai_functions.json`, `chmod 0600`) |
 | `ai_service.py`         | Lazy-import factory for SDK embedding/reranker classes |
 | `config_store.py`       | Recent collections persistence (`~/.zvec-studio/config.json`) |
@@ -103,10 +103,10 @@ window creation.
 2. Trace middleware mints `traceId=01HQ...`, binds to contextvar,
    sets response header `X-Trace-Id`.
 3. `SearchRequest` is validated by Pydantic v2 (dimension, topK bounds).
-4. `routers/searches.py` resolves the collection from `registry`,
-   invokes `zvec.VectorQuery(...).execute()` or the in-memory brute
-   force fallback.
-5. Result `{results, tookMs, traceId}` serialised out.
+4. `routers/searches.py` resolves the collection from `registry`, then invokes
+   `zvec.Collection.query(...)` or the Zvec 0.6 `group_by_query(...)` path.
+5. Result `{results, took_ms, traceId}` serialised out; grouped hits also carry
+   `groupByValue`.
 6. Frontend `error-mapper.ts` either passes the happy-path payload to
    the UI, or converts an RFC 7807 error body into a Toast and keeps the
    form state intact.

@@ -340,6 +340,8 @@ describe('SchemaPanelDdl', () => {
     await user.click(screen.getByTestId('zv-schema-create-scalar-index-title'));
     await user.selectOptions(await screen.findByTestId('zv-schema-create-scalar-index-type'), 'FTS');
     await user.selectOptions(screen.getByTestId('zv-schema-create-scalar-index-tokenizer'), 'whitespace');
+    await user.selectOptions(screen.getByTestId('zv-schema-create-scalar-index-ascii-folding'), 'true');
+    await user.selectOptions(screen.getByTestId('zv-schema-create-scalar-index-stemmer'), 'true');
     await user.click(screen.getByTestId('zv-schema-create-scalar-index-extra-params'));
     await user.paste('{"case":"fold"}');
     await user.click(screen.getByTestId('zv-schema-create-scalar-index-submit'));
@@ -353,7 +355,7 @@ describe('SchemaPanelDdl', () => {
           enableRangeOptimization: false,
           enableExtendedWildcard: false,
           tokenizerName: 'whitespace',
-          filters: ['lowercase'],
+          filters: ['lowercase', 'ascii_folding', 'stemmer'],
           extraParams: '{"case":"fold"}',
         },
       });

@@ -928,6 +928,8 @@ function CreateScalarIndexDialog({ target, onClose, collection, toast }: CreateS
   const mutation = useCreateScalarIndex();
   const [indexType, setIndexType] = useState<'INVERT' | 'FTS'>('INVERT');
   const [tokenizerName, setTokenizerName] = useState('standard');
+  const [asciiFolding, setAsciiFolding] = useState(false);
+  const [stemmer, setStemmer] = useState(false);
   const [extraParams, setExtraParams] = useState('');
   const [rangeOpt, setRangeOpt] = useState(false);
   const [wildcard, setWildcard] = useState(false);
@@ -939,12 +941,16 @@ function CreateScalarIndexDialog({ target, onClose, collection, toast }: CreateS
       const currentType = target.indexParam.indexType === 'FTS' && targetIsString ? 'FTS' : 'INVERT';
       setIndexType(currentType);
       setTokenizerName(target.indexParam.tokenizerName ?? 'standard');
+      setAsciiFolding(target.indexParam.filters?.includes('ascii_folding') ?? false);
+      setStemmer(target.indexParam.filters?.includes('stemmer') ?? false);
       setExtraParams(target.indexParam.extraParams ?? '');
       setRangeOpt(Boolean(target.indexParam.enableRangeOptimization));
       setWildcard(Boolean(target.indexParam.enableExtendedWildcard));
     } else {
       setIndexType('INVERT');
       setTokenizerName('standard');
+      setAsciiFolding(false);
+      setStemmer(false);
       setExtraParams('');
       setRangeOpt(false);
       setWildcard(false);
@@ -955,6 +961,8 @@ function CreateScalarIndexDialog({ target, onClose, collection, toast }: CreateS
   function reset(): void {
     setIndexType('INVERT');
     setTokenizerName('standard');
+    setAsciiFolding(false);
+    setStemmer(false);
     setExtraParams('');
     setRangeOpt(false);
     setWildcard(false);
@@ -979,7 +987,11 @@ function CreateScalarIndexDialog({ target, onClose, collection, toast }: CreateS
                 enableRangeOptimization: false,
                 enableExtendedWildcard: false,
                 tokenizerName,
-                filters: ['lowercase'],
+                filters: [
+                  'lowercase',
+                  ...(asciiFolding ? ['ascii_folding'] : []),
+                  ...(stemmer ? ['stemmer'] : []),
+                ],
                 extraParams,
               }
             : {
@@ -1058,6 +1070,22 @@ function CreateScalarIndexDialog({ target, onClose, collection, toast }: CreateS
             onChange={(event) => setTokenizerName(event.target.value)}
             disabled={mutation.isPending}
             data-testid="zv-schema-create-scalar-index-tokenizer"
+          />
+          <Select<string>
+            label={t('pages.collections.detail.schema.ddl.createScalarIndexDialog.asciiFoldingLabel')}
+            options={BOOL_OPTIONS}
+            value={asciiFolding ? 'true' : 'false'}
+            onChange={(event) => setAsciiFolding(event.target.value === 'true')}
+            disabled={mutation.isPending}
+            data-testid="zv-schema-create-scalar-index-ascii-folding"
+          />
+          <Select<string>
+            label={t('pages.collections.detail.schema.ddl.createScalarIndexDialog.stemmerLabel')}
+            options={BOOL_OPTIONS}
+            value={stemmer ? 'true' : 'false'}
+            onChange={(event) => setStemmer(event.target.value === 'true')}
+            disabled={mutation.isPending}
+            data-testid="zv-schema-create-scalar-index-stemmer"
           />
           <Input
             label={t('pages.collections.detail.schema.ddl.createScalarIndexDialog.extraParamsLabel')}

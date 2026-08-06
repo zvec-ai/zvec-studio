@@ -65,7 +65,11 @@ From **Collections** → **Create**:
 | Vector field | `embedding`, FP32, dim=4, COSINE, HNSW |
 | Primary key | `id` |
 
-You can add multiple vector fields with different index types (FLAT, HNSW, IVF, HNSW_RABITQ), metrics (L2, IP, COSINE), and quantization (FP16, INT8, INT4, RABITQ).
+You can add multiple vector fields with different index types (FLAT, HNSW, IVF,
+HNSW_RABITQ), metrics (L2, IP, COSINE), and quantization (FP16, INT8, INT4,
+RABITQ). With Zvec 0.6, INT8/INT4 indexes can optionally enable random
+rotation to improve recall. FTS fields can also enable ASCII folding and
+language stemming.
 
 ## 5. Insert Documents
 

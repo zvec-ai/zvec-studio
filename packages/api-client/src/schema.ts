@@ -1583,6 +1583,21 @@ export interface components {
              * @description Name of a registered reranker (see ``GET /ai/rerankers``). When set, the SDK applies the reranker after ANN.
              */
             rerankerName?: string | null;
+            /**
+             * Groupbyfield
+             * @description Scalar field used to group a single vector query.
+             */
+            groupByField?: string | null;
+            /**
+             * Groupcount
+             * @default 2
+             */
+            groupCount: number;
+            /**
+             * Topkpergroup
+             * @default 3
+             */
+            topKPerGroup: number;
         };
         /** SearchResponse */
         SearchResponse: {
@@ -1603,6 +1618,8 @@ export interface components {
             fields: {
                 [key: string]: unknown;
             };
+            /** Groupbyvalue */
+            groupByValue?: string | null;
         };
         /** ValidationError */
         ValidationError: {

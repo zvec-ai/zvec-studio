@@ -1,6 +1,6 @@
 """Search request / response schemas.
 
-Aligned with the Zvec Python SDK 0.5.x ``Collection.query`` surface:
+Aligned with the Zvec Python SDK 0.6.x ``Collection.query`` surface:
 
 - ``query`` accepts one or more ``Query`` routes. Each route targets either a
   vector field (explicit vector or existing document ``id``) or an FTS-indexed
@@ -218,6 +218,12 @@ class SearchRequest(BaseModel):
             "When set, the SDK applies the reranker after ANN."
         ),
     )
+    groupByField: str | None = Field(
+        default=None,
+        description="Scalar field used to group a single vector query.",
+    )
+    groupCount: Annotated[int, Field(ge=1, le=1_000)] = 2
+    topKPerGroup: Annotated[int, Field(ge=1, le=1_000)] = 3
 
     @model_validator(mode="after")
     def _normalize(self) -> SearchRequest:
@@ -226,15 +232,25 @@ class SearchRequest(BaseModel):
                 raise ValueError(
                     "'queries' and legacy 'vector'/'vectorField' are mutually exclusive"
                 )
-            return self
-        # Legacy form: ``vector`` is required; ``vectorField`` is optional and
-        # falls back to the first vector field on the collection. The legacy
-        # form is folded into ``queries[0]`` lazily by the backend so that
-        # callers that pass only ``vector`` keep working unchanged.
-        if self.vector is None:
+        elif self.vector is None:
+            # Legacy form: ``vector`` is required; ``vectorField`` is optional
+            # and falls back to the first vector field on the collection.
             raise ValueError(
                 "either 'queries' or 'vector' (with optional 'vectorField') must be provided"
             )
+
+        if self.groupByField is not None:
+            if self.rerankerName is not None:
+                raise ValueError("group-by search cannot use a reranker")
+            if self.queries is not None:
+                if len(self.queries) != 1 or self.queries[0].fts is not None:
+                    raise ValueError("group-by search requires exactly one vector query")
+                param = self.queries[0].param
+                if (
+                    isinstance(param, HnswQueryParamSpec | HnswRabitqQueryParamSpec)
+                    and param.isUsingRefiner
+                ):
+                    raise ValueError("group-by search cannot use refiner search")
         return self
 
 
@@ -242,6 +258,7 @@ class SearchResult(BaseModel):
     id: str
     score: float
     fields: dict[str, Any]
+    groupByValue: str | None = None
 
 
 class SearchResponse(BaseModel):

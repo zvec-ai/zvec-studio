@@ -46,6 +46,7 @@ from zvec import (
     InvertIndexParam,
     IVFIndexParam,
     IVFQueryParam,
+    QuantizerParam,
     VamanaIndexParam,
     VamanaQueryParam,
 )
@@ -223,6 +224,24 @@ def _coerce_quantize_type(value: Any) -> Any:
     return value
 
 
+def _coerce_quantizer_param(value: Any) -> Any:
+    """Build the Zvec 0.6 quantizer config from Studio wire parameters."""
+    if isinstance(value, QuantizerParam):
+        return value
+    if isinstance(value, dict):
+        try:
+            return QuantizerParam(**_normalize_param_keys(value))
+        except TypeError as exc:
+            raise InvalidSchemaError(
+                f"Unsupported quantizerParam: {exc}",
+                extra={"quantizerParam": value},
+            ) from exc
+    raise InvalidSchemaError(
+        "quantizerParam must be an object",
+        extra={"quantizerParam": value},
+    )
+
+
 def _build_index_param(spec: VectorIndexParam | None) -> Any:
     if spec is None:
         return HnswIndexParam()
@@ -238,6 +257,21 @@ def _build_index_param(spec: VectorIndexParam | None) -> Any:
     kwargs.update(_normalize_param_keys(spec.params))
     if "quantize_type" in kwargs:
         kwargs["quantize_type"] = _coerce_quantize_type(kwargs["quantize_type"])
+    if "quantizer_param" in kwargs:
+        kwargs["quantizer_param"] = _coerce_quantizer_param(kwargs["quantizer_param"])
+        if kwargs["quantizer_param"].enable_rotate:
+            supported_indexes = {IndexType.FLAT, IndexType.HNSW, IndexType.VAMANA}
+            supported_quantization = {zvec.QuantizeType.INT8, zvec.QuantizeType.INT4}
+            if spec.indexType not in supported_indexes:
+                raise InvalidSchemaError(
+                    f"Random rotation is not supported for {spec.indexType.value} indexes.",
+                    extra={"indexType": spec.indexType.value},
+                )
+            if kwargs.get("quantize_type") not in supported_quantization:
+                raise InvalidSchemaError(
+                    "Random rotation requires INT8 or INT4 quantization.",
+                    extra={"quantizeType": spec.params.get("quantizeType")},
+                )
     try:
         return cls(**kwargs)
     except TypeError as exc:
@@ -400,6 +434,11 @@ def _from_sdk_index_param(ip: Any) -> VectorIndexParam | None:
             if attr == "use_contiguous_memory" and val is False:
                 continue
             params[attr] = val
+
+    quantizer_param = getattr(ip, "quantizer_param", None)
+    enable_rotate = getattr(quantizer_param, "enable_rotate", False)
+    if enable_rotate:
+        params["quantizer_param"] = {"enable_rotate": True}
 
     return VectorIndexParam(indexType=index_type, metric=metric, params=params)
 
@@ -1398,6 +1437,87 @@ class SdkBackend:
                 _doc_to_dict(d, include_vector=include_vector),
             )
             for d in docs
+        ]
+
+    def group_by_search(
+        self,
+        name: str,
+        *,
+        queries: list[VectorQuerySpec] | None = None,
+        legacy_vector: Any | None = None,
+        legacy_vector_field: str | None = None,
+        group_by_field: str,
+        group_count: int,
+        top_k_per_group: int,
+        filter_expr: str | None = None,
+        output_fields: list[str] | None = None,
+        include_vector: bool = False,
+    ) -> list[tuple[str, float, dict[str, Any], str]]:
+        """Run Zvec 0.6 group-by search and flatten groups for the REST API."""
+        record = self.get(name)
+        resolved = self._resolve_query_specs(
+            record,
+            queries=queries,
+            legacy_vector=legacy_vector,
+            legacy_vector_field=legacy_vector_field,
+        )
+        if len(resolved) != 1 or resolved[0].fts is not None:
+            raise InvalidSchemaError(
+                "Group-by search requires exactly one vector query.",
+                extra={"name": name},
+            )
+
+        group_field = next(
+            (field for field in record.schema.fields if field.name == group_by_field),
+            None,
+        )
+        if group_field is None:
+            raise InvalidSchemaError(
+                f"Group-by field '{group_by_field}' is not declared on '{name}'.",
+                extra={"groupByField": group_by_field},
+            )
+
+        vector_field = next(
+            (field for field in record.schema.vectors if field.name == resolved[0].field),
+            None,
+        )
+        supported_indexes = {IndexType.FLAT, IndexType.HNSW, IndexType.HNSW_RABITQ}
+        index_type = vector_field.indexParam.indexType if vector_field and vector_field.indexParam else IndexType.HNSW
+        if index_type not in supported_indexes:
+            raise InvalidSchemaError(
+                f"Group-by search is not supported for {index_type.value} indexes.",
+                extra={"indexType": index_type.value},
+            )
+
+        sdk_query = self._build_sdk_query(record, resolved[0])
+        try:
+            groups = record.sdk_obj.group_by_query(
+                query=sdk_query,
+                group_by_field_name=group_by_field,
+                group_count=group_count,
+                topk_per_group=top_k_per_group,
+                filter=filter_expr,
+                include_vector=include_vector,
+                output_fields=output_fields,
+            )
+        except ValueError as exc:
+            msg = _exc_msg(exc)
+            if filter_expr is not None:
+                raise InvalidFilterExpressionError(
+                    msg,
+                    extra={"filter": filter_expr},
+                ) from exc
+            raise InvalidSchemaError(msg, extra={"name": name}) from exc
+
+        return [
+            (
+                doc.id,
+                float(doc.score) if doc.score is not None else 0.0,
+                _doc_to_dict(doc, include_vector=include_vector),
+                str(group.group_by_value),
+            )
+            for group in groups
+            for doc in group.docs
         ]
 
     # ---- search helpers ----
