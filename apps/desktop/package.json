@@ -8,6 +8,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build && bash scripts/post-build-sign.sh",
     "e2e:installed": "wdio run wdio.installed.conf.mjs",
+    "e2e:installed:windows": "node tests/installed-app.windows-smoke.mjs",
     "lint": "echo '(desktop shell uses cargo for lint -- run `make desktop.check`)' && exit 0",
     "typecheck": "echo '(desktop shell typecheck happens via cargo check)' && exit 0",
     "test": "echo '(desktop tests run via cargo test -- see `make desktop.test`)' && exit 0",

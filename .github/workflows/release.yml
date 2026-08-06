@@ -86,16 +86,8 @@ jobs:
             xvfb
 
       - name: Install Tauri WebDriver
-        if: runner.os != 'macOS'
+        if: runner.os == 'Linux'
         run: cargo install tauri-driver --locked
-
-      - name: Install Microsoft Edge WebDriver
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          cargo install --git https://github.com/chippers/msedgedriver-tool
-          msedgedriver-tool
-          $PWD.Path | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Install backend (with packaging extras)
         run: |
@@ -163,7 +155,7 @@ jobs:
           DESKTOP_APP_PATH: ${{ steps.desktop-install.outputs.app_path }}
           ZVEC_PORT: "17862"
           ZVEC_STUDIO_DATA_DIR: ${{ github.workspace }}/artifacts/desktop-smoke/wdio-data
-        run: pnpm --filter desktop e2e:installed
+        run: pnpm --filter desktop e2e:installed:windows
 
       - name: Upload desktop smoke diagnostics
         if: failure() || always()

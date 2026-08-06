@@ -114,7 +114,12 @@ def _terminate(proc: subprocess.Popen[bytes]) -> None:
     if proc.poll() is not None:
         return
     if os.name == "nt":
-        proc.terminate()
+        subprocess.run(
+            ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
     else:
         proc.send_signal(signal.SIGTERM)
     try:
