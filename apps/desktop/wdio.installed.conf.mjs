@@ -8,7 +8,13 @@ const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(currentDir, '../..');
 const artifactsDir = path.join(repoRoot, 'artifacts', 'desktop-smoke');
 const driverPort = Number(process.env.TAURI_DRIVER_PORT ?? '4444');
-const webviewDataDir = path.join(artifactsDir, `webview2-${process.pid}-${Date.now()}`);
+const tauriConfig = JSON.parse(
+  fs.readFileSync(path.join(currentDir, 'src-tauri', 'tauri.conf.json'), 'utf8'),
+);
+const webviewDataDir =
+  process.platform === 'win32' && process.env.LOCALAPPDATA
+    ? path.win32.join(process.env.LOCALAPPDATA, tauriConfig.identifier)
+    : path.join(artifactsDir, `webview2-${process.pid}-${Date.now()}`);
 let driverProcess;
 let devToolsActivePortTimer;
 
@@ -21,7 +27,7 @@ function mirrorNestedDevToolsActivePort() {
 
   try {
     const contents = fs.readFileSync(nestedPath, 'utf8');
-    if (contents.trim().split(/\r?\n/).length < 2) {
+    if (!/^\d+\r?\n/.test(contents)) {
       return;
     }
 
@@ -72,9 +78,13 @@ export const config = {
       maxInstances: 1,
       'tauri:options': {
         application: process.env.DESKTOP_APP_PATH,
-        webviewOptions: {
-          userDataFolder: webviewDataDir,
-        },
+        ...(process.platform === 'win32'
+          ? {
+              webviewOptions: {
+                userDataFolder: webviewDataDir,
+              },
+            }
+          : {}),
       },
     },
   ],
@@ -103,12 +113,16 @@ export const config = {
     process.env.NO_AT_BRIDGE ||= '1';
     process.env.WEBKIT_DISABLE_DMABUF_RENDERER ||= '1';
 
-    fs.mkdirSync(webviewDataDir, { recursive: true });
-    // Edge/WebView2 150 may create this file under EBWebView while EdgeDriver
-    // still waits for it at the configured user-data root. See:
-    // https://github.com/MicrosoftEdge/EdgeWebDriver/issues/109
-    devToolsActivePortTimer = setInterval(mirrorNestedDevToolsActivePort, 100);
-    devToolsActivePortTimer.unref();
+    if (process.platform === 'win32') {
+      fs.mkdirSync(webviewDataDir, { recursive: true });
+      fs.rmSync(path.join(webviewDataDir, 'DevToolsActivePort'), { force: true });
+      // Tauri 2 uses the app's LocalData directory for WebView2. Edge 150 may
+      // create this file under EBWebView while EdgeDriver still waits for it at
+      // that LocalData root. See:
+      // https://github.com/MicrosoftEdge/EdgeWebDriver/issues/109
+      devToolsActivePortTimer = setInterval(mirrorNestedDevToolsActivePort, 100);
+      devToolsActivePortTimer.unref();
+    }
 
     const logPath = path.join(artifactsDir, 'tauri-driver.log');
     const logFd = fs.openSync(logPath, 'a');
