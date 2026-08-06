@@ -8,7 +8,35 @@ const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(currentDir, '../..');
 const artifactsDir = path.join(repoRoot, 'artifacts', 'desktop-smoke');
 const driverPort = Number(process.env.TAURI_DRIVER_PORT ?? '4444');
+const webviewDataDir = path.join(artifactsDir, `webview2-${process.pid}-${Date.now()}`);
 let driverProcess;
+let devToolsActivePortTimer;
+
+function mirrorNestedDevToolsActivePort() {
+  const nestedPath = path.join(webviewDataDir, 'EBWebView', 'DevToolsActivePort');
+  const expectedPath = path.join(webviewDataDir, 'DevToolsActivePort');
+  if (fs.existsSync(expectedPath) || !fs.existsSync(nestedPath)) {
+    return;
+  }
+
+  try {
+    const contents = fs.readFileSync(nestedPath, 'utf8');
+    if (contents.trim().split(/\r?\n/).length < 2) {
+      return;
+    }
+
+    const temporaryPath = `${expectedPath}.${process.pid}.tmp`;
+    fs.writeFileSync(temporaryPath, contents);
+    fs.renameSync(temporaryPath, expectedPath);
+    clearInterval(devToolsActivePortTimer);
+    devToolsActivePortTimer = undefined;
+    console.log('Mirrored nested WebView2 DevToolsActivePort for EdgeDriver compatibility');
+  } catch (error) {
+    if (error?.code !== 'ENOENT') {
+      console.warn(`Could not mirror WebView2 DevToolsActivePort: ${error}`);
+    }
+  }
+}
 
 function waitForPort(port, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
@@ -44,6 +72,9 @@ export const config = {
       maxInstances: 1,
       'tauri:options': {
         application: process.env.DESKTOP_APP_PATH,
+        webviewOptions: {
+          userDataFolder: webviewDataDir,
+        },
       },
     },
   ],
@@ -72,6 +103,13 @@ export const config = {
     process.env.NO_AT_BRIDGE ||= '1';
     process.env.WEBKIT_DISABLE_DMABUF_RENDERER ||= '1';
 
+    fs.mkdirSync(webviewDataDir, { recursive: true });
+    // Edge/WebView2 150 may create this file under EBWebView while EdgeDriver
+    // still waits for it at the configured user-data root. See:
+    // https://github.com/MicrosoftEdge/EdgeWebDriver/issues/109
+    devToolsActivePortTimer = setInterval(mirrorNestedDevToolsActivePort, 100);
+    devToolsActivePortTimer.unref();
+
     const logPath = path.join(artifactsDir, 'tauri-driver.log');
     const logFd = fs.openSync(logPath, 'a');
     driverProcess = spawn(
@@ -93,6 +131,10 @@ export const config = {
     await waitForPort(driverPort, 30000);
   },
   onComplete: () => {
+    if (devToolsActivePortTimer) {
+      clearInterval(devToolsActivePortTimer);
+      devToolsActivePortTimer = undefined;
+    }
     if (driverProcess && driverProcess.exitCode === null) {
       driverProcess.kill();
     }
