@@ -15,9 +15,6 @@ const appPath = process.env.DESKTOP_APP_PATH;
 const tauriConfig = JSON.parse(
   fs.readFileSync(path.join(repoRoot, 'apps', 'desktop', 'src-tauri', 'tauri.conf.json'), 'utf8'),
 );
-const registryKey =
-  'HKCU\\Software\\Policies\\Microsoft\\Edge\\WebView2\\AdditionalBrowserArguments';
-const appExecutableName = appPath ? path.win32.basename(appPath) : undefined;
 const webviewUserDataDir = process.env.LOCALAPPDATA
   ? path.win32.join(process.env.LOCALAPPDATA, tauriConfig.identifier, 'EBWebView')
   : undefined;
@@ -26,43 +23,6 @@ const devToolsActivePortPath = webviewUserDataDir
   : undefined;
 let appProcess;
 let browser;
-let registryValueCreated = false;
-
-function enableRemoteDebugging() {
-  if (process.env.GITHUB_ACTIONS !== 'true') {
-    return;
-  }
-
-  const result = spawnSync(
-    'reg.exe',
-    [
-      'add',
-      registryKey,
-      '/v',
-      appExecutableName,
-      '/t',
-      'REG_SZ',
-      '/d',
-      '--remote-debugging-port=0',
-      '/f',
-    ],
-    { encoding: 'utf8' },
-  );
-  if (result.status !== 0) {
-    throw new Error(`Could not enable WebView2 remote debugging: ${result.stderr}`);
-  }
-  registryValueCreated = true;
-}
-
-function disableRemoteDebugging() {
-  if (!registryValueCreated) {
-    return;
-  }
-  spawnSync('reg.exe', ['delete', registryKey, '/v', appExecutableName, '/f'], {
-    stdio: 'ignore',
-  });
-  registryValueCreated = false;
-}
 
 function waitForCdpEndpoint(timeoutMs) {
   const deadline = Date.now() + timeoutMs;
@@ -141,7 +101,6 @@ async function main() {
 
   fs.mkdirSync(artifactsDir, { recursive: true });
   fs.rmSync(devToolsActivePortPath, { force: true });
-  enableRemoteDebugging();
   const appLog = fs.openSync(path.join(artifactsDir, 'windows-app.log'), 'a');
   const env = {
     ...process.env,
@@ -150,6 +109,7 @@ async function main() {
     ZVEC_READY_TIMEOUT_SECS: process.env.ZVEC_READY_TIMEOUT_SECS ?? '60',
     ZVEC_STUDIO_DATA_DIR:
       process.env.ZVEC_STUDIO_DATA_DIR ?? path.join(artifactsDir, 'windows-data'),
+    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=0',
   };
 
   appProcess = spawn(appPath, [], {
@@ -208,5 +168,4 @@ try {
 } finally {
   await browser?.close().catch(() => {});
   stopApp();
-  disableRemoteDebugging();
 }

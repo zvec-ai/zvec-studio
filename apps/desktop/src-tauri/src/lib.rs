@@ -90,6 +90,28 @@ pub fn run() {
         config: config.clone(),
     };
 
+    let context = tauri::generate_context!();
+
+    #[cfg(target_os = "windows")]
+    let context = {
+        let mut context = context;
+        if let Ok(additional_args) = env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") {
+            let additional_args = additional_args.trim();
+            if !additional_args.is_empty() {
+                for window in &mut context.config_mut().app.windows {
+                    window.additional_browser_args =
+                        Some(match window.additional_browser_args.take() {
+                            Some(configured_args) => format!("{configured_args} {additional_args}"),
+                            None => format!(
+                                "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection {additional_args}"
+                            ),
+                        });
+                }
+            }
+        }
+        context
+    };
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(app_state)
@@ -97,7 +119,7 @@ pub fn run() {
             commands::sidecar_status,
             commands::sidecar_url,
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("failed to build the Tauri application")
         .run(|app_handle, event| {
             let should_shutdown = matches!(
