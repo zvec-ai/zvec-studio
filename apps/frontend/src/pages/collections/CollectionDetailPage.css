@@ -601,7 +601,7 @@
   background: var(--zv-color-surface);
   border-radius: var(--zv-radius-md);
   border: 1px solid var(--zv-color-border);
-  overflow: hidden;
+  overflow-x: auto;
 }
 .zv-data-toolbar {
   padding: 12px 20px;
@@ -1149,12 +1149,13 @@ details[open] .zv-query-params-summary::before {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  width: max-content;
   max-width: 300px;
 }
 .zv-cell-copy__text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .zv-cell-copy__btn {
   background: none;
