@@ -1149,12 +1149,13 @@ details[open] .zv-query-params-summary::before {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  max-width: none;
+  width: max-content;
+  max-width: 300px;
 }
 .zv-cell-copy__text {
-  overflow: visible;
-  text-overflow: unset;
+  min-width: 0;
   white-space: normal;
+  overflow-wrap: anywhere;
 }
 .zv-cell-copy__btn {
   background: none;
