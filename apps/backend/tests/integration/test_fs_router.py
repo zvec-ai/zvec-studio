@@ -104,3 +104,95 @@ async def test_root_has_no_parent(client: AsyncClient) -> None:
     body = response.json()
     assert body["path"] == "/"
     assert body["parent"] is None
+
+
+# ---- file listing (import file picker support) ----
+
+
+def _picker_sandbox(tmp_path: Path) -> Path:
+    sandbox = tmp_path / "picker"
+    sandbox.mkdir()
+    (sandbox / "subdir").mkdir()
+    (sandbox / "data.jsonl").write_text('{"id": "a"}\n')
+    (sandbox / "archive.tar.gz").write_bytes(b"\x1f\x8b\x08\x00")
+    (sandbox / "notes.txt").write_text("hello")
+    return sandbox
+
+
+@pytest.mark.integration
+async def test_files_hidden_without_include_files(tmp_path: Path, client: AsyncClient) -> None:
+    """Backward compatibility: the default listing keeps directories only."""
+    sandbox = _picker_sandbox(tmp_path)
+
+    response = await client.get("/api/v1/fs/list", params={"path": str(sandbox)})
+
+    body = response.json()
+    assert [e["name"] for e in body["entries"]] == ["subdir"]
+    assert [e["kind"] for e in body["entries"]] == ["dir"]
+    assert body["entries"][0]["size"] is None
+
+
+@pytest.mark.integration
+async def test_files_listed_with_include_files(tmp_path: Path, client: AsyncClient) -> None:
+    sandbox = _picker_sandbox(tmp_path)
+
+    response = await client.get(
+        "/api/v1/fs/list",
+        params={"path": str(sandbox), "includeFiles": "true"},
+    )
+
+    assert response.status_code == 200
+    entries = response.json()["entries"]
+    by_name = {e["name"]: e for e in entries}
+    assert sorted(by_name) == ["archive.tar.gz", "data.jsonl", "notes.txt", "subdir"]
+    assert by_name["data.jsonl"]["kind"] == "file"
+    assert by_name["data.jsonl"]["size"] == len('{"id": "a"}\n')
+    assert by_name["subdir"]["kind"] == "dir"
+    assert by_name["subdir"]["size"] is None
+
+
+@pytest.mark.integration
+async def test_files_filtered_by_extension(tmp_path: Path, client: AsyncClient) -> None:
+    sandbox = _picker_sandbox(tmp_path)
+
+    response = await client.get(
+        "/api/v1/fs/list",
+        params={"path": str(sandbox), "includeFiles": "true", "extensions": ".jsonl,.tar.gz"},
+    )
+
+    entries = response.json()["entries"]
+    names = [e["name"] for e in entries]
+    # Directories always stay (needed for navigation); files are filtered.
+    assert names == ["archive.tar.gz", "data.jsonl", "subdir"]
+
+
+@pytest.mark.integration
+async def test_extension_filter_is_case_insensitive(
+    tmp_path: Path, client: AsyncClient
+) -> None:
+    sandbox = tmp_path / "picker"
+    sandbox.mkdir()
+    (sandbox / "UPPER.JSONL").write_text("{}\n")
+
+    response = await client.get(
+        "/api/v1/fs/list",
+        params={"path": str(sandbox), "includeFiles": "true", "extensions": ".jsonl"},
+    )
+
+    assert [e["name"] for e in response.json()["entries"]] == ["UPPER.JSONL"]
+
+
+@pytest.mark.integration
+async def test_extensions_without_include_files_ignored(
+    tmp_path: Path, client: AsyncClient
+) -> None:
+    sandbox = _picker_sandbox(tmp_path)
+
+    response = await client.get(
+        "/api/v1/fs/list",
+        params={"path": str(sandbox), "extensions": ".jsonl"},
+    )
+
+    # includeFiles is off -> extensions is a no-op; directories-only as before.
+    assert [e["name"] for e in response.json()["entries"]] == ["subdir"]
+

@@ -3,9 +3,13 @@
 The v0.2.0 contract drops ``isPrimary`` / ``description`` / ``JSON`` /
 collection-level ``indexParams`` and keeps:
 - per-vector ``indexParam`` ({indexType, metric, params})
-- reserved field names ``{"id", "_id"}``
-- stricter collection-name regex (start with letter, len ≥ 3).
+- stricter collection-name regex (start with letter, len >= 3).
 - Zvec 0.6.x FTS scalar indexes and DiskANN vector params.
+
+Column names ``id`` / ``_id`` are *accepted*: Zvec allows them, and rejecting
+them stopped Studio from opening SDK-created collections. When a column takes
+``id``, the primary key moves to the ``$id`` row key (see
+``storage/doc_repr.py``).
 """
 
 from __future__ import annotations
@@ -60,11 +64,17 @@ class TestFieldSchema:
         with pytest.raises(ValidationError):
             FieldSchema(name=bad_name, dataType=ScalarDataType.INT64)
 
-    @pytest.mark.parametrize("reserved", ["id", "_id"])
-    def test_reserved_field_names_rejected(self, reserved: str) -> None:
-        with pytest.raises(ValidationError) as exc:
-            FieldSchema(name=reserved, dataType=ScalarDataType.STRING)
-        assert "reserved" in str(exc.value)
+    @pytest.mark.parametrize("name", ["id", "_id"])
+    def test_columns_may_be_named_id(self, name: str) -> None:
+        """Zvec allows these names; rejecting them blocked opening SDK collections."""
+        assert FieldSchema(name=name, dataType=ScalarDataType.STRING).name == name
+
+    def test_dollar_prefixed_scalar_field_name_rejected(self) -> None:
+        """Pin the guard the reserved pk chain relies on: Studio (and Zvec)
+        reject ``$`` in scalar field names, so ``$id``/``$$id`` can never be
+        user columns."""
+        with pytest.raises(ValidationError):
+            FieldSchema(name="$id", dataType=ScalarDataType.STRING)
 
     def test_extra_forbidden(self) -> None:
         with pytest.raises(ValidationError):
@@ -115,12 +125,29 @@ class TestVectorSchema:
         with pytest.raises(ValidationError):
             VectorSchema(name="v", dataType=VectorDataType.VECTOR_FP32, dimension=bad_dim)
 
-    @pytest.mark.parametrize("reserved", ["id", "_id"])
-    def test_reserved_vector_names_rejected(self, reserved: str) -> None:
+    @pytest.mark.parametrize("name", ["id", "_id"])
+    def test_vectors_may_be_named_id(self, name: str) -> None:
+        """Zvec accepts a vector named ``id`` (it just cannot clash with a field)."""
+        v = VectorSchema(name=name, dataType=VectorDataType.VECTOR_FP32, dimension=4)
+        assert v.name == name
+
+    def test_vector_fp64_is_rejected_at_validation(self) -> None:
+        """Regression: zvec rejects FP64 dense vectors at create time with an
+        opaque error; refuse the value up front instead (defect §4.3 in the
+        import/export design doc)."""
         with pytest.raises(ValidationError):
             VectorSchema(
-                name=reserved, dataType=VectorDataType.VECTOR_FP32, dimension=4
+                name="v", dataType="VECTOR_FP64", dimension=4  # type: ignore[arg-type]
             )
+
+    def test_supported_vector_types(self) -> None:
+        assert VectorDataType.__members__.keys() == {
+            "VECTOR_FP32",
+            "VECTOR_FP16",
+            "VECTOR_INT8",
+            "SPARSE_VECTOR_FP32",
+            "SPARSE_VECTOR_FP16",
+        }
 
     def test_index_param_attached(self) -> None:
         v = VectorSchema.model_validate(

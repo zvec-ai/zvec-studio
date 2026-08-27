@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import contextlib
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Query, Request, status
 
 from zvec_studio.config_store import ConfigStore
+from zvec_studio.exceptions import CollectionAlreadyExistsError
+from zvec_studio.routers.documents import import_report_to_response
 from zvec_studio.schemas import (
     CollectionCreateRequest,
+    CollectionImportRequest,
+    CollectionImportResponse,
     CollectionListItem,
     CollectionListResponse,
     CollectionOpenRequest,
@@ -28,6 +34,12 @@ from zvec_studio.schemas import (
     VectorIndexParam,
 )
 from zvec_studio.storage import CollectionRecord, SdkBackend
+from zvec_studio.storage.formats import JsonlFormat
+from zvec_studio.storage.import_ import validate_import_source
+from zvec_studio.storage.snapshot import (
+    check_schema_compatible,
+    read_snapshot_manifest,
+)
 
 router = APIRouter(prefix="/collections", tags=["collections"])
 
@@ -104,6 +116,77 @@ def open_collection(
     record = backend.open(_normalise_path(body.path))
     store.touch_recent(record.path, name=record.name)
     return _summary(record, backend)
+
+
+@router.post(
+    ":import",
+    status_code=status.HTTP_201_CREATED,
+    response_model=CollectionImportResponse,
+)
+def import_collection(
+    body: CollectionImportRequest,
+    backend: SdkBackend = Depends(_get_backend),
+    store: ConfigStore = Depends(_get_config_store),
+) -> CollectionImportResponse:
+    """Import a collection from a snapshot package (``.tar.gz``).
+
+    Collection-level lifecycle operation (a sibling of create/open): the
+    manifest embedded in the snapshot supplies the schema, ``targetPath``
+    gives the new collection its home, and the embedded JSONL is loaded in
+    the same pass. Everything is validated before anything touches the disk
+    (missing/corrupt package, occupied target, name clash, incompatible
+    options); if the data load itself fails unexpectedly, the freshly
+    created collection is rolled back. Row-level failures follow the
+    standard import report semantics and keep the loaded rows.
+    """
+    source = _normalise_path(body.source.path)
+    validate_import_source(source)  # 404 / 403, before touching anything
+    manifest = read_snapshot_manifest(source)  # 400 on corrupt / malformed
+
+    schema = CollectionSchema.model_validate(manifest["collection"]["schema"])
+    if body.name is not None:
+        # Re-validation applies the collection-name rules to the override.
+        schema = CollectionSchema.model_validate(
+            {**schema.model_dump(mode="python"), "name": body.name}
+        )
+    # Fail-fast on snapshot options (e.g. includeVector=false) *before*
+    # creating anything — otherwise a mismatch would leave a half-imported
+    # ghost collection behind that permanently occupies targetPath.
+    check_schema_compatible(manifest, schema)
+
+    target = _normalise_path(body.targetPath)
+    if target.exists():
+        # The Zvec engine refuses to create into *any* existing path (even an
+        # empty directory — verified empirically), so reject up front with a
+        # meaningful 409 instead of leaking the engine's path-validation error.
+        raise CollectionAlreadyExistsError(
+            f"Target directory '{target}' already exists; choose a new location.",
+            extra={"targetPath": str(target)},
+        )
+
+    record = backend.create(path=target, schema=schema)
+    try:
+        report = backend.import_documents(
+            record.name,
+            source_path=str(source),
+            fmt=JsonlFormat(),
+            path=str(target),
+        )
+    except Exception:
+        # The load blew up mid-stream (corrupt member, IO error, ...): roll
+        # back the freshly created collection so a fixed-up retry is possible.
+        with contextlib.suppress(Exception):
+            backend.destroy(record.name, path=str(target))
+            shutil.rmtree(target, ignore_errors=True)
+        raise
+
+    with contextlib.suppress(Exception):
+        store.touch_recent(record.path, name=record.name)
+
+    return CollectionImportResponse(
+        collection=_summary(record, backend),
+        report=import_report_to_response(report),
+    )
 
 
 # ---------------------------------------------------------------------------

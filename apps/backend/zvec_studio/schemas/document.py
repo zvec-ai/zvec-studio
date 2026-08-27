@@ -7,7 +7,7 @@ generates a fresh ULID), but everything we expose downstream is normalised to
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -110,3 +110,82 @@ class DocumentDeleteByFilterRequest(BaseModel):
 
 class DocumentDeleteByFilterResponse(BaseModel):
     deleted: int
+
+
+# ---------------------------------------------------------------------------
+# Bulk import from a file (JSONL). The row-level report mirrors
+# ``storage/import_.py::ImportReport`` verbatim; row failures are carried in
+# the 200 body (partial-success batch semantics), only request-level problems
+# map to 4xx.
+# ---------------------------------------------------------------------------
+
+
+class ImportSourceSpec(BaseModel):
+    """Where the import reads its data from.
+
+    Only ``localPath`` exists today — Studio is local-first, the backend runs
+    on the user's machine, and reading a path avoids shovelling gigabytes
+    through an HTTP upload. ``upload`` is reserved for the remote deployment
+    enhancement.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["localPath"] = "localPath"
+    path: str = Field(..., min_length=1, description="Absolute path of the file to import.")
+
+
+class DocumentImportRequest(BaseModel):
+    """Body for ``POST /collections/{name}/documents:import``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source: ImportSourceSpec
+    mode: Literal["insert", "replace"] = Field(
+        default="replace",
+        description=(
+            "insert: existing primary keys fail the row. replace: the row's "
+            "content becomes the whole document for that key (idempotent "
+            "re-import)."
+        ),
+    )
+    onError: Literal["abort", "skip"] = Field(
+        default="abort",
+        description="abort: stop at the first failing row; skip: record it and continue.",
+    )
+    format: str | None = Field(
+        default=None,
+        description=(
+            "Import format name ('jsonl'). When omitted, inferred from the "
+            "file extension; extension-less files default to jsonl."
+        ),
+    )
+    batchSize: int | None = Field(
+        default=None,
+        ge=1,
+        le=1024,
+        description=(
+            "Internal write batch size. Capped at the SDK's 1024-document "
+            "limit; defaults to the benchmarked sweet spot (512)."
+        ),
+    )
+
+
+class DocumentImportErrorEntry(BaseModel):
+    """One failing row."""
+
+    line: int = Field(..., description="1-based physical line in the file.")
+    code: str = Field(..., description="Studio error code for this row.")
+    message: str
+
+
+class DocumentImportResponse(BaseModel):
+    imported: int
+    failed: int
+    totalLines: int = Field(..., description="Data rows read (blank lines excluded).")
+    aborted: bool
+    durationMs: float
+    errors: list[DocumentImportErrorEntry] = Field(
+        ..., description="First 100 failing rows; see errorsTruncated."
+    )
+    errorsTruncated: bool

@@ -46,6 +46,67 @@ async def _create(client: AsyncClient, path: Path, name: str) -> dict:
     return resp.json()
 
 
+class TestNameUniqueness:
+    """Open collection names are globally unique.
+
+    Nearly every document API resolves a collection by name alone, so two
+    same-named collections can never be open at once — otherwise requests
+    would silently resolve to whichever registered first (observed in the
+    wild as "deleted in A, B's browse changed too").
+    """
+
+    async def test_create_same_name_different_path_is_409(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        await _create(client, tmp_path / "first", "demo")
+
+        resp = await client.post(
+            f"{API}/collections",
+            json={"path": str(tmp_path / "second"), "schema": _payload("demo")},
+        )
+
+        assert resp.status_code == 409, resp.text
+        body = resp.json()
+        assert body["code"] == "COLLECTION_ALREADY_EXISTS"
+        # The message points at the blocking collection and says what to do.
+        assert "demo" in body["detail"]
+        assert str(tmp_path / "first") in body["detail"]
+
+    async def test_open_same_name_different_path_is_409(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        await _create(client, tmp_path / "first", "demo")
+        # A second on-disk collection with the same recorded name.
+        import zvec
+
+        other = tmp_path / "second"
+        zvec.create_and_open(
+            path=str(other),
+            schema=zvec.CollectionSchema(
+                name="demo",
+                vectors=[zvec.VectorSchema("embedding", zvec.DataType.VECTOR_FP32, 4)],
+                fields=[zvec.FieldSchema("title", zvec.DataType.STRING)],
+            ),
+        ).flush()
+
+        resp = await client.post(f"{API}/collections/open", json={"path": str(other)})
+
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["code"] == "COLLECTION_ALREADY_EXISTS"
+
+    async def test_destroy_frees_the_name(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        await _create(client, tmp_path / "first", "demo")
+        await client.delete(f"{API}/collections/demo?path={tmp_path / 'first'}")
+
+        second = await client.post(
+            f"{API}/collections",
+            json={"path": str(tmp_path / "second"), "schema": _payload("demo")},
+        )
+        assert second.status_code == 201, second.text
+
+
 class TestCreate:
     async def test_create_returns_201_with_summary(
         self, client: AsyncClient, tmp_path: Path
@@ -59,25 +120,6 @@ class TestCreate:
         assert "indexParams" not in body["schema"]
         assert body["schema"]["vectors"][0]["indexParam"]["metric"] == "COSINE"
         assert body["stats"]["documentCount"] == 0
-
-    async def test_duplicate_name_different_path_both_open(
-        self, client: AsyncClient, tmp_path: Path
-    ) -> None:
-        await _create(client, tmp_path / "a", "same")
-        resp = await client.post(
-            f"{API}/collections",
-            json={"path": str(tmp_path / "b"), "schema": _payload("same")},
-        )
-        assert resp.status_code == 201
-        body = resp.json()
-        assert body["name"] == "same"
-        assert body["path"] == str(tmp_path / "b")
-        # Both should be listed as open
-        list_resp = await client.get(f"{API}/collections")
-        items = list_resp.json()["items"]
-        paths = {i["path"] for i in items}
-        assert str(tmp_path / "a") in paths
-        assert str(tmp_path / "b") in paths
 
     async def test_duplicate_path_returns_409(
         self, client: AsyncClient, tmp_path: Path

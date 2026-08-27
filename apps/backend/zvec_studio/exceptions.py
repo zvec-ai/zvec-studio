@@ -86,6 +86,100 @@ class DocumentNotFoundError(ZvecStudioError):
     title = "Document Not Found"
 
 
+class DocumentConflictError(ZvecStudioError):
+    """The target primary key already exists (``insert`` rejects duplicates)."""
+
+    code = "DOCUMENT_CONFLICT"
+    status_code = 409
+    title = "Document Already Exists"
+
+
+class MaintenanceBlockedError(ZvecStudioError):
+    """Maintenance was rejected because a snapshot iterator is open.
+
+    Zvec blocks ``flush``/``optimize``/DDL while an export iterator holds the
+    collection (PR #597 contract). That is a transient conflict — retryable
+    once the export finishes — not an invalid request.
+    """
+
+    code = "MAINTENANCE_BLOCKED"
+    status_code = 409
+    title = "Maintenance Blocked"
+
+
+class UnsupportedVectorDataTypeError(ZvecStudioError):
+    """The collection carries a vector dtype Studio cannot represent.
+
+    Distinct from ``COLLECTION_NOT_FOUND``: the collection exists and opened
+    fine at the SDK level — only Studio's dtype surface does not cover it
+    (e.g. a legacy ``VECTOR_FP64`` collection after the enum was pruned).
+    """
+
+    code = "UNSUPPORTED_VECTOR_DATA_TYPE"
+    status_code = 422
+    title = "Unsupported Vector Data Type"
+
+
+class ImportFileNotFoundError(ZvecStudioError):
+    """The requested import source does not exist or is not a regular file."""
+
+    code = "IMPORT_FILE_NOT_FOUND"
+    status_code = 404
+    title = "Import File Not Found"
+
+
+class ImportFileNotReadableError(ZvecStudioError):
+    """The import source exists but cannot be opened for reading."""
+
+    code = "IMPORT_FILE_NOT_READABLE"
+    status_code = 403
+    title = "Import File Not Readable"
+
+
+class ImportManifestInvalidError(ZvecStudioError):
+    """A snapshot's manifest.json is unreadable or structurally invalid."""
+
+    code = "IMPORT_MANIFEST_INVALID"
+    status_code = 400
+    title = "Invalid Import Manifest"
+
+
+class ImportSchemaMismatchError(ZvecStudioError):
+    """The snapshot's schema is not compatible with the target collection.
+
+    Raised before any row is written (fail-fast); ``extra['mismatches']``
+    carries human-readable reasons.
+    """
+
+    code = "IMPORT_SCHEMA_MISMATCH"
+    status_code = 409
+    title = "Import Schema Mismatch"
+
+
+class ExportNonFiniteError(ZvecStudioError):
+    """A document carries NaN/±Inf and cannot be written to JSON safely.
+
+    Raised instead of letting orjson silently coerce non-finite floats to
+    ``null`` (data loss) or emitting non-standard ``NaN`` literals that no
+    conforming parser reads back. ``extra`` carries ``documentId`` and the
+    value ``path`` (e.g. ``embedding[3]``).
+    """
+
+    code = "EXPORT_NON_FINITE_VALUE"
+    status_code = 422
+    title = "Non-Finite Value In Document"
+
+
+class InvalidDocumentError(ZvecStudioError):
+    """A single document fails validation at the SDK level (missing required
+    field, type mismatch, ...). Distinct from ``InvalidSchemaError``, which
+    covers the collection schema itself."""
+
+    code = "INVALID_DOCUMENT"
+    status_code = 422
+    title = "Invalid Document"
+
+
 class DimensionMismatchError(ZvecStudioError):
     code = "DIMENSION_MISMATCH"
     status_code = 400

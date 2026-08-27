@@ -22,9 +22,13 @@ _NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 # least 3 characters long (verified empirically against zvec 0.4.0).
 _COLLECTION_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{2,63}$")
 
-# Field names colliding with Zvec's built-in ``Doc.id``. The SDK injects ``id``
-# automatically; user-defined columns must not shadow it.
-_RESERVED_FIELD_NAMES: frozenset[str] = frozenset({"id", "_id"})
+# ``id`` and ``_id`` used to be rejected here on the assumption that Zvec
+# "injects" ``id`` and a same-named column would shadow it. That assumption is
+# wrong: ``Doc.id`` lives beside the columns, and Zvec accepts a schema that
+# declares a scalar field or vector named ``id`` (or ``_id``) — the two coexist
+# independently. Rejecting them made Studio unable to *open* collections
+# created through the SDK, so the restriction is gone; the primary key gets its
+# own row key (``$id``) whenever a column takes ``id``, see storage/doc_repr.py.
 _FTS_TOKENIZERS: frozenset[str] = frozenset({"standard", "whitespace", "jieba"})
 _FTS_FILTERS: frozenset[str] = frozenset({"lowercase", "ascii_folding", "stemmer"})
 
@@ -36,11 +40,15 @@ _RESERVED_COLLECTION_NAMES: frozenset[str] = frozenset({"recent", "open"})
 
 
 class VectorDataType(str, Enum):
-    """Vector dtypes supported by the Zvec SDK."""
+    """Vector dtypes supported by the Zvec SDK.
+
+    ``VECTOR_FP64`` is intentionally absent: zvec's schema validation rejects
+    it ("dense_vector's data type only support FP32"), so exposing it would
+    only let users build collections that fail at create time.
+    """
 
     VECTOR_FP32 = "VECTOR_FP32"
     VECTOR_FP16 = "VECTOR_FP16"
-    VECTOR_FP64 = "VECTOR_FP64"
     VECTOR_INT8 = "VECTOR_INT8"
     SPARSE_VECTOR_FP32 = "SPARSE_VECTOR_FP32"
     SPARSE_VECTOR_FP16 = "SPARSE_VECTOR_FP16"
@@ -106,8 +114,6 @@ class FieldSchema(BaseModel):
     def _validate_name(cls, v: str) -> str:
         if not _NAME_RE.match(v):
             raise ValueError("field name must match ^[A-Za-z_][A-Za-z0-9_]{0,63}$")
-        if v in _RESERVED_FIELD_NAMES:
-            raise ValueError(f"field name '{v}' is reserved by the SDK and cannot be used")
         return v
 
     @model_validator(mode="after")
@@ -179,8 +185,6 @@ class VectorSchema(BaseModel):
     def _validate_name(cls, v: str) -> str:
         if not _NAME_RE.match(v):
             raise ValueError("vector name must match ^[A-Za-z_][A-Za-z0-9_]{0,63}$")
-        if v in _RESERVED_FIELD_NAMES:
-            raise ValueError(f"vector name '{v}' is reserved by the SDK and cannot be used")
         return v
 
 
@@ -350,8 +354,6 @@ class FieldRenameRequest(BaseModel):
     def _validate_name(cls, v: str) -> str:
         if not _NAME_RE.match(v):
             raise ValueError("new field name must match ^[A-Za-z_][A-Za-z0-9_]{0,63}$")
-        if v in _RESERVED_FIELD_NAMES:
-            raise ValueError(f"field name '{v}' is reserved by the SDK and cannot be used")
         return v
 
 
@@ -401,3 +403,62 @@ class MaintenanceResponse(BaseModel):
 
     operation: str = Field(..., description="Operation performed (``flush``, ``optimize``).")
     timestamp: str = Field(..., description="ISO-8601 timestamp when the operation finished.")
+
+
+# ---------------------------------------------------------------------------
+# Snapshot restore (collection-level lifecycle operation).
+# ---------------------------------------------------------------------------
+
+
+class CollectionImportRequest(BaseModel):
+    """Import a collection from a snapshot package (``.tar.gz``).
+
+    A sibling of create/open, not a variant of document import: the manifest
+    embedded in the snapshot supplies the schema, ``targetPath`` gives the new
+    collection a home on disk, and the data rows are loaded in the same pass.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    source: ImportSourceSpec = Field(
+        ..., description="The snapshot package to import from (local path)."
+    )
+    targetPath: str = Field(
+        ...,
+        min_length=1,
+        description=(
+            "Directory for the imported collection. Must not exist (409 if it "
+            "does, empty directories included); the collection is created there."
+        ),
+    )
+    name: str | None = Field(
+        default=None,
+        description=(
+            "Optional new collection name. Defaults to the name recorded in "
+            "the snapshot manifest; override it to avoid clashing with an "
+            "open collection."
+        ),
+    )
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, v: str | None) -> str | None:
+        if v is not None and not _COLLECTION_NAME_RE.match(v):
+            raise ValueError("collection name must match ^[A-Za-z][A-Za-z0-9_]{2,63}$")
+        return v
+
+
+class CollectionImportResponse(BaseModel):
+    """The imported collection plus the row-level load report."""
+
+    collection: CollectionSummary
+    report: DocumentImportResponse
+
+
+from zvec_studio.schemas.document import (  # noqa: E402  (avoid import cycle)
+    DocumentImportResponse,
+    ImportSourceSpec,
+)
+
+CollectionImportRequest.model_rebuild()
+CollectionImportResponse.model_rebuild()
