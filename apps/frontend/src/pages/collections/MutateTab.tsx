@@ -19,6 +19,7 @@ import {
   useDeleteDocumentsByFilter,
 } from '@/features/documents/hooks';
 import { coerceFieldValue } from './coerce-field-value';
+import { primaryKeyFor } from './doc-repr';
 import { useListEmbeddings, useEmbed } from '@/features/ai/hooks';
 import type { EmbedResponse, EmbeddingFunctionRecord } from '@/features/ai/api';
 import { getEmbeddingTag, getEmbeddingDimension } from '@/features/ai/utils';
@@ -47,6 +48,9 @@ export function MutateTab({ collection }: MutateTabProps): JSX.Element {
   const { schema } = collection;
   const vectors = schema.vectors ?? [];
   const fields = schema.fields ?? [];
+  // Row key carrying the primary key: ``id`` normally, ``$id`` when the
+  // schema declares its own ``id`` column (backend doc_repr contract).
+  const pkKey = primaryKeyFor(schema);
 
   const subViews: ReadonlyArray<{ key: SubView; label: string }> = [
     { key: 'insert', label: t('pages.collections.detail.mutate.insert') },
@@ -73,13 +77,28 @@ export function MutateTab({ collection }: MutateTabProps): JSX.Element {
       </div>
 
       {view === 'insert' && (
-        <InsertView collectionName={collection.name} fields={fields} vectors={vectors} />
+        <InsertView
+          collectionName={collection.name}
+          fields={fields}
+          vectors={vectors}
+          pkKey={pkKey}
+        />
       )}
       {view === 'upsert' && (
-        <UpsertView collectionName={collection.name} fields={fields} vectors={vectors} />
+        <UpsertView
+          collectionName={collection.name}
+          fields={fields}
+          vectors={vectors}
+          pkKey={pkKey}
+        />
       )}
       {view === 'update' && (
-        <UpdateView collectionName={collection.name} fields={fields} vectors={vectors} />
+        <UpdateView
+          collectionName={collection.name}
+          fields={fields}
+          vectors={vectors}
+          pkKey={pkKey}
+        />
       )}
       {view === 'delete' && <DeleteView collectionName={collection.name} />}
     </div>
@@ -107,14 +126,22 @@ interface DocSlot {
 function makeDocSlot(
   fields: ReadonlyArray<{ name: string }>,
   vectors: ReadonlyArray<VectorFieldLike>,
+  pkKey: string,
 ): DocSlot {
   const fv: Record<string, string> = {};
-  for (const f of fields) if (f.name !== 'id') fv[f.name] = '';
+  // The primary-key column is entered separately (``docId``), whatever its
+  // row key is (``id`` or ``$id``).
+  for (const f of fields) if (f.name !== pkKey) fv[f.name] = '';
   const vi: Record<string, VectorInputState> = {};
   for (const v of vectors) {
     vi[v.name] = { mode: 'raw', rawText: '', embedding: '', embedText: '' };
   }
-  return { id: `doc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`, docId: '', fieldValues: fv, vectorInputs: vi };
+  return {
+    id: `doc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    docId: '',
+    fieldValues: fv,
+    vectorInputs: vi,
+  };
 }
 
 function embedResultMatchesVector(result: EmbedResponse, vector: { dataType: string }): boolean {
@@ -151,8 +178,12 @@ function VectorFieldInput({
   return (
     <div className="zv-dml-vector-field">
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <span className="zv-mono" style={{ fontWeight: 600 }}>{vector.name}</span>
-        <span className="zv-vq-field-tag">{vectorDimensionLabel(vector)} {vector.dataType}</span>
+        <span className="zv-mono" style={{ fontWeight: 600 }}>
+          {vector.name}
+        </span>
+        <span className="zv-vq-field-tag">
+          {vectorDimensionLabel(vector)} {vector.dataType}
+        </span>
       </div>
 
       <div className="zv-form-group">
@@ -177,7 +208,10 @@ function VectorFieldInput({
       {input.mode === 'embed' ? (
         <>
           {dimMismatch && (
-            <span className="zv-form-hint" style={{ color: 'var(--zv-color-warning)', marginBottom: 4, display: 'block' }}>
+            <span
+              className="zv-form-hint"
+              style={{ color: 'var(--zv-color-warning)', marginBottom: 4, display: 'block' }}
+            >
               {t('pages.collections.detail.mutate.dimMismatch', {
                 embDim: dimMismatch.embDim,
                 fieldDim: dimMismatch.fieldDim,
@@ -186,9 +220,11 @@ function VectorFieldInput({
           )}
           <textarea
             className="zv-form-textarea"
-            placeholder={dimMismatch
-              ? t('pages.collections.detail.mutate.dimMismatchDisabled')
-              : t('pages.collections.detail.mutate.embedTextPlaceholder')}
+            placeholder={
+              dimMismatch
+                ? t('pages.collections.detail.mutate.dimMismatchDisabled')
+                : t('pages.collections.detail.mutate.embedTextPlaceholder')
+            }
             value={input.embedText}
             disabled={!!dimMismatch}
             onChange={(e) => onPatch({ embedText: e.target.value })}
@@ -225,10 +261,12 @@ function InsertView({
   collectionName,
   fields,
   vectors,
+  pkKey,
 }: {
   collectionName: string;
   fields: ReadonlyArray<{ name: string; dataType: string; nullable: boolean }>;
   vectors: ReadonlyArray<VectorFieldLike>;
+  pkKey: string;
 }): JSX.Element {
   const { t } = useTranslation();
   const toast = useToast();
@@ -237,23 +275,32 @@ function InsertView({
   const embeddingsQuery = useListEmbeddings();
   const allEmbeddings = useMemo(() => embeddingsQuery.data?.items ?? [], [embeddingsQuery.data]);
 
-  const [slots, setSlots] = useState<DocSlot[]>(() => [makeDocSlot(fields, vectors)]);
+  const [slots, setSlots] = useState<DocSlot[]>(() => [makeDocSlot(fields, vectors, pkKey)]);
   const busy = mutation.isPending || embedMutation.isPending;
 
   function addSlot(): void {
-    setSlots((prev) => [...prev, makeDocSlot(fields, vectors)]);
+    setSlots((prev) => [...prev, makeDocSlot(fields, vectors, pkKey)]);
   }
   function removeSlot(slotId: string): void {
-    setSlots((prev) => prev.length > 1 ? prev.filter((s) => s.id !== slotId) : prev);
+    setSlots((prev) => (prev.length > 1 ? prev.filter((s) => s.id !== slotId) : prev));
   }
   function updateSlot(slotId: string, patch: Partial<DocSlot>): void {
-    setSlots((prev) => prev.map((s) => s.id === slotId ? { ...s, ...patch } : s));
+    setSlots((prev) => prev.map((s) => (s.id === slotId ? { ...s, ...patch } : s)));
   }
-  function updateSlotVector(slotId: string, vecName: string, patch: Partial<VectorInputState>): void {
-    setSlots((prev) => prev.map((s) => {
-      if (s.id !== slotId) return s;
-      return { ...s, vectorInputs: { ...s.vectorInputs, [vecName]: { ...s.vectorInputs[vecName], ...patch } } };
-    }));
+  function updateSlotVector(
+    slotId: string,
+    vecName: string,
+    patch: Partial<VectorInputState>,
+  ): void {
+    setSlots((prev) =>
+      prev.map((s) => {
+        if (s.id !== slotId) return s;
+        return {
+          ...s,
+          vectorInputs: { ...s.vectorInputs, [vecName]: { ...s.vectorInputs[vecName], ...patch } },
+        };
+      }),
+    );
   }
 
   const dimMismatches = useMemo(() => {
@@ -289,18 +336,24 @@ function InsertView({
 
     for (const slot of slots) {
       if (!slot.docId.trim()) {
-        toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.insertIdRequired') });
+        toast.push({
+          severity: 'error',
+          title: t('pages.collections.detail.mutate.insertIdRequired'),
+        });
         return;
       }
-      const doc: Record<string, unknown> = { id: slot.docId.trim() };
+      const doc: Record<string, unknown> = { [pkKey]: slot.docId.trim() };
 
       for (const f of fields) {
-        if (f.name === 'id') continue;
+        if (f.name === pkKey) continue;
         const raw = slot.fieldValues[f.name] ?? '';
         try {
           doc[f.name] = coerceFieldValue(raw, f.dataType, f.nullable, f.name);
         } catch (err) {
-          toast.push({ severity: 'error', title: err instanceof Error ? err.message : String(err) });
+          toast.push({
+            severity: 'error',
+            title: err instanceof Error ? err.message : String(err),
+          });
           return;
         }
       }
@@ -309,11 +362,17 @@ function InsertView({
         const input = slot.vectorInputs[v.name];
         if (input.mode === 'embed') {
           if (!input.embedding) {
-            toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.selectEmbedding') });
+            toast.push({
+              severity: 'error',
+              title: t('pages.collections.detail.mutate.selectEmbedding'),
+            });
             return;
           }
           if (!input.embedText.trim()) {
-            toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.embedTextPlaceholder') });
+            toast.push({
+              severity: 'error',
+              title: t('pages.collections.detail.mutate.embedTextPlaceholder'),
+            });
             return;
           }
           try {
@@ -322,7 +381,10 @@ function InsertView({
               body: { texts: [input.embedText], isQuery: false },
             });
             if (!embedResultMatchesVector(res, v) || !res.vectors[0]) {
-              toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.insertFailed') });
+              toast.push({
+                severity: 'error',
+                title: t('pages.collections.detail.mutate.insertFailed'),
+              });
               return;
             }
             doc[v.name] = res.vectors[0];
@@ -330,14 +392,22 @@ function InsertView({
             toast.push({
               severity: 'error',
               title: t('pages.collections.detail.mutate.insertFailed'),
-              description: err instanceof ApiError ? err.error.message : err instanceof Error ? err.message : String(err),
+              description:
+                err instanceof ApiError
+                  ? err.error.message
+                  : err instanceof Error
+                    ? err.message
+                    : String(err),
             });
             return;
           }
         } else {
           const parsed = parseRawVector(input.rawText, v);
           if (!parsed) {
-            toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.invalidJson') });
+            toast.push({
+              severity: 'error',
+              title: t('pages.collections.detail.mutate.invalidJson'),
+            });
             return;
           }
           doc[v.name] = parsed;
@@ -350,8 +420,11 @@ function InsertView({
     mutation.mutate(body, {
       onSuccess: (res) => {
         const count = (res as Record<string, unknown>).inserted ?? docs.length;
-        toast.push({ severity: 'success', title: t('pages.collections.detail.mutate.insertSuccess', { count }) });
-        setSlots([makeDocSlot(fields, vectors)]);
+        toast.push({
+          severity: 'success',
+          title: t('pages.collections.detail.mutate.insertSuccess', { count }),
+        });
+        setSlots([makeDocSlot(fields, vectors, pkKey)]);
       },
       onError: (err) => {
         toast.push({
@@ -365,20 +438,25 @@ function InsertView({
 
   return (
     <div className="zv-info-card">
-      <div className="zv-info-card__title">
-        {t('pages.collections.detail.mutate.insertTitle')}
-      </div>
+      <div className="zv-info-card__title">{t('pages.collections.detail.mutate.insertTitle')}</div>
       <form className="zv-dml-layout" onSubmit={(e) => void handleInsert(e)}>
         {slots.map((slot, idx) => (
           <div key={slot.id} className="zv-insert-slot">
             {slots.length > 1 && (
               <div className="zv-insert-slot__header">
-                <span className="zv-insert-slot__label">{t('pages.collections.detail.mutate.docLabel', { index: idx + 1 })}</span>
-                <CloseButton className="zv-insert-slot__remove" onClick={() => removeSlot(slot.id)} />
+                <span className="zv-insert-slot__label">
+                  {t('pages.collections.detail.mutate.docLabel', { index: idx + 1 })}
+                </span>
+                <CloseButton
+                  className="zv-insert-slot__remove"
+                  onClick={() => removeSlot(slot.id)}
+                />
               </div>
             )}
             <div className="zv-form-group">
-              <label className="zv-form-label">{t('pages.collections.detail.mutate.insertIdLabel')}</label>
+              <label className="zv-form-label">
+                {t('pages.collections.detail.mutate.insertIdLabel')}
+              </label>
               <input
                 className="zv-form-input"
                 type="text"
@@ -391,7 +469,7 @@ function InsertView({
             </div>
 
             {fields
-              .filter((f) => f.name !== 'id')
+              .filter((f) => f.name !== pkKey)
               .map((f) => (
                 <div className="zv-dml-field-row" key={f.name}>
                   <span className="zv-dml-field-name">{f.name}</span>
@@ -401,7 +479,9 @@ function InsertView({
                     placeholder={f.dataType}
                     value={slot.fieldValues[f.name] ?? ''}
                     onChange={(e) =>
-                      updateSlot(slot.id, { fieldValues: { ...slot.fieldValues, [f.name]: e.target.value } })
+                      updateSlot(slot.id, {
+                        fieldValues: { ...slot.fieldValues, [f.name]: e.target.value },
+                      })
                     }
                   />
                 </div>
@@ -425,9 +505,14 @@ function InsertView({
         ))}
 
         <div className="zv-insert-actions">
-          <Button type="button" variant="secondary" size="sm" onClick={addSlot}>{t('pages.collections.detail.mutate.addDoc')}</Button>
+          <Button type="button" variant="secondary" size="sm" onClick={addSlot}>
+            {t('pages.collections.detail.mutate.addDoc')}
+          </Button>
           <Button variant="primary" type="submit" disabled={busy || anyDimMismatch} loading={busy}>
-            {busy ? t('pages.collections.detail.mutate.insertSubmitting') : t('pages.collections.detail.mutate.insertSubmit')} ({slots.length})
+            {busy
+              ? t('pages.collections.detail.mutate.insertSubmitting')
+              : t('pages.collections.detail.mutate.insertSubmit')}{' '}
+            ({slots.length})
           </Button>
         </div>
       </form>
@@ -441,10 +526,12 @@ function UpsertView({
   collectionName,
   fields,
   vectors,
+  pkKey,
 }: {
   collectionName: string;
   fields: ReadonlyArray<{ name: string; dataType: string; nullable: boolean }>;
   vectors: ReadonlyArray<VectorFieldLike>;
+  pkKey: string;
 }): JSX.Element {
   const { t } = useTranslation();
   const toast = useToast();
@@ -454,24 +541,33 @@ function UpsertView({
   const allEmbeddings = useMemo(() => embeddingsQuery.data?.items ?? [], [embeddingsQuery.data]);
 
   const [mode, setMode] = useState<'form' | 'json'>('form');
-  const [slots, setSlots] = useState<DocSlot[]>(() => [makeDocSlot(fields, vectors)]);
+  const [slots, setSlots] = useState<DocSlot[]>(() => [makeDocSlot(fields, vectors, pkKey)]);
   const [jsonBody, setJsonBody] = useState('[\n  \n]');
   const busy = mutation.isPending || embedMutation.isPending;
 
   function addSlot(): void {
-    setSlots((prev) => [...prev, makeDocSlot(fields, vectors)]);
+    setSlots((prev) => [...prev, makeDocSlot(fields, vectors, pkKey)]);
   }
   function removeSlot(slotId: string): void {
-    setSlots((prev) => prev.length > 1 ? prev.filter((s) => s.id !== slotId) : prev);
+    setSlots((prev) => (prev.length > 1 ? prev.filter((s) => s.id !== slotId) : prev));
   }
   function updateSlot(slotId: string, patch: Partial<DocSlot>): void {
-    setSlots((prev) => prev.map((s) => s.id === slotId ? { ...s, ...patch } : s));
+    setSlots((prev) => prev.map((s) => (s.id === slotId ? { ...s, ...patch } : s)));
   }
-  function updateSlotVector(slotId: string, vecName: string, patch: Partial<VectorInputState>): void {
-    setSlots((prev) => prev.map((s) => {
-      if (s.id !== slotId) return s;
-      return { ...s, vectorInputs: { ...s.vectorInputs, [vecName]: { ...s.vectorInputs[vecName], ...patch } } };
-    }));
+  function updateSlotVector(
+    slotId: string,
+    vecName: string,
+    patch: Partial<VectorInputState>,
+  ): void {
+    setSlots((prev) =>
+      prev.map((s) => {
+        if (s.id !== slotId) return s;
+        return {
+          ...s,
+          vectorInputs: { ...s.vectorInputs, [vecName]: { ...s.vectorInputs[vecName], ...patch } },
+        };
+      }),
+    );
   }
 
   async function handleUpsertForm(e: FormEvent): Promise<void> {
@@ -479,18 +575,24 @@ function UpsertView({
     const docs: Record<string, unknown>[] = [];
     for (const slot of slots) {
       if (!slot.docId.trim()) {
-        toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.upsertIdRequired') });
+        toast.push({
+          severity: 'error',
+          title: t('pages.collections.detail.mutate.upsertIdRequired'),
+        });
         return;
       }
-      const doc: Record<string, unknown> = { id: slot.docId.trim() };
+      const doc: Record<string, unknown> = { [pkKey]: slot.docId.trim() };
       for (const f of fields) {
-        if (f.name === 'id') continue;
+        if (f.name === pkKey) continue;
         const raw = slot.fieldValues[f.name] ?? '';
         if (!raw) continue;
         try {
           doc[f.name] = coerceFieldValue(raw, f.dataType, f.nullable, f.name);
         } catch (err) {
-          toast.push({ severity: 'error', title: err instanceof Error ? err.message : String(err) });
+          toast.push({
+            severity: 'error',
+            title: err instanceof Error ? err.message : String(err),
+          });
           return;
         }
       }
@@ -502,11 +604,29 @@ function UpsertView({
             continue;
           }
           try {
-            const res: EmbedResponse = await embedMutation.mutateAsync({ name: input.embedding, body: { texts: [input.embedText], isQuery: false } });
-            if (!embedResultMatchesVector(res, v) || !res.vectors[0]) { toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.upsertFailed') }); return; }
+            const res: EmbedResponse = await embedMutation.mutateAsync({
+              name: input.embedding,
+              body: { texts: [input.embedText], isQuery: false },
+            });
+            if (!embedResultMatchesVector(res, v) || !res.vectors[0]) {
+              toast.push({
+                severity: 'error',
+                title: t('pages.collections.detail.mutate.upsertFailed'),
+              });
+              return;
+            }
             doc[v.name] = res.vectors[0];
           } catch (err) {
-            toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.upsertFailed'), description: err instanceof ApiError ? err.error.message : err instanceof Error ? err.message : String(err) });
+            toast.push({
+              severity: 'error',
+              title: t('pages.collections.detail.mutate.upsertFailed'),
+              description:
+                err instanceof ApiError
+                  ? err.error.message
+                  : err instanceof Error
+                    ? err.message
+                    : String(err),
+            });
             return;
           }
         } else {
@@ -514,7 +634,13 @@ function UpsertView({
           const raw = input.rawText.trim();
           if (!raw || raw === vectorRawTextTemplate(v)) continue;
           const parsed = parseRawVector(raw, v);
-          if (!parsed) { toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.invalidJson') }); return; }
+          if (!parsed) {
+            toast.push({
+              severity: 'error',
+              title: t('pages.collections.detail.mutate.invalidJson'),
+            });
+            return;
+          }
           doc[v.name] = parsed;
         }
       }
@@ -524,11 +650,18 @@ function UpsertView({
     mutation.mutate(body, {
       onSuccess: (res) => {
         const count = (res as Record<string, unknown>).upserted ?? docs.length;
-        toast.push({ severity: 'success', title: t('pages.collections.detail.mutate.upsertSuccess', { count }) });
-        setSlots([makeDocSlot(fields, vectors)]);
+        toast.push({
+          severity: 'success',
+          title: t('pages.collections.detail.mutate.upsertSuccess', { count }),
+        });
+        setSlots([makeDocSlot(fields, vectors, pkKey)]);
       },
       onError: (err) => {
-        toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.upsertFailed'), description: err instanceof Error ? err.message : String(err) });
+        toast.push({
+          severity: 'error',
+          title: t('pages.collections.detail.mutate.upsertFailed'),
+          description: err instanceof Error ? err.message : String(err),
+        });
       },
     });
   }
@@ -536,16 +669,34 @@ function UpsertView({
   function handleUpsertJson(e: FormEvent): void {
     e.preventDefault();
     let parsed: unknown;
-    try { parsed = JSON.parse(jsonBody); } catch { toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.invalidJson') }); return; }
-    if (!Array.isArray(parsed)) { toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.invalidJsonArray') }); return; }
+    try {
+      parsed = JSON.parse(jsonBody);
+    } catch {
+      toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.invalidJson') });
+      return;
+    }
+    if (!Array.isArray(parsed)) {
+      toast.push({
+        severity: 'error',
+        title: t('pages.collections.detail.mutate.invalidJsonArray'),
+      });
+      return;
+    }
     const upsertBody: DocumentUpsertRequest = { documents: parsed };
     mutation.mutate(upsertBody, {
       onSuccess: (res) => {
         const count = (res as Record<string, unknown>).upserted ?? parsed.length;
-        toast.push({ severity: 'success', title: t('pages.collections.detail.mutate.upsertSuccess', { count }) });
+        toast.push({
+          severity: 'success',
+          title: t('pages.collections.detail.mutate.upsertSuccess', { count }),
+        });
       },
       onError: (err) => {
-        toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.upsertFailed'), description: err instanceof Error ? err.message : String(err) });
+        toast.push({
+          severity: 'error',
+          title: t('pages.collections.detail.mutate.upsertFailed'),
+          description: err instanceof Error ? err.message : String(err),
+        });
       },
     });
   }
@@ -554,18 +705,40 @@ function UpsertView({
     <div className="zv-info-card">
       <div className="zv-info-card__title">{t('pages.collections.detail.mutate.upsertTitle')}</div>
       <div className="zv-input-mode-tabs" style={{ marginBottom: 12, maxWidth: 200 }}>
-        <button type="button" className={`zv-input-mode-tab${mode === 'form' ? ' zv-input-mode-tab--active' : ''}`} onClick={() => setMode('form')}>{t('pages.collections.detail.mutate.modeForm')}</button>
-        <button type="button" className={`zv-input-mode-tab${mode === 'json' ? ' zv-input-mode-tab--active' : ''}`} onClick={() => setMode('json')}>{t('pages.collections.detail.mutate.modeJson')}</button>
+        <button
+          type="button"
+          className={`zv-input-mode-tab${mode === 'form' ? ' zv-input-mode-tab--active' : ''}`}
+          onClick={() => setMode('form')}
+        >
+          {t('pages.collections.detail.mutate.modeForm')}
+        </button>
+        <button
+          type="button"
+          className={`zv-input-mode-tab${mode === 'json' ? ' zv-input-mode-tab--active' : ''}`}
+          onClick={() => setMode('json')}
+        >
+          {t('pages.collections.detail.mutate.modeJson')}
+        </button>
       </div>
 
       {mode === 'json' ? (
         <form className="zv-dml-layout" onSubmit={handleUpsertJson}>
           <div className="zv-form-group">
-            <label className="zv-form-label">{t('pages.collections.detail.mutate.upsertLabel')}</label>
-            <textarea className="zv-form-textarea" value={jsonBody} onChange={(e) => setJsonBody(e.target.value)} spellCheck={false} style={{ height: 200 }} />
+            <label className="zv-form-label">
+              {t('pages.collections.detail.mutate.upsertLabel')}
+            </label>
+            <textarea
+              className="zv-form-textarea"
+              value={jsonBody}
+              onChange={(e) => setJsonBody(e.target.value)}
+              spellCheck={false}
+              style={{ height: 200 }}
+            />
           </div>
           <Button variant="primary" type="submit" disabled={busy} loading={busy}>
-            {busy ? t('pages.collections.detail.mutate.upsertSubmitting') : t('pages.collections.detail.mutate.upsertSubmit')}
+            {busy
+              ? t('pages.collections.detail.mutate.upsertSubmitting')
+              : t('pages.collections.detail.mutate.upsertSubmit')}
           </Button>
         </form>
       ) : (
@@ -574,20 +747,47 @@ function UpsertView({
             <div key={slot.id} className="zv-insert-slot">
               {slots.length > 1 && (
                 <div className="zv-insert-slot__header">
-                  <span className="zv-insert-slot__label">{t('pages.collections.detail.mutate.docLabel', { index: idx + 1 })}</span>
-                  <CloseButton className="zv-insert-slot__remove" onClick={() => removeSlot(slot.id)} />
+                  <span className="zv-insert-slot__label">
+                    {t('pages.collections.detail.mutate.docLabel', { index: idx + 1 })}
+                  </span>
+                  <CloseButton
+                    className="zv-insert-slot__remove"
+                    onClick={() => removeSlot(slot.id)}
+                  />
                 </div>
               )}
               <div className="zv-form-group">
-                <label className="zv-form-label">{t('pages.collections.detail.mutate.idRequired')}</label>
-                <input className="zv-form-input" type="text" placeholder={t('pages.collections.detail.mutate.upsertIdPlaceholder')} value={slot.docId} onChange={(e) => updateSlot(slot.id, { docId: e.target.value })} spellCheck={false} required />
+                <label className="zv-form-label">
+                  {t('pages.collections.detail.mutate.idRequired')}
+                </label>
+                <input
+                  className="zv-form-input"
+                  type="text"
+                  placeholder={t('pages.collections.detail.mutate.upsertIdPlaceholder')}
+                  value={slot.docId}
+                  onChange={(e) => updateSlot(slot.id, { docId: e.target.value })}
+                  spellCheck={false}
+                  required
+                />
               </div>
-              {fields.filter((f) => f.name !== 'id').map((f) => (
-                <div className="zv-dml-field-row" key={f.name}>
-                  <span className="zv-dml-field-name">{f.name}</span>
-                  <input className="zv-form-input" type="text" placeholder={f.dataType} value={slot.fieldValues[f.name] ?? ''} onChange={(e) => updateSlot(slot.id, { fieldValues: { ...slot.fieldValues, [f.name]: e.target.value } })} />
-                </div>
-              ))}
+              {fields
+                .filter((f) => f.name !== pkKey)
+                .map((f) => (
+                  <div className="zv-dml-field-row" key={f.name}>
+                    <span className="zv-dml-field-name">{f.name}</span>
+                    <input
+                      className="zv-form-input"
+                      type="text"
+                      placeholder={f.dataType}
+                      value={slot.fieldValues[f.name] ?? ''}
+                      onChange={(e) =>
+                        updateSlot(slot.id, {
+                          fieldValues: { ...slot.fieldValues, [f.name]: e.target.value },
+                        })
+                      }
+                    />
+                  </div>
+                ))}
               {vectors.map((v) => {
                 const input = slot.vectorInputs[v.name];
                 return (
@@ -604,9 +804,14 @@ function UpsertView({
             </div>
           ))}
           <div className="zv-insert-actions">
-            <Button type="button" variant="secondary" size="sm" onClick={addSlot}>{t('pages.collections.detail.mutate.addDoc')}</Button>
+            <Button type="button" variant="secondary" size="sm" onClick={addSlot}>
+              {t('pages.collections.detail.mutate.addDoc')}
+            </Button>
             <Button variant="primary" type="submit" disabled={busy} loading={busy}>
-              {busy ? t('pages.collections.detail.mutate.upsertSubmitting') : t('pages.collections.detail.mutate.upsertSubmit')} ({slots.length})
+              {busy
+                ? t('pages.collections.detail.mutate.upsertSubmitting')
+                : t('pages.collections.detail.mutate.upsertSubmit')}{' '}
+              ({slots.length})
             </Button>
           </div>
         </form>
@@ -621,10 +826,12 @@ function UpdateView({
   collectionName,
   fields,
   vectors,
+  pkKey,
 }: {
   collectionName: string;
   fields: ReadonlyArray<{ name: string; dataType: string; nullable: boolean }>;
   vectors: ReadonlyArray<VectorFieldLike>;
+  pkKey: string;
 }): JSX.Element {
   const { t } = useTranslation();
   const toast = useToast();
@@ -634,24 +841,33 @@ function UpdateView({
   const allEmbeddings = useMemo(() => embeddingsQuery.data?.items ?? [], [embeddingsQuery.data]);
 
   const [mode, setMode] = useState<'form' | 'json'>('form');
-  const [slots, setSlots] = useState<DocSlot[]>(() => [makeDocSlot(fields, vectors)]);
-  const [jsonBody, setJsonBody] = useState('[\n  {\n    "id": "",\n    \n  }\n]');
+  const [slots, setSlots] = useState<DocSlot[]>(() => [makeDocSlot(fields, vectors, pkKey)]);
+  const [jsonBody, setJsonBody] = useState(`[\n  {\n    "${pkKey}": "",\n    \n  }\n]`);
   const busy = mutation.isPending || embedMutation.isPending;
 
   function addSlot(): void {
-    setSlots((prev) => [...prev, makeDocSlot(fields, vectors)]);
+    setSlots((prev) => [...prev, makeDocSlot(fields, vectors, pkKey)]);
   }
   function removeSlot(slotId: string): void {
-    setSlots((prev) => prev.length > 1 ? prev.filter((s) => s.id !== slotId) : prev);
+    setSlots((prev) => (prev.length > 1 ? prev.filter((s) => s.id !== slotId) : prev));
   }
   function updateSlot(slotId: string, patch: Partial<DocSlot>): void {
-    setSlots((prev) => prev.map((s) => s.id === slotId ? { ...s, ...patch } : s));
+    setSlots((prev) => prev.map((s) => (s.id === slotId ? { ...s, ...patch } : s)));
   }
-  function updateSlotVector(slotId: string, vecName: string, patch: Partial<VectorInputState>): void {
-    setSlots((prev) => prev.map((s) => {
-      if (s.id !== slotId) return s;
-      return { ...s, vectorInputs: { ...s.vectorInputs, [vecName]: { ...s.vectorInputs[vecName], ...patch } } };
-    }));
+  function updateSlotVector(
+    slotId: string,
+    vecName: string,
+    patch: Partial<VectorInputState>,
+  ): void {
+    setSlots((prev) =>
+      prev.map((s) => {
+        if (s.id !== slotId) return s;
+        return {
+          ...s,
+          vectorInputs: { ...s.vectorInputs, [vecName]: { ...s.vectorInputs[vecName], ...patch } },
+        };
+      }),
+    );
   }
 
   function submitDocs(docs: Record<string, unknown>[]): void {
@@ -659,11 +875,18 @@ function UpdateView({
     mutation.mutate(body, {
       onSuccess: (res) => {
         const count = (res as Record<string, unknown>).updated ?? docs.length;
-        toast.push({ severity: 'success', title: t('pages.collections.detail.mutate.updateSuccess', { count }) });
-        if (mode === 'form') setSlots([makeDocSlot(fields, vectors)]);
+        toast.push({
+          severity: 'success',
+          title: t('pages.collections.detail.mutate.updateSuccess', { count }),
+        });
+        if (mode === 'form') setSlots([makeDocSlot(fields, vectors, pkKey)]);
       },
       onError: (err) => {
-        toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.updateFailed'), description: err instanceof Error ? err.message : String(err) });
+        toast.push({
+          severity: 'error',
+          title: t('pages.collections.detail.mutate.updateFailed'),
+          description: err instanceof Error ? err.message : String(err),
+        });
       },
     });
   }
@@ -673,18 +896,24 @@ function UpdateView({
     const docs: Record<string, unknown>[] = [];
     for (const slot of slots) {
       if (!slot.docId.trim()) {
-        toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.updateIdRequired') });
+        toast.push({
+          severity: 'error',
+          title: t('pages.collections.detail.mutate.updateIdRequired'),
+        });
         return;
       }
-      const doc: Record<string, unknown> = { id: slot.docId.trim() };
+      const doc: Record<string, unknown> = { [pkKey]: slot.docId.trim() };
       for (const f of fields) {
-        if (f.name === 'id') continue;
+        if (f.name === pkKey) continue;
         const raw = slot.fieldValues[f.name] ?? '';
         if (!raw) continue;
         try {
           doc[f.name] = coerceFieldValue(raw, f.dataType, f.nullable, f.name);
         } catch (err) {
-          toast.push({ severity: 'error', title: err instanceof Error ? err.message : String(err) });
+          toast.push({
+            severity: 'error',
+            title: err instanceof Error ? err.message : String(err),
+          });
           return;
         }
       }
@@ -693,18 +922,36 @@ function UpdateView({
         if (input.mode === 'embed') {
           if (!input.embedding || !input.embedText.trim()) continue;
           try {
-            const res: EmbedResponse = await embedMutation.mutateAsync({ name: input.embedding, body: { texts: [input.embedText], isQuery: false } });
+            const res: EmbedResponse = await embedMutation.mutateAsync({
+              name: input.embedding,
+              body: { texts: [input.embedText], isQuery: false },
+            });
             if (!embedResultMatchesVector(res, v) || !res.vectors[0]) continue;
             doc[v.name] = res.vectors[0];
           } catch (err) {
-            toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.updateFailed'), description: err instanceof ApiError ? err.error.message : err instanceof Error ? err.message : String(err) });
+            toast.push({
+              severity: 'error',
+              title: t('pages.collections.detail.mutate.updateFailed'),
+              description:
+                err instanceof ApiError
+                  ? err.error.message
+                  : err instanceof Error
+                    ? err.message
+                    : String(err),
+            });
             return;
           }
         } else {
           const raw = input.rawText.trim();
           if (!raw || raw === vectorRawTextTemplate(v)) continue;
           const parsed = parseRawVector(raw, v);
-          if (!parsed) { toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.invalidJson') }); return; }
+          if (!parsed) {
+            toast.push({
+              severity: 'error',
+              title: t('pages.collections.detail.mutate.invalidJson'),
+            });
+            return;
+          }
           doc[v.name] = parsed;
         }
       }
@@ -716,11 +963,30 @@ function UpdateView({
   function handleUpdateJson(e: FormEvent): void {
     e.preventDefault();
     let parsed: unknown;
-    try { parsed = JSON.parse(jsonBody); } catch { toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.invalidJson') }); return; }
-    if (!Array.isArray(parsed)) { toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.invalidJsonArray') }); return; }
+    try {
+      parsed = JSON.parse(jsonBody);
+    } catch {
+      toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.invalidJson') });
+      return;
+    }
+    if (!Array.isArray(parsed)) {
+      toast.push({
+        severity: 'error',
+        title: t('pages.collections.detail.mutate.invalidJsonArray'),
+      });
+      return;
+    }
     for (const doc of parsed) {
-      if (!doc || typeof doc !== 'object' || !('id' in doc) || !(doc as Record<string, unknown>).id) {
-        toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.updateIdRequired') });
+      if (
+        !doc ||
+        typeof doc !== 'object' ||
+        !(pkKey in doc) ||
+        !(doc as Record<string, unknown>)[pkKey]
+      ) {
+        toast.push({
+          severity: 'error',
+          title: t('pages.collections.detail.mutate.updateIdRequired'),
+        });
         return;
       }
     }
@@ -734,18 +1000,40 @@ function UpdateView({
         {t('pages.collections.detail.mutate.updateHint')}
       </p>
       <div className="zv-input-mode-tabs" style={{ marginBottom: 12, maxWidth: 200 }}>
-        <button type="button" className={`zv-input-mode-tab${mode === 'form' ? ' zv-input-mode-tab--active' : ''}`} onClick={() => setMode('form')}>{t('pages.collections.detail.mutate.modeForm')}</button>
-        <button type="button" className={`zv-input-mode-tab${mode === 'json' ? ' zv-input-mode-tab--active' : ''}`} onClick={() => setMode('json')}>{t('pages.collections.detail.mutate.modeJson')}</button>
+        <button
+          type="button"
+          className={`zv-input-mode-tab${mode === 'form' ? ' zv-input-mode-tab--active' : ''}`}
+          onClick={() => setMode('form')}
+        >
+          {t('pages.collections.detail.mutate.modeForm')}
+        </button>
+        <button
+          type="button"
+          className={`zv-input-mode-tab${mode === 'json' ? ' zv-input-mode-tab--active' : ''}`}
+          onClick={() => setMode('json')}
+        >
+          {t('pages.collections.detail.mutate.modeJson')}
+        </button>
       </div>
 
       {mode === 'json' ? (
         <form className="zv-dml-layout" onSubmit={handleUpdateJson}>
           <div className="zv-form-group">
-            <label className="zv-form-label">{t('pages.collections.detail.mutate.updateLabel')}</label>
-            <textarea className="zv-form-textarea" value={jsonBody} onChange={(e) => setJsonBody(e.target.value)} spellCheck={false} style={{ height: 200 }} />
+            <label className="zv-form-label">
+              {t('pages.collections.detail.mutate.updateLabel')}
+            </label>
+            <textarea
+              className="zv-form-textarea"
+              value={jsonBody}
+              onChange={(e) => setJsonBody(e.target.value)}
+              spellCheck={false}
+              style={{ height: 200 }}
+            />
           </div>
           <Button variant="primary" type="submit" disabled={busy} loading={busy}>
-            {busy ? t('pages.collections.detail.mutate.updateSubmitting') : t('pages.collections.detail.mutate.updateSubmit')}
+            {busy
+              ? t('pages.collections.detail.mutate.updateSubmitting')
+              : t('pages.collections.detail.mutate.updateSubmit')}
           </Button>
         </form>
       ) : (
@@ -754,20 +1042,47 @@ function UpdateView({
             <div key={slot.id} className="zv-insert-slot">
               {slots.length > 1 && (
                 <div className="zv-insert-slot__header">
-                  <span className="zv-insert-slot__label">{t('pages.collections.detail.mutate.docLabel', { index: idx + 1 })}</span>
-                  <CloseButton className="zv-insert-slot__remove" onClick={() => removeSlot(slot.id)} />
+                  <span className="zv-insert-slot__label">
+                    {t('pages.collections.detail.mutate.docLabel', { index: idx + 1 })}
+                  </span>
+                  <CloseButton
+                    className="zv-insert-slot__remove"
+                    onClick={() => removeSlot(slot.id)}
+                  />
                 </div>
               )}
               <div className="zv-form-group">
-                <label className="zv-form-label">{t('pages.collections.detail.mutate.idRequired')}</label>
-                <input className="zv-form-input" type="text" placeholder={t('pages.collections.detail.mutate.upsertIdPlaceholder')} value={slot.docId} onChange={(e) => updateSlot(slot.id, { docId: e.target.value })} spellCheck={false} required />
+                <label className="zv-form-label">
+                  {t('pages.collections.detail.mutate.idRequired')}
+                </label>
+                <input
+                  className="zv-form-input"
+                  type="text"
+                  placeholder={t('pages.collections.detail.mutate.upsertIdPlaceholder')}
+                  value={slot.docId}
+                  onChange={(e) => updateSlot(slot.id, { docId: e.target.value })}
+                  spellCheck={false}
+                  required
+                />
               </div>
-              {fields.filter((f) => f.name !== 'id').map((f) => (
-                <div className="zv-dml-field-row" key={f.name}>
-                  <span className="zv-dml-field-name">{f.name}</span>
-                  <input className="zv-form-input" type="text" placeholder={f.dataType} value={slot.fieldValues[f.name] ?? ''} onChange={(e) => updateSlot(slot.id, { fieldValues: { ...slot.fieldValues, [f.name]: e.target.value } })} />
-                </div>
-              ))}
+              {fields
+                .filter((f) => f.name !== pkKey)
+                .map((f) => (
+                  <div className="zv-dml-field-row" key={f.name}>
+                    <span className="zv-dml-field-name">{f.name}</span>
+                    <input
+                      className="zv-form-input"
+                      type="text"
+                      placeholder={f.dataType}
+                      value={slot.fieldValues[f.name] ?? ''}
+                      onChange={(e) =>
+                        updateSlot(slot.id, {
+                          fieldValues: { ...slot.fieldValues, [f.name]: e.target.value },
+                        })
+                      }
+                    />
+                  </div>
+                ))}
               {vectors.map((v) => {
                 const input = slot.vectorInputs[v.name];
                 return (
@@ -784,9 +1099,14 @@ function UpdateView({
             </div>
           ))}
           <div className="zv-insert-actions">
-            <Button type="button" variant="secondary" size="sm" onClick={addSlot}>{t('pages.collections.detail.mutate.addDoc')}</Button>
+            <Button type="button" variant="secondary" size="sm" onClick={addSlot}>
+              {t('pages.collections.detail.mutate.addDoc')}
+            </Button>
             <Button variant="primary" type="submit" disabled={busy} loading={busy}>
-              {busy ? t('pages.collections.detail.mutate.updateSubmitting') : t('pages.collections.detail.mutate.updateSubmit')} ({slots.length})
+              {busy
+                ? t('pages.collections.detail.mutate.updateSubmitting')
+                : t('pages.collections.detail.mutate.updateSubmit')}{' '}
+              ({slots.length})
             </Button>
           </div>
         </form>
@@ -797,11 +1117,7 @@ function UpdateView({
 
 /* ─── DeleteView ─── */
 
-function DeleteView({
-  collectionName,
-}: {
-  collectionName: string;
-}): JSX.Element {
+function DeleteView({ collectionName }: { collectionName: string }): JSX.Element {
   const { t } = useTranslation();
   const toast = useToast();
   const [mode, setMode] = useState<DeleteMode>('byId');
@@ -826,11 +1142,18 @@ function DeleteView({
       const trimmed = deleteId.trim();
       deleteOne.mutate(trimmed, {
         onSuccess: () => {
-          toast.push({ severity: 'info', title: t('pages.collections.detail.mutate.deleteIdSuccess', { id: trimmed }) });
+          toast.push({
+            severity: 'info',
+            title: t('pages.collections.detail.mutate.deleteIdSuccess', { id: trimmed }),
+          });
           setDeleteId('');
         },
         onError: (err) => {
-          toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.deleteFailed'), description: err instanceof Error ? err.message : String(err) });
+          toast.push({
+            severity: 'error',
+            title: t('pages.collections.detail.mutate.deleteFailed'),
+            description: err instanceof Error ? err.message : String(err),
+          });
         },
       });
     } else {
@@ -839,11 +1162,18 @@ function DeleteView({
       deleteByFilter.mutate(body, {
         onSuccess: (res) => {
           const count = (res as Record<string, unknown>).deleted ?? '?';
-          toast.push({ severity: 'info', title: t('pages.collections.detail.mutate.deleteFilterSuccess', { count }) });
+          toast.push({
+            severity: 'info',
+            title: t('pages.collections.detail.mutate.deleteFilterSuccess', { count }),
+          });
           setFilterExpr('');
         },
         onError: (err) => {
-          toast.push({ severity: 'error', title: t('pages.collections.detail.mutate.deleteFailed'), description: err instanceof Error ? err.message : String(err) });
+          toast.push({
+            severity: 'error',
+            title: t('pages.collections.detail.mutate.deleteFailed'),
+            description: err instanceof Error ? err.message : String(err),
+          });
         },
       });
     }
@@ -884,8 +1214,15 @@ function DeleteView({
                 spellCheck={false}
                 style={{ flex: 1 }}
               />
-              <Button variant="danger" type="submit" disabled={busy || !deleteId.trim()} loading={deleteOne.isPending}>
-                {deleteOne.isPending ? t('pages.collections.detail.mutate.deleteSubmitting') : t('pages.collections.detail.mutate.deleteSubmit')}
+              <Button
+                variant="danger"
+                type="submit"
+                disabled={busy || !deleteId.trim()}
+                loading={deleteOne.isPending}
+              >
+                {deleteOne.isPending
+                  ? t('pages.collections.detail.mutate.deleteSubmitting')
+                  : t('pages.collections.detail.mutate.deleteSubmit')}
               </Button>
             </div>
           </div>
@@ -895,7 +1232,9 @@ function DeleteView({
       {mode === 'byFilter' && (
         <form className="zv-dml-layout" onSubmit={requestDelete}>
           <div className="zv-form-group">
-            <label className="zv-form-label">{t('pages.collections.detail.mutate.filterLabel')}</label>
+            <label className="zv-form-label">
+              {t('pages.collections.detail.mutate.filterLabel')}
+            </label>
             <div style={{ display: 'flex', gap: 8 }}>
               <input
                 className="zv-form-input"
@@ -906,8 +1245,15 @@ function DeleteView({
                 spellCheck={false}
                 style={{ flex: 1 }}
               />
-              <Button variant="danger" type="submit" disabled={busy || !filterExpr.trim()} loading={deleteByFilter.isPending}>
-                {deleteByFilter.isPending ? t('pages.collections.detail.mutate.deleteSubmitting') : t('pages.collections.detail.mutate.deleteSubmit')}
+              <Button
+                variant="danger"
+                type="submit"
+                disabled={busy || !filterExpr.trim()}
+                loading={deleteByFilter.isPending}
+              >
+                {deleteByFilter.isPending
+                  ? t('pages.collections.detail.mutate.deleteSubmitting')
+                  : t('pages.collections.detail.mutate.deleteSubmit')}
               </Button>
             </div>
           </div>
@@ -917,9 +1263,11 @@ function DeleteView({
       <Dialog
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
-        title={mode === 'byId'
-          ? t('pages.collections.detail.mutate.deleteIdConfirmTitle')
-          : t('pages.collections.detail.mutate.deleteFilterConfirmTitle')}
+        title={
+          mode === 'byId'
+            ? t('pages.collections.detail.mutate.deleteIdConfirmTitle')
+            : t('pages.collections.detail.mutate.deleteFilterConfirmTitle')
+        }
         footer={
           <>
             <Button variant="ghost" onClick={() => setConfirmOpen(false)}>

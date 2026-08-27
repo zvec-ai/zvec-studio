@@ -14,9 +14,8 @@ import './CreateCollectionDialog.css';
 
 const COLLECTION_NAME_RE = /^[A-Za-z][A-Za-z0-9_]{2,63}$/;
 const FIELD_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
-const RESERVED_FIELD_NAMES = new Set(['id', '_id']);
 
-const VECTOR_TYPES = ['VECTOR_FP32', 'VECTOR_FP16', 'VECTOR_FP64', 'VECTOR_INT8', 'SPARSE_VECTOR_FP32', 'SPARSE_VECTOR_FP16'] as const;
+const VECTOR_TYPES = ['VECTOR_FP32', 'VECTOR_FP16', 'VECTOR_INT8', 'SPARSE_VECTOR_FP32', 'SPARSE_VECTOR_FP16'] as const;
 const SCALAR_TYPES = ['INT32', 'INT64', 'UINT32', 'UINT64', 'FLOAT', 'DOUBLE', 'BOOL', 'STRING', 'ARRAY_BOOL', 'ARRAY_INT32', 'ARRAY_INT64', 'ARRAY_UINT32', 'ARRAY_UINT64', 'ARRAY_FLOAT', 'ARRAY_DOUBLE', 'ARRAY_STRING'] as const;
 const ALL_DATA_TYPES = [...VECTOR_TYPES, ...SCALAR_TYPES] as const;
 type AnyDataType = (typeof ALL_DATA_TYPES)[number];
@@ -262,8 +261,6 @@ export function CreateCollectionDialog({
     for (const f of fields) {
       if (!f.name.trim() || !FIELD_NAME_RE.test(f.name)) {
         next[`field_${f.id}`] = t('pages.collections.create.errors.fieldNameRequired');
-      } else if (RESERVED_FIELD_NAMES.has(f.name)) {
-        next[`field_${f.id}`] = t('pages.collections.create.errors.reservedName', { name: f.name });
       }
       if (isDenseVectorType(f.dataType)) {
         const dim = Number.parseInt(f.dimension, 10);
@@ -429,6 +426,11 @@ export function CreateCollectionDialog({
                       clearError(`field_${field.id}`);
                     }}
                     errorText={errors[`field_${field.id}`]}
+                    helperText={
+                      field.name.trim() === 'id'
+                        ? t('pages.collections.create.hints.idColumn')
+                        : undefined
+                    }
                   />
                   <Select
                     label={t('pages.collections.create.fieldType')}

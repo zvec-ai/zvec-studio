@@ -32,10 +32,7 @@ function fakeDocs(count: number): DocRecord[] {
 function makeApiClient(state: FakeBrowseState): ApiClient {
   return {
     baseUrl: 'fake',
-    request: async <T,>(
-      path: string,
-      opts?: { method?: string; body?: unknown },
-    ): Promise<T> => {
+    request: async <T,>(path: string, opts?: { method?: string; body?: unknown }): Promise<T> => {
       const method = opts?.method ?? 'GET';
       state.calls.push({ method, path, body: opts?.body });
 
@@ -107,10 +104,10 @@ function renderTab(
     ...(overrides?.collection ?? {}),
     stats: { ...COLLECTION.stats, ...(overrides?.stats ?? {}) },
   };
-  return renderWithProviders(
-    <BrowseTab collection={col as any} />,
-    { apiClient: makeApiClient(state), queryClient: makeQueryClient() },
-  );
+  return renderWithProviders(<BrowseTab collection={col as any} />, {
+    apiClient: makeApiClient(state),
+    queryClient: makeQueryClient(),
+  });
 }
 
 describe('BrowseTab', () => {
@@ -232,10 +229,58 @@ describe('BrowseTab', () => {
       const browseCalls = state.calls.filter(
         (c) => c.method === 'POST' && c.path.includes(':browse'),
       );
-      const hasFilter = browseCalls.some(
-        (c) => (c.body as any)?.filter === "title = 'test'",
-      );
+      const hasFilter = browseCalls.some((c) => (c.body as any)?.filter === "title = 'test'");
       expect(hasFilter).toBe(true);
+    });
+  });
+
+  it('exposes import/export entry points in the toolbar', async () => {
+    const state: FakeBrowseState = { docs: fakeDocs(1), calls: [] };
+    renderTab(state);
+
+    expect(screen.getByTestId('zv-browse-import')).toBeInTheDocument();
+    expect(screen.getByTestId('zv-browse-export')).toBeInTheDocument();
+  });
+
+  it('opens the import dialog from the toolbar button', async () => {
+    const user = userEvent.setup();
+    const state: FakeBrowseState = { docs: fakeDocs(1), calls: [] };
+    renderTab(state);
+
+    await user.click(screen.getByTestId('zv-browse-import'));
+    // ImportDocumentsDialog title (en locale)
+    expect(await screen.findByText('Import documents from file')).toBeInTheDocument();
+  });
+
+  it('uses $id for the primary key when the schema declares an id column', async () => {
+    const user = userEvent.setup();
+    const state: FakeBrowseState = {
+      docs: [{ $id: 'PK-001', id: 'USER-999', title: 't' }],
+      calls: [],
+    };
+    renderTab(state, {
+      collection: {
+        schema: {
+          ...COLLECTION.schema,
+          fields: [
+            { name: 'id', dataType: 'STRING', nullable: false },
+            { name: 'title', dataType: 'STRING', nullable: false },
+          ],
+        },
+      },
+    });
+
+    // The pinned primary-key column carries the reserved key…
+    await screen.findByText('PK-001');
+    // …while the user field named ``id`` renders as ordinary data.
+    expect(screen.getByText('"USER-999"')).toBeInTheDocument();
+
+    // Clicking the primary-key cell fetches by the real pk ($id value).
+    await user.click(screen.getByText('PK-001'));
+    await waitFor(() => {
+      expect(
+        state.calls.some((c) => c.method === 'GET' && c.path.includes('/documents/PK-001')),
+      ).toBe(true);
     });
   });
 });

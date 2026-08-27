@@ -73,3 +73,10 @@
   color: var(--zv-color-text-muted, #6b7280);
   font-size: 0.85rem;
 }
+
+.zv-dirpicker__entry-size {
+  margin-left: auto;
+  color: var(--zv-color-text-muted, #6b7280);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}

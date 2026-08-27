@@ -14,6 +14,8 @@ export type CollectionListResponse = components['schemas']['CollectionListRespon
 export type CollectionListItem = components['schemas']['CollectionListItem'];
 export type CollectionCreateRequest = components['schemas']['CollectionCreateRequest'];
 export type CollectionOpenRequest = components['schemas']['CollectionOpenRequest'];
+export type CollectionImportRequest = components['schemas']['CollectionImportRequest'];
+export type CollectionImportResponse = components['schemas']['CollectionImportResponse'];
 export type CollectionSchemaPayload = components['schemas']['CollectionSchema'];
 export type FieldAddRequest = components['schemas']['FieldAddRequest'];
 export type FieldRenameRequest = components['schemas']['FieldRenameRequest'];
@@ -21,8 +23,7 @@ export type IndexCreateRequest = components['schemas']['IndexCreateRequest'];
 export type ScalarIndexCreateRequest = components['schemas']['ScalarIndexCreateRequest'];
 export type MaintenanceResponse = components['schemas']['MaintenanceResponse'];
 export type RecentCollectionItem = components['schemas']['RecentCollectionItem'];
-export type RecentCollectionListResponse =
-  components['schemas']['RecentCollectionListResponse'];
+export type RecentCollectionListResponse = components['schemas']['RecentCollectionListResponse'];
 export type RecentForgetRequest = components['schemas']['RecentForgetRequest'];
 
 export interface CollectionsApi {
@@ -34,16 +35,8 @@ export interface CollectionsApi {
   flush(name: string, signal?: AbortSignal): Promise<MaintenanceResponse>;
   optimize(name: string, signal?: AbortSignal): Promise<MaintenanceResponse>;
   destroy(name: string, signal?: AbortSignal): Promise<void>;
-  addField(
-    name: string,
-    body: FieldAddRequest,
-    signal?: AbortSignal,
-  ): Promise<CollectionSummary>;
-  dropField(
-    name: string,
-    field: string,
-    signal?: AbortSignal,
-  ): Promise<CollectionSummary>;
+  addField(name: string, body: FieldAddRequest, signal?: AbortSignal): Promise<CollectionSummary>;
+  dropField(name: string, field: string, signal?: AbortSignal): Promise<CollectionSummary>;
   renameField(
     name: string,
     field: string,
@@ -55,22 +48,14 @@ export interface CollectionsApi {
     body: IndexCreateRequest,
     signal?: AbortSignal,
   ): Promise<CollectionSummary>;
-  dropIndex(
-    name: string,
-    vectorField: string,
-    signal?: AbortSignal,
-  ): Promise<CollectionSummary>;
+  dropIndex(name: string, vectorField: string, signal?: AbortSignal): Promise<CollectionSummary>;
   createScalarIndex(
     name: string,
     field: string,
     body?: ScalarIndexCreateRequest,
     signal?: AbortSignal,
   ): Promise<CollectionSummary>;
-  dropScalarIndex(
-    name: string,
-    field: string,
-    signal?: AbortSignal,
-  ): Promise<CollectionSummary>;
+  dropScalarIndex(name: string, field: string, signal?: AbortSignal): Promise<CollectionSummary>;
   /**
    * List the recently-opened collections (persisted to ``config.json``,
    * survives process restarts). Distinct from ``list`` which only reflects
@@ -81,6 +66,9 @@ export interface CollectionsApi {
   forgetRecent(body: RecentForgetRequest, signal?: AbortSignal): Promise<void>;
   /** Drop every entry from the recent list. Idempotent. */
   clearRecent(signal?: AbortSignal): Promise<void>;
+  /** Restore a collection from a snapshot package (collection-level op). */
+  /** Import a collection from a snapshot package (collection-level op). */
+  importCollection(body: CollectionImportRequest, signal?: AbortSignal): Promise<CollectionImportResponse>;
 }
 
 /** Build a CollectionsApi bound to the given transport. */
@@ -102,25 +90,26 @@ export function createCollectionsApi(client: ApiClient): CollectionsApi {
       return client.request<void>(url, { method: 'DELETE', signal });
     },
     flush: (name, signal) =>
-      client.request<MaintenanceResponse>(
-        `/collections/${encodeURIComponent(name)}:flush`,
-        { method: 'POST', signal },
-      ),
+      client.request<MaintenanceResponse>(`/collections/${encodeURIComponent(name)}:flush`, {
+        method: 'POST',
+        signal,
+      }),
     optimize: (name, signal) =>
-      client.request<MaintenanceResponse>(
-        `/collections/${encodeURIComponent(name)}:optimize`,
-        { method: 'POST', signal },
-      ),
+      client.request<MaintenanceResponse>(`/collections/${encodeURIComponent(name)}:optimize`, {
+        method: 'POST',
+        signal,
+      }),
     destroy: (name, signal) =>
       client.request<void>(`/collections/${encodeURIComponent(name)}:destroy`, {
         method: 'POST',
         signal,
       }),
     addField: (name, body, signal) =>
-      client.request<CollectionSummary>(
-        `/collections/${encodeURIComponent(name)}/fields`,
-        { method: 'POST', body, signal },
-      ),
+      client.request<CollectionSummary>(`/collections/${encodeURIComponent(name)}/fields`, {
+        method: 'POST',
+        body,
+        signal,
+      }),
     dropField: (name, field, signal) =>
       client.request<CollectionSummary>(
         `/collections/${encodeURIComponent(name)}/fields/${encodeURIComponent(field)}`,
@@ -132,10 +121,11 @@ export function createCollectionsApi(client: ApiClient): CollectionsApi {
         { method: 'PATCH', body, signal },
       ),
     createIndex: (name, body, signal) =>
-      client.request<CollectionSummary>(
-        `/collections/${encodeURIComponent(name)}/indexes`,
-        { method: 'POST', body, signal },
-      ),
+      client.request<CollectionSummary>(`/collections/${encodeURIComponent(name)}/indexes`, {
+        method: 'POST',
+        body,
+        signal,
+      }),
     dropIndex: (name, vectorField, signal) =>
       client.request<CollectionSummary>(
         `/collections/${encodeURIComponent(name)}/indexes/${encodeURIComponent(vectorField)}`,
@@ -161,5 +151,11 @@ export function createCollectionsApi(client: ApiClient): CollectionsApi {
       }),
     clearRecent: (signal) =>
       client.request<void>('/collections/recent', { method: 'DELETE', signal }),
+    importCollection: (body, signal) =>
+      client.request<CollectionImportResponse>('/collections:import', {
+        method: 'POST',
+        body,
+        signal,
+      }),
   };
 }

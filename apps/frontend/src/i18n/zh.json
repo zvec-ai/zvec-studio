@@ -17,6 +17,15 @@
       "select": "选择",
       "cancel": "取消",
       "empty": "没有子目录。"
+    },
+    "filePicker": {
+      "title": "选择文件",
+      "pathLabel": "路径",
+      "go": "前往",
+      "home": "主目录",
+      "parent": "上级",
+      "cancel": "取消",
+      "empty": "没有条目。"
     }
   },
   "nav": {
@@ -166,9 +175,11 @@
           "dimRange": "维度必须是 1 到 32768 之间的整数。",
           "fieldsRequired": "至少添加一个向量或标量字段。",
           "fieldNameRequired": "每个字段需要一个有效名称。",
-          "reservedName": "字段名 \"{{name}}\" 是 Zvec 保留字段 — 请换一个名称。",
           "duplicateField": "字段名 \"{{name}}\" 重复了 — 每个字段名必须唯一。",
           "invalidIndexParams": "索引参数必须是 JSON 对象。"
+        },
+        "hints": {
+          "idColumn": "允许使用 \"id\" 作为列名。此时该集合的主键将显示为 \"$id\"，以避免混淆。"
         }
       },
       "open": {
@@ -259,8 +270,7 @@
               "successDescription": "\"{{name}}\" 已添加。",
               "failureTitle": "添加字段失败",
               "errors": {
-                "nameRequired": "字段名为必填项。",
-                "reservedName": "字段名 \"{{name}}\" 是保留字段。"
+                "nameRequired": "字段名为必填项。"
               }
             },
             "renameFieldDialog": {
@@ -440,6 +450,48 @@
             "successTitle": "文档已删除",
             "successDescription": "已移除 {{count}} 条文档。",
             "failureTitle": "按过滤器删除失败"
+          },
+          "import": {
+            "openLabel": "导入",
+            "title": "从文件导入文档",
+            "fileLabel": "JSONL 文件",
+            "fileHelp": "JSONL 文件（每行一个 JSON 文档）。文件将从本机读取。若要从快照（.tar.gz）导入整个集合，请使用侧边栏「导入集合」。",
+            "browse": "浏览…",
+            "pickerTitle": "选择 JSONL 文件",
+            "modeLabel": "写入模式",
+            "modeReplace": "覆盖（同 id 的文档整条覆盖）",
+            "modeReplaceHelp": "文件内容将成为该 id 的完整文档 — 文件中未出现的字段会被清空。重复导入同一文件结果一致。",
+            "modeInsert": "仅新增（id 已存在的行将失败）",
+            "onErrorLabel": "遇到行错误时",
+            "onErrorAbort": "在第一个失败行中止",
+            "onErrorSkip": "跳过失败行并继续",
+            "submit": "导入",
+            "submitting": "导入中…",
+            "cancel": "取消",
+            "done": "完成",
+            "resultTitle": "已导入 {{imported}} 条，失败 {{failed}} 条",
+            "reportSummary": "共 {{total}} 行，已导入 {{imported}} 条，失败 {{failed}} 条。",
+            "duration": "耗时 {{seconds}} 秒",
+            "aborted": "导入在第一个错误处停止（此前已写入的行保留）。",
+            "errorsCaption": "失败的行：",
+            "errorsTruncated": "（仅显示前 100 条）"
+          },
+          "export": {
+            "openLabel": "导出",
+            "title": "导出文档",
+            "modeLabel": "导出模式",
+            "modeData": "数据文件（.jsonl）",
+            "modeSnapshot": "集合快照（.tar.gz）",
+            "modeHelp": "快照将 schema 与数据一起打包，便于在别处重建集合。",
+            "includeVector": "包含向量数据",
+            "includeVectorHelp": "向量是文件体积的主要来源；取消勾选则仅导出字段。",
+            "fieldsLabel": "字段筛选（可选）",
+            "fieldsHelp": "勾选特定标量字段，或全部不勾以导出所有字段。",
+            "submit": "开始导出",
+            "cancel": "取消",
+            "startedTitle": "导出已开始",
+            "startedBody": "下载已开始 — 请查看浏览器的下载区域。",
+            "maintenanceHint": "导出期间读写仍可用；建索引、优化等维护操作会在导出完成前被暂时拒绝。"
           }
         },
         "searchPanel": {
@@ -660,6 +712,28 @@
           "modeJson": "JSON",
           "idRequired": "文档 ID"
         }
+      },
+      "importCollection": {
+        "menuItem": "导入集合",
+        "title": "导入集合",
+        "fileLabel": "快照文件（.tar.gz）",
+        "fileHelp": "由「导出 → 集合快照」产生的快照包，内含 schema 与全部数据。",
+        "browse": "浏览…",
+        "pickerTitle": "选择快照文件",
+        "targetLabel": "目标目录",
+        "targetHelp": "导入的集合将创建在该目录。默认填充为快照文件旁的同名目录，可修改；必须是尚不存在的路径。",
+        "nameLabel": "集合名（可选）",
+        "nameHelp": "默认使用快照中记录的名称；改名可避免与已有集合重名。",
+        "namePlaceholder": "留空则沿用快照中的名称",
+        "submit": "导入",
+        "submitting": "导入中…",
+        "successTitle": "集合已导入",
+        "successBody": "\"{{name}}\" 导入完成，共载入 {{count}} 条文档。",
+        "errors": {
+          "required": "请同时填写快照文件与目标目录。"
+        },
+        "partialTitle": "导入完成，但有部分问题",
+        "partialBody": "「{{name}}」已导入，{{count}} 条中有 {{failed}} 条失败、{{imported}} 条成功。请查看导入报告。"
       }
     },
     "documents": {
@@ -848,7 +922,7 @@
     "validation": "输入无效。请检查高亮的字段。",
     "code": {
       "COLLECTION_NOT_FOUND": "未找到集合。",
-      "COLLECTION_ALREADY_EXISTS": "已存在同名或同路径的集合。",
+      "COLLECTION_ALREADY_EXISTS": "与已打开集合的名称或路径冲突。请先关闭对应集合，或另选名称 / 路径。",
       "INVALID_SCHEMA": "集合 schema 无效。",
       "INVALID_FILTER_EXPRESSION": "过滤表达式无效。",
       "DOCUMENT_NOT_FOUND": "未找到文档。",

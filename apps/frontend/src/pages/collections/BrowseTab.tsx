@@ -8,6 +8,9 @@ import type { CollectionSummary } from '@/features/collections/api';
 import type { DocumentBrowseRequest } from '@/features/documents/api';
 import { useDocumentsBrowse, useDocumentDetails } from '@/features/documents/hooks';
 import { FilterBuilder } from './FilterBuilder';
+import { ImportDocumentsDialog } from './ImportDocumentsDialog';
+import { ExportDocumentsDialog } from './ExportDocumentsDialog';
+import { primaryKeyFor } from './doc-repr';
 import { formatSparseVectorValue, isSparseVectorType } from './vector-utils';
 
 type BrowseMode = 'filter' | 'id';
@@ -17,7 +20,16 @@ interface BrowseTabProps {
 }
 
 const CopyIcon = (
-  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <rect x="5.5" y="5.5" width="9" height="9" rx="1.5" />
     <path d="M10.5 5.5V3a1.5 1.5 0 0 0-1.5-1.5H3A1.5 1.5 0 0 0 1.5 3v6A1.5 1.5 0 0 0 3 10.5h2.5" />
   </svg>
@@ -28,13 +40,21 @@ export function BrowseTab({ collection }: BrowseTabProps): JSX.Element {
   const toast = useToast();
   const { schema, stats } = collection;
   const fields = useMemo(() => schema.fields ?? [], [schema.fields]);
+  // Row key carrying the primary key: ``id`` normally, ``$id`` when the
+  // schema declares its own ``id`` column (backend doc_repr contract).
+  const pkKey = primaryKeyFor(schema);
   const sparseVectorFields = useMemo(
-    () => new Set((schema.vectors ?? []).filter((v) => isSparseVectorType(v.dataType)).map((v) => v.name)),
+    () =>
+      new Set(
+        (schema.vectors ?? []).filter((v) => isSparseVectorType(v.dataType)).map((v) => v.name),
+      ),
     [schema.vectors],
   );
 
   const [mode, setMode] = useState<BrowseMode>('filter');
   const [idInput, setIdInput] = useState('');
+  const [importOpen, setImportOpen] = useState<boolean>(false);
+  const [exportOpen, setExportOpen] = useState<boolean>(false);
 
   // Filter-mode state
   const [submittedBody, setSubmittedBody] = useState<DocumentBrowseRequest>({
@@ -58,7 +78,8 @@ export function BrowseTab({ collection }: BrowseTabProps): JSX.Element {
   );
 
   // Which rows to display
-  const displayRows: ReadonlyArray<Record<string, unknown>> = mode === 'id' ? fetchedDocs : browseItems;
+  const displayRows: ReadonlyArray<Record<string, unknown>> =
+    mode === 'id' ? fetchedDocs : browseItems;
 
   // Derive columns from actual data + schema-defined fields.
   // Schema fields are always shown so newly added fields appear even when
@@ -66,9 +87,9 @@ export function BrowseTab({ collection }: BrowseTabProps): JSX.Element {
   const columnKeys = useMemo(() => {
     const seen = new Set<string>();
     const out: string[] = [];
-    // id is always first
-    seen.add('id');
-    out.push('id');
+    // The primary-key column (``id`` or ``$id``) is always first
+    seen.add(pkKey);
+    out.push(pkKey);
     // Append keys found in returned documents
     for (const row of displayRows) {
       for (const key of Object.keys(row)) {
@@ -86,7 +107,7 @@ export function BrowseTab({ collection }: BrowseTabProps): JSX.Element {
       }
     }
     return out;
-  }, [displayRows, fields]);
+  }, [displayRows, fields, pkKey]);
 
   function handleFilterApply(expr: string): void {
     setSubmittedBody({
@@ -98,7 +119,10 @@ export function BrowseTab({ collection }: BrowseTabProps): JSX.Element {
 
   function handleIdSubmit(e: FormEvent): void {
     e.preventDefault();
-    const ids = idInput.split(';').map((s) => s.trim()).filter(Boolean);
+    const ids = idInput
+      .split(';')
+      .map((s) => s.trim())
+      .filter(Boolean);
     if (ids.length === 0) return;
     setSubmittedIds(ids);
   }
@@ -124,10 +148,15 @@ export function BrowseTab({ collection }: BrowseTabProps): JSX.Element {
     copyText(text);
   }
 
-  const isLoading = mode === 'id' ? (submittedIds.length > 0 && fetchDetails.isLoading) : browseQuery.isLoading;
+  const isLoading =
+    mode === 'id' ? submittedIds.length > 0 && fetchDetails.isLoading : browseQuery.isLoading;
   const browseError = mode === 'filter' && browseQuery.isError ? browseQuery.error : null;
   const browseErrorMessage = browseError instanceof ApiError ? browseError.error.message : null;
-  const isEmpty = !isLoading && !browseError && displayRows.length === 0 && (mode === 'id' ? submittedIds.length > 0 : true);
+  const isEmpty =
+    !isLoading &&
+    !browseError &&
+    displayRows.length === 0 &&
+    (mode === 'id' ? submittedIds.length > 0 : true);
   const showTable = !browseError && displayRows.length > 0;
 
   return (
@@ -151,8 +180,26 @@ export function BrowseTab({ collection }: BrowseTabProps): JSX.Element {
           </button>
         </div>
         <span className="zv-data-subnav__meta" style={{ marginLeft: 'auto' }}>
-          {t('pages.collections.detail.browse.docCount', { count: stats.documentCount.toLocaleString() })}
+          {t('pages.collections.detail.browse.docCount', {
+            count: stats.documentCount.toLocaleString(),
+          })}
         </span>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => setImportOpen(true)}
+          data-testid="zv-browse-import"
+        >
+          {t('pages.collections.detail.documentsPanel.import.openLabel')}
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => setExportOpen(true)}
+          data-testid="zv-browse-export"
+        >
+          {t('pages.collections.detail.documentsPanel.export.openLabel')}
+        </Button>
       </div>
 
       {/* Filter mode — FilterBuilder (always mounted to preserve state) */}
@@ -201,27 +248,37 @@ export function BrowseTab({ collection }: BrowseTabProps): JSX.Element {
             </thead>
             <tbody>
               {displayRows.map((row, idx) => (
-                <tr key={row.id != null ? String(row.id) : `row-${idx}`}>
+                <tr key={row[pkKey] != null ? String(row[pkKey]) : `row-${idx}`}>
                   {columnKeys.map((key) => (
                     <td key={key}>
-                      {key === 'id' && row.id != null && mode === 'filter' ? (
+                      {key === pkKey && row[pkKey] != null && mode === 'filter' ? (
                         <div className="zv-cell-copy">
                           <button
                             type="button"
                             className="zv-cell-copy__text zv-browse-id-btn"
-                            onClick={() => handleFetchById(String(row.id))}
+                            onClick={() => handleFetchById(String(row[pkKey]))}
                           >
                             {formatCellValue(row[key], false, true)}
                           </button>
-                          <button type="button" className="zv-cell-copy__btn" onClick={() => handleCopyCell(row[key])}>
+                          <button
+                            type="button"
+                            className="zv-cell-copy__btn"
+                            onClick={() => handleCopyCell(row[key])}
+                          >
                             {CopyIcon}
                           </button>
                         </div>
                       ) : (
                         <div className="zv-cell-copy">
-                          <span className="zv-cell-copy__text">{formatCellValue(row[key], sparseVectorFields.has(key), key === 'id')}</span>
+                          <span className="zv-cell-copy__text">
+                            {formatCellValue(row[key], sparseVectorFields.has(key), key === pkKey)}
+                          </span>
                           {row[key] != null && (
-                            <button type="button" className="zv-cell-copy__btn" onClick={() => handleCopyCell(row[key])}>
+                            <button
+                              type="button"
+                              className="zv-cell-copy__btn"
+                              onClick={() => handleCopyCell(row[key])}
+                            >
                               {CopyIcon}
                             </button>
                           )}
@@ -250,6 +307,18 @@ export function BrowseTab({ collection }: BrowseTabProps): JSX.Element {
           </div>
         )}
       </div>
+
+      <ImportDocumentsDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        collection={collection.name}
+      />
+      <ExportDocumentsDialog
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        collection={collection.name}
+        schema={schema}
+      />
     </div>
   );
 }

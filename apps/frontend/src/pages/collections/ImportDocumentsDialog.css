@@ -1,0 +1,62 @@
+.zv-import-dialog__fieldset {
+  border: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+
+.zv-import-dialog__fieldset legend {
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.35rem;
+}
+
+.zv-import-dialog__fieldset label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  padding: 0.15rem 0;
+  cursor: pointer;
+}
+
+.zv-import-dialog__hint {
+  margin: 0.1rem 0 0.35rem 1.4rem;
+  font-size: 0.8rem;
+  color: var(--zv-color-text-muted, #6b7280);
+}
+
+.zv-import-dialog__summary {
+  font-size: 0.95rem;
+  margin: 0 0 0.75rem;
+}
+
+.zv-import-dialog__errors {
+  max-height: 16rem;
+  overflow: auto;
+  border: 1px solid var(--zv-color-border, #e5e7eb);
+  border-radius: 0.375rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.zv-import-dialog__errors-caption {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 0 0 0.35rem;
+}
+
+.zv-import-dialog__errors ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.8rem;
+}
+
+.zv-import-dialog__errors li {
+  margin: 0.2rem 0;
+  overflow-wrap: anywhere;
+}
+
+.zv-import-dialog__errors code {
+  background: var(--zv-color-bg-muted, #f3f4f6);
+  border-radius: 0.25rem;
+  padding: 0 0.25rem;
+}

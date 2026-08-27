@@ -14,7 +14,7 @@
  * Cursor-style Prev/Next is gone: the backend cannot offer a stable global
  * order over a vector store, so we promote the filter to first-class UX.
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -40,6 +40,7 @@ import {
 } from '@/features/documents';
 
 import { InsertDocumentDialog } from './InsertDocumentDialog';
+import { primaryKeyFor, primaryKeyOf } from './doc-repr';
 import { formatSparseVectorValue, isSparseVectorType } from './vector-utils';
 import './DocumentsPanel.css';
 
@@ -65,22 +66,27 @@ export function DocumentsPanel({
   const { t } = useTranslation();
   const toast = useToast();
 
+  // Row key carrying the primary key: normally ``id``, but ``$id`` when the
+  // schema declares its own ``id`` column (backend doc_repr contract).
+  const pkKey = primaryKeyFor(schema);
+
   // Build a schema-aware sample template for the Insert dialog.
   const sampleTemplate = useMemo(() => {
-    const tpl: Record<string, unknown> = { id: 'doc-1' };
+    const tpl: Record<string, unknown> = { [pkKey]: 'doc-1' };
     for (const f of schema.fields ?? []) {
-      if (f.name === 'id') continue;
+      if (f.name === pkKey) continue;
       tpl[f.name] = f.dataType === 'STRING' ? '' : 0;
     }
     for (const v of schema.vectors ?? []) {
       tpl[v.name] = isSparseVectorType(v.dataType)
         ? { '42': 1.0, '314': 0.5 }
-        : Array.from({ length: v.dimension ?? 3 }, (_, i) =>
-            Math.round(((i + 1) / (v.dimension ?? 3)) * 10) / 10,
+        : Array.from(
+            { length: v.dimension ?? 3 },
+            (_, i) => Math.round(((i + 1) / (v.dimension ?? 3)) * 10) / 10,
           );
     }
     return tpl;
-  }, [schema]);
+  }, [schema, pkKey]);
 
   const [filterDraft, setFilterDraft] = useState<string>('');
   const [limitDraft, setLimitDraft] = useState<string>(String(pageSize));
@@ -125,10 +131,12 @@ export function DocumentsPanel({
   );
   const truncated = Boolean(query.data?.truncated);
 
-  const rowKey = (row: DocumentRecord, index: number): string => {
-    if ('id' in row && row.id !== null && row.id !== undefined) return String(row.id);
-    return `row-${index}`;
-  };
+  const rowKey = useCallback(
+    (row: DocumentRecord, index: number): string => {
+      return primaryKeyOf(row, pkKey) ?? `row-${index}`;
+    },
+    [pkKey],
+  );
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const detail = useDocumentDetail(collection, selectedId ?? undefined);
@@ -136,9 +144,7 @@ export function DocumentsPanel({
   const [insertOpen, setInsertOpen] = useState<boolean>(false);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [pendingDelete, setPendingDelete] = useState<
-    | { kind: 'single'; id: string }
-    | { kind: 'batch'; ids: ReadonlyArray<string> }
-    | null
+    { kind: 'single'; id: string } | { kind: 'batch'; ids: ReadonlyArray<string> } | null
   >(null);
   const deleteOne = useDeleteDocument(collection);
   const deleteBatch = useDeleteDocumentsBatch(collection);
@@ -174,14 +180,14 @@ export function DocumentsPanel({
   }
 
   const columns = useMemo<ReadonlyArray<TableColumn<DocumentRecord>>>(() => {
-    const keys = collectColumnKeys(items, schema.fields);
+    const keys = collectColumnKeys(items, pkKey, schema.fields);
     const sparseVectorFields = new Set(
       (schema.vectors ?? []).filter((v) => isSparseVectorType(v.dataType)).map((v) => v.name),
     );
     const dataColumns: Array<TableColumn<DocumentRecord>> = keys.map((key) => ({
       key,
       header: key,
-      render: (row) => renderCell(row[key], sparseVectorFields.has(key), key === 'id'),
+      render: (row) => renderCell(row[key], sparseVectorFields.has(key), key === pkKey),
     }));
     const allSelected =
       items.length > 0 && items.every((row, idx) => selectedIds.has(rowKey(row, idx)));
@@ -195,9 +201,7 @@ export function DocumentsPanel({
           onChange={(event) => {
             const checked = event.target.checked;
             setSelectedIds(
-              checked
-                ? new Set(items.map((row, idx) => rowKey(row, idx)))
-                : new Set(),
+              checked ? new Set(items.map((row, idx) => rowKey(row, idx))) : new Set(),
             );
           }}
           data-testid="zv-documents-select-all"
@@ -239,7 +243,7 @@ export function DocumentsPanel({
       },
     };
     return [selectColumn, ...dataColumns, actionsColumn];
-  }, [items, selectedIds, schema.fields, schema.vectors, t]);
+  }, [items, selectedIds, schema.fields, schema.vectors, pkKey, rowKey, t]);
 
   async function performDelete(): Promise<void> {
     if (!pendingDelete) return;
@@ -249,9 +253,12 @@ export function DocumentsPanel({
         toastRef.current.push({
           severity: 'info',
           title: t('pages.collections.detail.documentsPanel.delete.successSingleTitle'),
-          description: t('pages.collections.detail.documentsPanel.delete.successSingleDescription', {
-            id: pendingDelete.id,
-          }),
+          description: t(
+            'pages.collections.detail.documentsPanel.delete.successSingleDescription',
+            {
+              id: pendingDelete.id,
+            },
+          ),
         });
       } else {
         const ids = pendingDelete.ids;
@@ -301,9 +308,7 @@ export function DocumentsPanel({
   async function performDeleteByFilter(): Promise<void> {
     const filter = byFilterDraft.trim();
     if (!filter) {
-      setByFilterError(
-        t('pages.collections.detail.documentsPanel.deleteByFilter.missingFilter'),
-      );
+      setByFilterError(t('pages.collections.detail.documentsPanel.deleteByFilter.missingFilter'));
       return;
     }
     try {
@@ -447,9 +452,7 @@ export function DocumentsPanel({
           </Button>
           <Button
             variant="primary"
-            onClick={() =>
-              setPendingDelete({ kind: 'batch', ids: Array.from(selectedIds) })
-            }
+            onClick={() => setPendingDelete({ kind: 'batch', ids: Array.from(selectedIds) })}
             data-testid="zv-documents-delete-selected"
           >
             {t('pages.collections.detail.documentsPanel.delete.batchLabel', {
@@ -663,13 +666,14 @@ function clampLimit(value: number, fallback: number): number {
 
 function collectColumnKeys(
   rows: ReadonlyArray<DocumentRecord>,
+  pkKey: string,
   schemaFields?: ReadonlyArray<{ name: string }>,
 ): ReadonlyArray<string> {
   const seen = new Set<string>();
   const out: string[] = [];
-  // ``id`` is always pinned first.
-  seen.add('id');
-  out.push('id');
+  // The primary-key column is always pinned first (``id`` or ``$id``).
+  seen.add(pkKey);
+  out.push(pkKey);
   // Keys from actual document data.
   for (const row of rows) {
     for (const key of Object.keys(row)) {
@@ -725,7 +729,10 @@ function renderVectorSummary(vec: ReadonlyArray<number>): ReactNode {
       </code>
     );
   }
-  const head = vec.slice(0, VECTOR_SUMMARY_CUTOFF).map((n) => n.toFixed(3)).join(', ');
+  const head = vec
+    .slice(0, VECTOR_SUMMARY_CUTOFF)
+    .map((n) => n.toFixed(3))
+    .join(', ');
   return (
     <code
       className="zv-documents-panel__vector zv-documents-panel__vector--folded"

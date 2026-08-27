@@ -22,6 +22,27 @@ describe('createFsApi', () => {
     expect(calls[1].path).toBe('/fs/list');
   });
 
+  it('sends includeFiles and extension filter for the file picker', async () => {
+    const calls: Array<{ path: string }> = [];
+    const client: ApiClient = {
+      baseUrl: 'fake',
+      request: async <T,>(path: string): Promise<T> => {
+        calls.push({ path });
+        return { path: '/tmp', parent: '/', home: '/home/bob', entries: [] } as unknown as T;
+      },
+    };
+    const fs = createFsApi(client);
+
+    await fs.list({ path: '/data', includeFiles: true, extensions: '.jsonl,.tar.gz' });
+    // extensions without includeFiles must not leak into the query
+    await fs.list({ extensions: '.jsonl' });
+
+    expect(calls[0].path).toBe(
+      '/fs/list?path=%2Fdata&includeFiles=true&extensions=.jsonl%2C.tar.gz',
+    );
+    expect(calls[1].path).toBe('/fs/list');
+  });
+
   it('sends reveal requests with the selected path', async () => {
     const calls: Array<{ path: string; method?: string; body?: unknown }> = [];
     const client: ApiClient = {

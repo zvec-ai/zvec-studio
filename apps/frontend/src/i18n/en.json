@@ -17,6 +17,15 @@
       "select": "Select",
       "cancel": "Cancel",
       "empty": "No subdirectories."
+    },
+    "filePicker": {
+      "title": "Choose a file",
+      "pathLabel": "Path",
+      "go": "Go",
+      "home": "Home",
+      "parent": "Up",
+      "cancel": "Cancel",
+      "empty": "No entries."
     }
   },
   "nav": {
@@ -166,9 +175,11 @@
           "dimRange": "Dimension must be an integer between 1 and 32768.",
           "fieldsRequired": "Add at least one vector or scalar field.",
           "fieldNameRequired": "Each field needs a valid name.",
-          "reservedName": "Field name \"{{name}}\" is reserved by Zvec — pick another name.",
           "duplicateField": "Field name \"{{name}}\" is used more than once — each field must have a unique name.",
           "invalidIndexParams": "Index params must be a JSON object."
+        },
+        "hints": {
+          "idColumn": "Naming a column \"id\" is allowed. This collection's primary key will then be shown and exchanged under \"$id\" to avoid the clash."
         }
       },
       "open": {
@@ -259,8 +270,7 @@
               "successDescription": "\"{{name}}\" added.",
               "failureTitle": "Add field failed",
               "errors": {
-                "nameRequired": "Field name is required.",
-                "reservedName": "Field name \"{{name}}\" is reserved."
+                "nameRequired": "Field name is required."
               }
             },
             "renameFieldDialog": {
@@ -440,6 +450,48 @@
             "successTitle": "Documents deleted",
             "successDescription": "{{count}} document(s) removed.",
             "failureTitle": "Delete by filter failed"
+          },
+          "import": {
+            "openLabel": "Import",
+            "title": "Import documents from file",
+            "fileLabel": "JSONL file",
+            "fileHelp": "A JSONL file — one JSON document per line. The file is read from this machine. To import a whole collection from a snapshot (.tar.gz), use Collections → Import Collection.",
+            "browse": "Browse…",
+            "pickerTitle": "Choose a JSONL file",
+            "modeLabel": "Write mode",
+            "modeReplace": "Replace (overwrite documents with the same id)",
+            "modeReplaceHelp": "The file's content becomes the whole document for that id — fields absent from the file are cleared. Importing the same file twice gives the same result.",
+            "modeInsert": "Insert only (fail rows whose id already exists)",
+            "onErrorLabel": "On row error",
+            "onErrorAbort": "Abort at the first failing row",
+            "onErrorSkip": "Skip failing rows and continue",
+            "submit": "Import",
+            "submitting": "Importing…",
+            "cancel": "Cancel",
+            "done": "Done",
+            "resultTitle": "Imported {{imported}}, failed {{failed}}",
+            "reportSummary": "{{imported}} of {{total}} row(s) imported; {{failed}} failed.",
+            "duration": "took {{seconds}}s",
+            "aborted": "Import stopped at the first error (rows written before it are kept).",
+            "errorsCaption": "Failing rows:",
+            "errorsTruncated": "(showing the first 100)"
+          },
+          "export": {
+            "openLabel": "Export",
+            "title": "Export documents",
+            "modeLabel": "Export mode",
+            "modeData": "Data file (.jsonl)",
+            "modeSnapshot": "Collection snapshot (.tar.gz)",
+            "modeHelp": "A snapshot bundles the schema with the data so the collection can be recreated elsewhere.",
+            "includeVector": "Include vector data",
+            "includeVectorHelp": "Vectors are the main source of file size; uncheck to export fields only.",
+            "fieldsLabel": "Field filter (optional)",
+            "fieldsHelp": "Select specific scalar fields, or leave all unchecked to export every field.",
+            "submit": "Start export",
+            "cancel": "Cancel",
+            "startedTitle": "Export started",
+            "startedBody": "Your download has begun — check the browser's download area.",
+            "maintenanceHint": "Reads and writes stay available during the export; maintenance (index creation, optimize, …) is briefly rejected until it finishes."
           }
         },
         "searchPanel": {
@@ -660,6 +712,28 @@
           "modeJson": "JSON",
           "idRequired": "Document ID"
         }
+      },
+      "importCollection": {
+        "menuItem": "Import Collection",
+        "title": "Import Collection",
+        "fileLabel": "Snapshot file (.tar.gz)",
+        "fileHelp": "A snapshot produced by Export → Collection snapshot: schema and data bundled together.",
+        "browse": "Browse…",
+        "pickerTitle": "Choose a snapshot file",
+        "targetLabel": "Target directory",
+        "targetHelp": "The imported collection is created here. Defaults to a directory next to the snapshot file — editable. Must be a path that does not exist yet.",
+        "nameLabel": "Collection name (optional)",
+        "nameHelp": "Defaults to the name recorded in the snapshot; rename to avoid a clash.",
+        "namePlaceholder": "Leave empty to keep the snapshot's name",
+        "submit": "Import",
+        "submitting": "Importing…",
+        "successTitle": "Collection imported",
+        "successBody": "\"{{name}}\" imported — {{count}} document(s) loaded.",
+        "errors": {
+          "required": "Both the snapshot file and the target directory are required."
+        },
+        "partialTitle": "Import finished with problems",
+        "partialBody": "\"{{name}}\" was imported with {{failed}} failing row(s) — {{imported}} of {{count}} loaded. See the import report."
       }
     },
     "documents": {
@@ -822,7 +896,7 @@
         "title": "Recently opened",
         "aria": "Recently opened collections",
         "empty": "No recently opened collections yet.",
-        "loading": "Loading recently opened collections\u2026",
+        "loading": "Loading recently opened collections…",
         "clearAll": "Clear all",
         "forgetAria": "Forget {{path}}"
       }
@@ -848,7 +922,7 @@
     "validation": "Invalid input. Please review the highlighted fields.",
     "code": {
       "COLLECTION_NOT_FOUND": "Collection was not found.",
-      "COLLECTION_ALREADY_EXISTS": "A Collection with this name or path already exists.",
+      "COLLECTION_ALREADY_EXISTS": "Conflicts with an already-open Collection's name or path. Close it first or pick another name / path.",
       "INVALID_SCHEMA": "The Collection schema is invalid.",
       "INVALID_FILTER_EXPRESSION": "The filter expression is invalid.",
       "DOCUMENT_NOT_FOUND": "Document was not found.",
