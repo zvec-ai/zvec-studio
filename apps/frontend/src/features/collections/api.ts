@@ -66,9 +66,11 @@ export interface CollectionsApi {
   forgetRecent(body: RecentForgetRequest, signal?: AbortSignal): Promise<void>;
   /** Drop every entry from the recent list. Idempotent. */
   clearRecent(signal?: AbortSignal): Promise<void>;
-  /** Restore a collection from a snapshot package (collection-level op). */
   /** Import a collection from a snapshot package (collection-level op). */
-  importCollection(body: CollectionImportRequest, signal?: AbortSignal): Promise<CollectionImportResponse>;
+  importCollection(
+    body: CollectionImportRequest,
+    signal?: AbortSignal,
+  ): Promise<CollectionImportResponse>;
 }
 
 /** Build a CollectionsApi bound to the given transport. */

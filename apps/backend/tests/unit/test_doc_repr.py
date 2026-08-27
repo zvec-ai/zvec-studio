@@ -209,50 +209,6 @@ def _schema_with_dollar_id_vector(*, with_id_field: bool = False) -> CollectionS
     )
 
 
-class TestReservedChain:
-    """The reserved key chain ``id`` -> ``$id`` -> ``$$id`` -> ..."""
-
-    def test_dollar_id_vector_alone_does_not_take_the_plain_key(self) -> None:
-        """A vector named ``$id`` occupies ``$id`` only; ``id`` stays free."""
-        assert pk_key(_schema_with_dollar_id_vector()) == "id"
-
-    def test_id_field_plus_dollar_id_vector_pushes_pk_two_levels_down(self) -> None:
-        schema = _schema_with_dollar_id_vector(with_id_field=True)
-        assert pk_key(schema) == "$$id"
-
-    def test_doc_to_row_keeps_pk_and_dollar_id_vector_apart(self) -> None:
-        schema = _schema_with_dollar_id_vector(with_id_field=True)
-        doc = _FakeDoc(
-            "PK-001", fields={"id": "USER-9", "title": "t"}, vectors={"$id": [0.1, 0.2]}
-        )
-        row = doc_to_row(doc, schema=schema, include_vector=True)
-        assert row == {"$$id": "PK-001", "id": "USER-9", "title": "t", "$id": [0.1, 0.2]}
-
-    def test_split_pk_separates_chain_pk_from_dollar_id_vector(self) -> None:
-        schema = _schema_with_dollar_id_vector(with_id_field=True)
-        row = {"$$id": "PK-001", "id": "USER-9", "$id": [0.1, 0.2], "title": "t"}
-        found, rest = split_pk(row, schema=schema)
-        assert found == "PK-001"
-        assert rest == {"id": "USER-9", "$id": [0.1, 0.2], "title": "t"}
-
-    def test_bare_id_still_ambiguous_when_id_column_exists(self) -> None:
-        """Even with a ``$id`` vector around, a bare ``id`` cannot be
-        resolved when the schema declares an ``id`` field."""
-        schema = _schema_with_dollar_id_vector(with_id_field=True)
-        with pytest.raises(InvalidSchemaError) as exc:
-            split_pk({"id": "USER-9", "$id": [0.1, 0.2], "title": "t"}, schema=schema)
-        assert exc.value.extra["primaryKeyKey"] == "$$id"
-
-    def test_clashing_export_stays_importable_into_plain_schema(self) -> None:
-        """A row carrying ``$id`` from an id-column export still resolves
-        into a plain collection."""
-        found, rest = split_pk(
-            {"$id": "PK-009", "title": "t"}, schema=_schema(with_id_field=False)
-        )
-        assert found == "PK-009"
-        assert rest == {"title": "t"}
-
-
 class TestRoundTrip:
     @pytest.mark.parametrize("with_id_field", [False, True])
     def test_doc_to_row_then_split_pk(self, with_id_field: bool) -> None:

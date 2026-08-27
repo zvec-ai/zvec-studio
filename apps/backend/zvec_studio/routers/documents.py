@@ -12,6 +12,7 @@ from __future__ import annotations
 import itertools
 import shutil
 import tempfile
+from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path as _Path
 from typing import Annotated, Any, Literal
@@ -43,7 +44,7 @@ from zvec_studio.storage.formats import resolve_export_format, resolve_import_fo
 from zvec_studio.storage.import_ import ImportMode, ImportReport, OnErrorMode
 from zvec_studio.storage.snapshot import (
     build_manifest,
-    stream_snapshot_package,
+    pack_snapshot,
     write_snapshot_package,
 )
 
@@ -229,7 +230,7 @@ def import_documents(
 def import_report_to_response(report: ImportReport) -> DocumentImportResponse:
     """Map the storage-layer ``ImportReport`` onto its HTTP payload.
 
-    Shared with the collection-level ``:restore`` endpoint, which embeds
+    Shared with the collection-level ``:import`` endpoint, which embeds
     the same row-level report in its response.
     """
     return DocumentImportResponse(
@@ -310,6 +311,10 @@ def export_documents(
             manifest_path, data_path = write_snapshot_package(
                 rows=rows, serialize=fmt.serialize, manifest=manifest, tmp_dir=tmp_dir
             )
+            package_path = tmp_dir / "package.tar.gz"
+            pack_snapshot(
+                manifest_path=manifest_path, data_path=data_path, out_path=package_path
+            )
         except RuntimeError as exc:
             shutil.rmtree(tmp_dir, ignore_errors=True)
             raise ZvecStudioError(
@@ -320,8 +325,15 @@ def export_documents(
         except Exception:
             shutil.rmtree(tmp_dir, ignore_errors=True)
             raise
+
+        def file_chunks(path: _Path) -> Iterator[bytes]:
+            """Yield *path* in 256 KiB chunks, closing promptly on disconnect."""
+            with path.open("rb") as f:
+                while chunk := f.read(256 * 1024):
+                    yield chunk
+
         return StreamingResponse(
-            stream_snapshot_package(manifest_path=manifest_path, data_path=data_path),
+            file_chunks(package_path),
             media_type="application/gzip",
             headers={
                 "Content-Disposition": f'attachment; filename="{resolved}-{stamp}.tar.gz"'

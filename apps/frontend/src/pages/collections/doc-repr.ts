@@ -3,11 +3,10 @@
  * (`zvec_studio/storage/doc_repr.py`) — keep the two in sync.
  *
  * Zvec keeps the primary key (`Doc.id`) beside the columns, and a column may
- * be named `id`, which a naive flat mapping would let shadow the key. The
- * row key carrying the primary key is therefore picked from the reserved
- * chain `id` -> `$id` -> `$$id` -> ... . The zvec engine rejects `$` in
- * column names at create time (Studio enforces the same regex), so in
- * practice the chain stops at `$id`; deeper links are defense in depth.
+ * be named `id`, which a naive flat mapping would let shadow the key. When
+ * such a column exists the primary key travels under the reserved `$id` key.
+ * `$id` cannot collide with a user column: the zvec engine rejects `$` in
+ * column names at create time (Studio enforces the same regex).
  */
 
 /** Row key carrying the primary key for an ordinary schema. */
@@ -20,19 +19,10 @@ export interface SchemaLike {
   vectors?: ReadonlyArray<{ name: string }> | null;
 }
 
-/**
- * The row key that carries the primary key for *schema*: the first key of the
- * reserved chain (`id`, `$id`, `$$id`, ...) that no column occupies.
- */
+/** The row key that carries the primary key for *schema*. */
 export function primaryKeyFor(schema: SchemaLike): string {
-  const names = new Set(
-    [...(schema.fields ?? []), ...(schema.vectors ?? [])].map((c) => c.name),
-  );
-  let key = PK_KEY;
-  while (names.has(key)) {
-    key = `$${key}`;
-  }
-  return key;
+  const columns = [...(schema.fields ?? []), ...(schema.vectors ?? [])];
+  return columns.some((c) => c.name === PK_KEY) ? RESERVED_PK_KEY : PK_KEY;
 }
 
 /** Read the primary key out of a document row; null when absent. */

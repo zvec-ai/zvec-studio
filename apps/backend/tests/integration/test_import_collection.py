@@ -68,7 +68,7 @@ def _restore_body(snapshot: Path, target: Path, **overrides: object) -> dict:
     return body
 
 
-class TestRestoreSnapshot:
+class TestImportCollection:
     async def test_restores_collection_from_snapshot(
         self, client: AsyncClient, tmp_path: Path
     ) -> None:

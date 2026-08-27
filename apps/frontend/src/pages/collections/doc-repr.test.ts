@@ -21,23 +21,6 @@ describe('primaryKeyFor', () => {
     );
   });
 
-  it('walks the chain when both id and $id are occupied', () => {
-    // zvec allows a vector named `$id`; the pk then moves one level deeper.
-    expect(
-      primaryKeyFor({
-        fields: [{ name: 'id' }, { name: 'title' }],
-        vectors: [{ name: '$id' }],
-      }),
-    ).toBe('$$id');
-  });
-
-  it('keeps the plain key when only $id is occupied', () => {
-    // A `$id` vector does not occupy `id` — no reason to move.
-    expect(primaryKeyFor({ fields: [{ name: 'title' }], vectors: [{ name: '$id' }] })).toBe(
-      PK_KEY,
-    );
-  });
-
   it('falls back to the plain key for an empty schema', () => {
     expect(primaryKeyFor({ fields: [], vectors: [] })).toBe(PK_KEY);
     expect(primaryKeyFor({})).toBe(PK_KEY);

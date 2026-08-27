@@ -50,7 +50,7 @@ overall; routers / middleware hold at **≥ 75 %**. Actual figures at
 
 - **Vitest** for hooks + pure logic (`features/*/hooks.test.tsx`).
 - **React Testing Library + MSW** for components that hit the API
-  (see `DocumentsPanel.test.tsx`, `SearchPanel.test.tsx` for patterns).
+  (see `BrowseTab.test.tsx`, `ExportDocumentsDialog.test.tsx` for patterns).
 - **UI component tests** for Toast, EmptyState, ErrorState, Skeleton,
   and the query client error sink.
 - **Playwright** for happy-path E2E in `apps/frontend/tests/e2e/`.

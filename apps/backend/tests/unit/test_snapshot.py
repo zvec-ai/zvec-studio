@@ -197,34 +197,22 @@ class TestSchemaCompatibility:
             )
         assert any("vector" in m.lower() for m in exc.value.extra["mismatches"])
 
+class TestPackSnapshot:
+    def test_packs_manifest_and_data_in_order(self, tmp_path: Path) -> None:
+        """pack_snapshot produces a plain gzip tar with both members."""
+        import tarfile
 
-class TestStreamCancellation:
-    def test_early_close_unblocks_the_producer_thread(self, tmp_path: Path) -> None:
-        """A client disconnect (generator closed mid-stream) must not leave
-        the producer thread parked on the bounded queue forever."""
-        import os
-        import threading
-        import time
+        from zvec_studio.storage.snapshot import pack_snapshot
 
-        from zvec_studio.storage.snapshot import (
-            SNAPSHOT_WORKER_NAME,
-            stream_snapshot_package,
-        )
+        (tmp_path / MANIFEST_NAME).write_bytes(b'{"format": "x"}')
+        (tmp_path / DATA_FILE_NAME).write_bytes(b'{"id": "a"}\n')
+        out = tmp_path / "package.tar.gz"
 
-        # Incompressible payload so the producer out-runs a one-chunk consumer
-        # and blocks on the bounded queue.
-        (tmp_path / DATA_FILE_NAME).write_bytes(os.urandom(4 * 1024 * 1024))
-        (tmp_path / MANIFEST_NAME).write_bytes(b"{}")
+        pack_snapshot(manifest_path=tmp_path / MANIFEST_NAME,
+                      data_path=tmp_path / DATA_FILE_NAME, out_path=out)
 
-        stream = stream_snapshot_package(
-            manifest_path=tmp_path / MANIFEST_NAME, data_path=tmp_path / DATA_FILE_NAME
-        )
-        next(stream)  # read a single chunk, then abandon like a disconnect
-        stream.close()
-
-        deadline = time.monotonic() + 5.0
-        while time.monotonic() < deadline:
-            if not any(t.name == SNAPSHOT_WORKER_NAME for t in threading.enumerate()):
-                break
-            time.sleep(0.05)
-        assert not any(t.name == SNAPSHOT_WORKER_NAME for t in threading.enumerate())
+        with tarfile.open(out, "r:gz") as tar:
+            names = tar.getnames()
+            data = tar.extractfile(DATA_FILE_NAME).read()
+        assert names == [MANIFEST_NAME, DATA_FILE_NAME]
+        assert data == b'{"id": "a"}\n'

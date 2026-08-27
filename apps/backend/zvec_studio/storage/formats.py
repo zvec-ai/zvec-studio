@@ -65,6 +65,10 @@ def _check_finite(value: Any, *, path: str, document_id: str) -> None:
 
     Walks scalars, lists and dicts so vectors (``list[float]``), sparse
     vectors (``{index: weight}``) and array fields are all covered.
+
+    Lists (the vector hot path) are scanned in one pass without per-element
+    recursion or path strings; the path is only built when an offender or a
+    nested container needs to be located.
     """
     if isinstance(value, bool):
         return
@@ -75,8 +79,18 @@ def _check_finite(value: Any, *, path: str, document_id: str) -> None:
         )
     if isinstance(value, list):
         for i, item in enumerate(value):
-            _check_finite(item, path=f"{path}[{i}]", document_id=document_id)
-    elif isinstance(value, dict):
+            if isinstance(item, float):
+                if math.isfinite(item):
+                    continue
+                loc = f"{path}[{i}]"
+                raise ExportNonFiniteError(
+                    f"Document {document_id} contains a non-finite value at '{loc}'.",
+                    extra={"documentId": document_id, "path": loc},
+                )
+            if isinstance(item, list | dict):
+                _check_finite(item, path=f"{path}[{i}]", document_id=document_id)
+        return
+    if isinstance(value, dict):
         for k, v in value.items():
             _check_finite(v, path=f"{path}.{k}", document_id=document_id)
 

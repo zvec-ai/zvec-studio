@@ -25,6 +25,7 @@ import math
 import re
 import tarfile
 import time
+import zlib
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -997,11 +998,7 @@ class SdkBackend:
 
     def flush(self, name: str, *, path: str | None = None) -> None:
         record = self.get(name, path=path)
-        try:
-            record.sdk_obj.flush()
-        except RuntimeError as exc:
-            _raise_if_maintenance_blocked(exc)
-            raise
+        record.sdk_obj.flush()
 
     def optimize(self, name: str, *, path: str | None = None) -> None:
         record = self.get(name, path=path)
@@ -1303,7 +1300,12 @@ class SdkBackend:
                     extra={"path": str(path)},
                 ) from exc
             schema = _from_sdk_schema(sdk_obj.schema, path)
-            self._ensure_unique_name(schema.name, path)
+            try:
+                self._ensure_unique_name(schema.name, path)
+            except CollectionAlreadyExistsError:
+                # Drop the just-opened handle instead of waiting for GC.
+                sdk_obj = None  # type: ignore[assignment]
+                raise
             record = CollectionRecord(
                 name=schema.name,
                 path=path,
@@ -1486,7 +1488,7 @@ class SdkBackend:
             try:
                 tar = stack.enter_context(tarfile.open(source, mode="r:gz"))  # noqa: SIM115
                 members = {m.name: m for m in tar if m.isfile()}
-            except (tarfile.TarError, EOFError, OSError) as exc:
+            except (tarfile.TarError, EOFError, OSError, zlib.error) as exc:
                 raise ImportManifestInvalidError(
                     f"'{source.name}' is not a readable snapshot package: {exc}",
                     extra={"path": str(source)},
@@ -1503,7 +1505,7 @@ class SdkBackend:
                 )
             try:
                 manifest = parse_manifest(manifest_file.read())
-            except (tarfile.TarError, EOFError, OSError) as exc:
+            except (tarfile.TarError, EOFError, OSError, zlib.error) as exc:
                 raise ImportManifestInvalidError(
                     f"'{MANIFEST_NAME}' inside '{source.name}' is corrupted: {exc}",
                     extra={"path": str(source)},
@@ -1529,7 +1531,7 @@ class SdkBackend:
         """
         try:
             yield from rows
-        except (tarfile.TarError, EOFError, OSError) as exc:
+        except (tarfile.TarError, EOFError, OSError, zlib.error) as exc:
             raise ImportManifestInvalidError(
                 f"'{source.name}' is corrupted and cannot be read to the end: {exc}",
                 extra={"path": str(source)},
@@ -1571,6 +1573,11 @@ class SdkBackend:
                 line_number, row = next(parser)
             except StopIteration:
                 break
+            except ImportManifestInvalidError:
+                # Request-level: mid-stream archive corruption (see
+                # _guarded_snapshot_rows) maps to a 400 response, never to a
+                # row-level failure that abort/skip would digest.
+                raise
             except ZvecStudioError as exc:
                 # Format-level row error (invalid JSON, wrong shape, ...).
                 raw_line = exc.extra.get("line", 0)

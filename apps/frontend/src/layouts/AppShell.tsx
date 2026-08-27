@@ -177,7 +177,7 @@ export function AppShell(): JSX.Element {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showCreateCollection, setShowCreateCollection] = useState(false);
   const [showOpenCollection, setShowOpenCollection] = useState(false);
-  const [showImportCollection, setShowRestoreSnapshot] = useState(false);
+  const [showImportCollection, setShowImportCollection] = useState(false);
   const [collectionMenuOpen, setCollectionMenuOpen] = useState(false);
   const [showCreateEmbedding, setShowCreateEmbedding] = useState(false);
   const [showCreateReranker, setShowCreateReranker] = useState(false);
@@ -376,7 +376,7 @@ export function AppShell(): JSX.Element {
                         role="menuitem"
                         onClick={() => {
                           setCollectionMenuOpen(false);
-                          setShowRestoreSnapshot(true);
+                          setShowImportCollection(true);
                         }}
                         data-testid="zv-collections-menu-import"
                       >
@@ -664,7 +664,7 @@ export function AppShell(): JSX.Element {
       />
       <ImportCollectionDialog
         open={showImportCollection}
-        onClose={() => setShowRestoreSnapshot(false)}
+        onClose={() => setShowImportCollection(false)}
       />
       <CreateEmbeddingDialog
         open={showCreateEmbedding}

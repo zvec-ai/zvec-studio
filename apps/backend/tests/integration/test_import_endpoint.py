@@ -222,6 +222,55 @@ class TestSourceErrors:
         assert resp.status_code == 400, resp.text
         assert resp.json()["code"] == "IMPORT_MANIFEST_INVALID"
 
+    async def test_deflate_corrupted_snapshot_is_400_not_500(
+        self, client: AsyncClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Deflate-level corruption raises raw ``zlib.error``, which tarfile
+        only partially wraps: bit-flip experiments show ~3 of 121 corrupted
+        offsets escape as raw ``zlib.error`` (raised by ``next()``'s
+        *advance* read, which sits outside the header-parse try). Poison the
+        decompressor from its 2nd read onward — the first read is inside the
+        wrapped region, the second hits the unwrapped advance read — to pin
+        that shape deterministically: it must map to 400, not 500.
+        """
+        import gzip as gzip_module
+        import io
+        import tarfile
+        import zlib
+
+        name = await _make_collection(client, tmp_path)
+        source = tmp_path / "valid-then-poisoned.tar.gz"
+        with tarfile.open(source, "w:gz") as tar:
+            payload = b'{"format": "zvec-studio.export/1"}\n'
+            info = tarfile.TarInfo("manifest.json")
+            info.size = len(payload)
+            tar.addfile(info, io.BytesIO(payload))
+            payload = b'{"id": "a"}\n'
+            info = tarfile.TarInfo("documents.jsonl")
+            info.size = len(payload)
+            tar.addfile(info, io.BytesIO(payload))
+
+        real_read = gzip_module.GzipFile.read
+        calls = {"n": 0}
+
+        def poisoned_read(gf, *args, **kwargs):
+            calls["n"] += 1
+            if calls["n"] >= 2:
+                raise zlib.error(
+                    "Error -3 while decompressing data: invalid distance too far back"
+                )
+            return real_read(gf, *args, **kwargs)
+
+        monkeypatch.setattr(gzip_module.GzipFile, "read", poisoned_read)
+        resp = await client.post(
+            f"{API}/collections/{name}/documents:import",
+            json={"source": {"kind": "localPath", "path": str(source)}},
+        )
+
+        assert calls["n"] >= 2, "poison must have triggered on an unwrapped read"
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["code"] == "IMPORT_MANIFEST_INVALID"
+
 
 class TestRequestValidation:
     async def test_batch_size_bounds(self, client: AsyncClient, tmp_path: Path) -> None:

@@ -60,7 +60,7 @@ describe('suggestImportTarget', () => {
   });
 });
 
-describe('RestoreSnapshotDialog', () => {
+describe('ImportCollectionDialog', () => {
   it('disables submit until snapshot and target are provided', () => {
     const state: FakeState = { calls: [], response: OK_RESPONSE };
     renderWithProviders(<ImportCollectionDialog open onClose={() => {}} />, {

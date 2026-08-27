@@ -131,10 +131,10 @@ standard import report semantics and are embedded in the `201` response
 | POST   | `/collections/{name}:optimize`           | Segment merge + index rebuild |
 | POST   | `/collections/{name}:destroy`            | **Permanently delete on-disk data** |
 
-While a streamed export holds the collection's snapshot iterator, maintenance
-verbs and DDL (`:flush`, `:optimize`, field/index operations) are rejected by
-Zvec; Studio answers `409 MAINTENANCE_BLOCKED` — retry after the export
-finishes.
+While a streamed export holds the collection's snapshot iterator, `:optimize`
+and DDL (field/index operations) are rejected by Zvec; Studio answers
+`409 MAINTENANCE_BLOCKED` — retry after the export finishes. `:flush` and all
+document writes remain available throughout (verified against zvec 0.7.0).
 
 ## Collections — DDL (Schema Evolution)
 

@@ -2,10 +2,10 @@
  * Import Collection dialog (snapshot import).
  *
  * Collection-level lifecycle operation (a sibling of Create/Open, reached
- * from the sidebar): restores a whole collection from a snapshot package
+ * from the sidebar): imports a whole collection from a snapshot package
  * (``.tar.gz``) — the embedded manifest supplies the schema, the target
  * directory gives the new collection its home, and the data loads in the
- * same pass (``POST /collections:restore``).
+ * same pass (``POST /collections:import``).
  */
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -25,7 +25,10 @@ export interface ImportCollectionDialogProps {
   readonly onClose: () => void;
 }
 
-export function ImportCollectionDialog({ open, onClose }: ImportCollectionDialogProps): JSX.Element {
+export function ImportCollectionDialog({
+  open,
+  onClose,
+}: ImportCollectionDialogProps): JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const toast = useToast();
@@ -130,7 +133,7 @@ export function ImportCollectionDialog({ open, onClose }: ImportCollectionDialog
             <Button
               variant="primary"
               type="submit"
-              form="zv-restore-snapshot-form"
+              form="zv-import-collection-form"
               loading={mutation.isPending}
               disabled={!snapshotPath.trim() || !targetPath.trim()}
               data-testid="zv-collection-import-submit"
@@ -142,7 +145,7 @@ export function ImportCollectionDialog({ open, onClose }: ImportCollectionDialog
           </>
         }
       >
-        <form id="zv-restore-snapshot-form" onSubmit={(e) => void submit(e)} noValidate>
+        <form id="zv-import-collection-form" onSubmit={(e) => void submit(e)} noValidate>
           <Input
             label={t('pages.collections.importCollection.fileLabel')}
             value={snapshotPath}

@@ -15,13 +15,12 @@ Naming / versioning rules:
 
 from __future__ import annotations
 
-import queue
 import tarfile
-import threading
+import zlib
 from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, BinaryIO, cast
+from typing import Any
 
 import orjson
 import zvec
@@ -134,7 +133,7 @@ def read_snapshot_manifest(path: Path) -> dict[str, Any]:
                     f"'{MANIFEST_NAME}' is not a readable file inside the snapshot."
                 )
             return parse_manifest(manifest_file.read())
-    except (tarfile.TarError, EOFError, OSError) as exc:
+    except (tarfile.TarError, EOFError, OSError, zlib.error) as exc:
         raise ImportManifestInvalidError(
             f"'{path.name}' is not a readable snapshot package: {exc}",
             extra={"path": str(path)},
@@ -241,85 +240,16 @@ def write_snapshot_package(
     return manifest_path, data_path
 
 
-class _QueueWriter:
-    """File-like adapter feeding a producer thread's bytes into a queue.
+def pack_snapshot(
+    *, manifest_path: Path, data_path: Path, out_path: Path
+) -> None:
+    """Gzip-tar the two staged files into *out_path* (plain sequential IO).
 
-    ``cancelled`` lets the consumer (an aborted HTTP download) wake a
-    producer that is blocked pushing into the bounded queue — without it the
-    thread would sit on ``q.put`` until process exit.
+    The data file is fully staged on disk already (its size must go into the
+    tar member header), so compression is a plain read-compress-write pass —
+    no threads, no queues, trivially testable. The endpoint streams
+    *out_path* and removes the whole staging directory afterwards.
     """
-
-    def __init__(self, q: queue.Queue[bytes | None], cancelled: threading.Event) -> None:
-        self._q = q
-        self._cancelled = cancelled
-
-    def write(self, data: bytes) -> int:
-        if data:
-            payload = bytes(data)
-            while True:
-                if self._cancelled.is_set():
-                    raise RuntimeError("snapshot export cancelled")
-                try:
-                    # A plain ``put`` could block forever on a full queue once the
-                    # consumer is gone; poll so cancellation wins promptly.
-                    self._q.put(payload, timeout=0.1)
-                    break
-                except queue.Full:
-                    continue
-        return len(data)
-
-    def close(self) -> None:  # tarfile calls close(); the queue owns lifetime
-        pass
-
-
-#: Worker thread name — tests use it to assert no producer leaks on abort.
-SNAPSHOT_WORKER_NAME = "zvec-studio-snapshot-export"
-
-
-def stream_snapshot_package(
-    *, manifest_path: Path, data_path: Path
-) -> Iterator[bytes]:
-    """Yield a gzip tar (manifest first, then documents) without buffering it.
-
-    ``tarfile`` writes synchronously, so compression runs on a worker thread
-    pushing chunks through a bounded queue; the generator consumes them,
-    keeping peak memory at a handful of chunks regardless of package size.
-    On early close (client disconnect) a cancellation event unblocks the
-    producer so the thread exits promptly instead of leaking.
-    """
-    q: queue.Queue[bytes | None] = queue.Queue(maxsize=32)
-    errors: list[BaseException] = []
-    cancelled = threading.Event()
-
-    def produce() -> None:
-        try:
-            writer = cast(BinaryIO, _QueueWriter(q, cancelled))
-            with tarfile.open(fileobj=writer, mode="w|gz") as tar:
-                tar.add(str(manifest_path), arcname=MANIFEST_NAME)
-                tar.add(str(data_path), arcname=DATA_FILE_NAME)
-        except BaseException as exc:  # re-raised in consumer
-            if not cancelled.is_set():
-                errors.append(exc)
-        finally:
-            # The sentinel is only needed by a live consumer; once cancelled,
-            # nobody drains the queue, so don't block on a full one.
-            while not cancelled.is_set():
-                try:
-                    q.put(None, timeout=0.1)
-                    break
-                except queue.Full:
-                    continue
-
-    worker = threading.Thread(target=produce, name=SNAPSHOT_WORKER_NAME, daemon=True)
-    worker.start()
-    try:
-        while True:
-            chunk = q.get()
-            if chunk is None:
-                break
-            yield chunk
-    finally:
-        cancelled.set()
-        worker.join(timeout=5)
-    if errors:
-        raise errors[0]
+    with tarfile.open(out_path, mode="w:gz") as tar:
+        tar.add(str(manifest_path), arcname=MANIFEST_NAME)
+        tar.add(str(data_path), arcname=DATA_FILE_NAME)
