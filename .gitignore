@@ -112,3 +112,10 @@ logs/
 tmp/
 .tmp/
 .cache/
+
+# --- Local design docs (not tracked) ---
+design/
+
+# --- Runtime demo collections & local tool workspace ---
+data/
+.qoder/
