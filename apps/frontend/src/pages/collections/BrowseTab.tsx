@@ -8,8 +8,6 @@ import type { CollectionSummary } from '@/features/collections/api';
 import type { DocumentBrowseRequest } from '@/features/documents/api';
 import { useDocumentsBrowse, useDocumentDetails } from '@/features/documents/hooks';
 import { FilterBuilder } from './FilterBuilder';
-import { ImportDocumentsDialog } from './ImportDocumentsDialog';
-import { ExportDocumentsDialog } from './ExportDocumentsDialog';
 import { primaryKeyFor } from './doc-repr';
 import { formatSparseVectorValue, isSparseVectorType } from './vector-utils';
 
@@ -53,8 +51,6 @@ export function BrowseTab({ collection }: BrowseTabProps): JSX.Element {
 
   const [mode, setMode] = useState<BrowseMode>('filter');
   const [idInput, setIdInput] = useState('');
-  const [importOpen, setImportOpen] = useState<boolean>(false);
-  const [exportOpen, setExportOpen] = useState<boolean>(false);
 
   // Filter-mode state
   const [submittedBody, setSubmittedBody] = useState<DocumentBrowseRequest>({
@@ -184,22 +180,6 @@ export function BrowseTab({ collection }: BrowseTabProps): JSX.Element {
             count: stats.documentCount.toLocaleString(),
           })}
         </span>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => setImportOpen(true)}
-          data-testid="zv-browse-import"
-        >
-          {t('pages.collections.detail.documentsPanel.import.openLabel')}
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => setExportOpen(true)}
-          data-testid="zv-browse-export"
-        >
-          {t('pages.collections.detail.documentsPanel.export.openLabel')}
-        </Button>
       </div>
 
       {/* Filter mode — FilterBuilder (always mounted to preserve state) */}
@@ -307,18 +287,6 @@ export function BrowseTab({ collection }: BrowseTabProps): JSX.Element {
           </div>
         )}
       </div>
-
-      <ImportDocumentsDialog
-        open={importOpen}
-        onClose={() => setImportOpen(false)}
-        collection={collection.name}
-      />
-      <ExportDocumentsDialog
-        open={exportOpen}
-        onClose={() => setExportOpen(false)}
-        collection={collection.name}
-        schema={schema}
-      />
     </div>
   );
 }

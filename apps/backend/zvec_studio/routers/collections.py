@@ -10,7 +10,10 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Query, Request, status
 
 from zvec_studio.config_store import ConfigStore
-from zvec_studio.exceptions import CollectionAlreadyExistsError
+from zvec_studio.exceptions import (
+    CollectionAlreadyExistsError,
+    InvalidDocumentError,
+)
 from zvec_studio.routers.documents import import_report_to_response
 from zvec_studio.schemas import (
     CollectionCreateRequest,
@@ -179,6 +182,21 @@ def import_collection(
             backend.destroy(record.name, path=str(target))
             shutil.rmtree(target, ignore_errors=True)
         raise
+    if report.aborted or report.failed:
+        # Collection import is all-or-nothing. Row failures surface through
+        # the report (201 + aborted), not through exceptions, so they must be
+        # checked here — otherwise a single malformed row would leave a
+        # half-populated collection behind a success response.
+        with contextlib.suppress(Exception):
+            backend.destroy(record.name, path=str(target))
+            shutil.rmtree(target, ignore_errors=True)
+        first = report.errors[0] if report.errors else None
+        where = f" at line {first.line}" if first else ""
+        raise InvalidDocumentError(
+            f"Snapshot import failed{where}: {first.message if first else 'rows failed to load'}. "
+            "Nothing was imported — fix the snapshot and retry.",
+            extra={"targetPath": str(target), "failed": report.failed},
+        )
 
     with contextlib.suppress(Exception):
         store.touch_recent(record.path, name=record.name)

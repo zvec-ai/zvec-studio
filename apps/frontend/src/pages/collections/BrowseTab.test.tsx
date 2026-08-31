@@ -234,24 +234,6 @@ describe('BrowseTab', () => {
     });
   });
 
-  it('exposes import/export entry points in the toolbar', async () => {
-    const state: FakeBrowseState = { docs: fakeDocs(1), calls: [] };
-    renderTab(state);
-
-    expect(screen.getByTestId('zv-browse-import')).toBeInTheDocument();
-    expect(screen.getByTestId('zv-browse-export')).toBeInTheDocument();
-  });
-
-  it('opens the import dialog from the toolbar button', async () => {
-    const user = userEvent.setup();
-    const state: FakeBrowseState = { docs: fakeDocs(1), calls: [] };
-    renderTab(state);
-
-    await user.click(screen.getByTestId('zv-browse-import'));
-    // ImportDocumentsDialog title (en locale)
-    expect(await screen.findByText('Import documents from file')).toBeInTheDocument();
-  });
-
   it('uses $id for the primary key when the schema declares an id column', async () => {
     const user = userEvent.setup();
     const state: FakeBrowseState = {

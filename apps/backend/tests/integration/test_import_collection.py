@@ -213,6 +213,50 @@ class TestImportCollection:
 
         assert resp.status_code == 422
 
+    async def test_bad_row_rolls_back_whole_collection(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        """Collection import is all-or-nothing: one malformed row must abort
+        the load AND roll back the freshly created collection — the report
+        channel alone (aborted=true, 201) would leave a half-populated
+        collection behind, contradicting the import contract.
+        """
+        snapshot = await _make_snapshot(client, tmp_path)
+        # Rebuild the package with one valid row followed by a bad one.
+        import io
+        import tarfile as tarfile_mod
+
+        raw = io.BytesIO()
+        with (
+            tarfile_mod.open(fileobj=raw, mode="w:gz") as tar,
+            tarfile_mod.open(snapshot, "r:gz") as src,
+        ):
+            for member in src:
+                if member.name == "documents.jsonl":
+                    payload = (
+                        b'{"id": "ok", "title": "t", "embedding": [0.0, 0.0, 0.0, 0.0]}\n'
+                        b"not json\n"
+                    )
+                    member.size = len(payload)
+                    tar.addfile(member, io.BytesIO(payload))
+                else:
+                    tar.addfile(member, src.extractfile(member))
+        broken = tmp_path / "broken-row.tar.gz"
+        broken.write_bytes(raw.getvalue())
+
+        target = tmp_path / "never-kept"
+        resp = await client.post(
+            f"{API}/collections:import",
+            json=_restore_body(broken, target, name="demo2"),
+        )
+
+        assert resp.status_code == 422, resp.text
+        assert resp.json()["code"] == "INVALID_DOCUMENT"
+        # Nothing is left behind: not the collection, not the directory.
+        names = {i["name"] for i in (await client.get(f"{API}/collections")).json()["items"]}
+        assert "demo2" not in names
+        assert not target.exists()
+
     async def test_vectorless_snapshot_rejected_before_anything_is_created(
         self, client: AsyncClient, tmp_path: Path
     ) -> None:

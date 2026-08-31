@@ -148,6 +148,52 @@ class TestSchemaCompatibility:
         manifest = self._manifest(source, output_fields=["title"])
         check_schema_compatible(manifest, _schema())
 
+    def test_pruned_required_field_rejected(self) -> None:
+        """``outputFields`` drops a non-nullable column: every data row will
+        lack a value the target schema requires, so the import can never
+        succeed — the pre-check must say so instead of letting the row
+        writes fail one by one."""
+        source = _schema(
+            fields=[
+                {"name": "title", "dataType": "STRING"},
+                {"name": "score", "dataType": "INT64"},  # nullable defaults to False
+            ]
+        )
+        manifest = self._manifest(source, output_fields=["title"])
+
+        with pytest.raises(ImportSchemaMismatchError) as exc:
+            check_schema_compatible(
+                manifest,
+                # Collection-level import builds the target from the manifest
+                # schema itself — required column included.
+                _schema(
+                    fields=[
+                        {"name": "title", "dataType": "STRING"},
+                        {"name": "score", "dataType": "INT64"},
+                    ]
+                ),
+            )
+        assert any("score" in m and "non-nullable" in m for m in exc.value.extra["mismatches"])
+
+    def test_pruned_nullable_field_allowed(self) -> None:
+        """A dropped column the target accepts rows without is fine."""
+        source = _schema(
+            fields=[
+                {"name": "title", "dataType": "STRING"},
+                {"name": "note", "dataType": "STRING", "nullable": True},
+            ]
+        )
+        manifest = self._manifest(source, output_fields=["title"])
+        check_schema_compatible(
+            manifest,
+            _schema(
+                fields=[
+                    {"name": "title", "dataType": "STRING"},
+                    {"name": "note", "dataType": "STRING", "nullable": True},
+                ]
+            ),
+        )
+
     def test_kept_field_is_still_checked_when_pruned(self) -> None:
         """outputFields pruning exempts only the dropped columns."""
         source = _schema(

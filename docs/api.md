@@ -111,9 +111,14 @@ Content-Type: application/json
 
 Request-level failures answer `4xx` before anything is created: `404
 IMPORT_FILE_NOT_FOUND` (missing file), `400 IMPORT_MANIFEST_INVALID`
-(corrupt/manifest-less package). Row failures during the load follow the
-standard import report semantics and are embedded in the `201` response
-(`{collection, report}`).
+(corrupt/manifest-less package), `409 IMPORT_SCHEMA_MISMATCH` (e.g. a
+snapshot exported without vectors cannot create a vector collection).
+
+Import is **all-or-nothing**: if any data row fails (aborted or failed > 0),
+the freshly created collection is destroyed and the directory removed, and
+the endpoint answers `422 INVALID_DOCUMENT` pointing at the first failing
+line — a snapshot that cannot be fully loaded never leaves a half-imported
+collection behind.
 
 ## Collections — Recent (workspace persistence)
 
@@ -264,18 +269,33 @@ GET /api/v1/collections/demo/documents:export?includeVector=true&outputFields=ti
 ```
 
 - `includeVector` (default `true`): include vector data in each row.
-- `outputFields`: comma-separated scalar fields; omit for all.
+- `includeFields` (default `true`): include scalar fields in each row.
+  `includeFields=false` keeps only the primary key and the vectors (a
+  snapshot exported this way cannot rebuild a collection — see the
+  snapshot pre-check under Import).
+- `outputFields`: comma-separated scalar fields; omit for all (ignored when
+  `includeFields=false`).
 - `format`: currently only `jsonl`; unknown values return
   `400 EXPORT_UNSUPPORTED_FORMAT`.
 - `mode`: `data` (default, a single JSONL file) or `snapshot` (a `.tar.gz`
   bundling `manifest.json` + `documents.jsonl`; the manifest carries the
   schema so the collection can be recreated elsewhere — see Import).
-- A document carrying NaN/±Inf cannot be serialized safely: the export fails
-  with `422 EXPORT_NON_FINITE_VALUE` (reported before any byte is sent when it
-  occurs in the first row).
-- While the export runs, schema maintenance (`create_index`, `optimize`, ...)
-  is rejected by Zvec; starting an export while maintenance runs returns
-  `409 EXPORT_BLOCKED`.
+  A snapshot is a *faithful-copy* artifact: it is only importable as a
+  collection when its data can fully populate the manifest schema, so the
+  export dialog pins snapshot exports to full data (trimming options are
+  data-mode only). The API keeps the trimming parameters for scripted use;
+  partial snapshots are rejected by the import pre-check (`409
+  IMPORT_SCHEMA_MISMATCH`) instead of rebuilding a silently degraded
+  collection. To migrate a reduced collection, drop the columns first
+  (numeric scalar columns only — the engine's `drop_column` rejects string
+  and vector columns) and export a full snapshot.
+- A document carrying NaN/±Inf cannot be serialized safely: when the value
+  is in the first chunk (before the response starts), the export answers
+  `422 EXPORT_NON_FINITE_VALUE`. A value further downstream cannot change an
+  already-started 200 — the transfer is aborted mid-download, so treat an
+  incomplete file as a failed export and retry.
+- While the export runs, schema maintenance (`optimize`, DDL) is rejected by
+  Zvec; starting an export while maintenance runs returns `409 EXPORT_BLOCKED`.
 
 Each row matches the document API representation (`id` + flattened fields and
 vectors; a schema with its own `id` column carries the primary key under
@@ -289,7 +309,12 @@ collection. The file is read row by row and written in batches; the response
 carries a per-row report. Row failures stay in the `200` body
 (partial-success semantics) — only request-level problems (missing file,
 unknown collection, unsupported format, invalid manifest, schema mismatch)
-surface as `4xx`.
+surface as `4xx`. `totalLines` counts every non-blank data line, so
+`imported + failed == totalLines` always holds. Under `onError=abort` the
+import stops at the first failing row and no row after it is kept: rows
+already submitted in the same batch are compensated away (insert-confirmed
+ids are deleted; upserted rows in `replace` mode cannot be undone and keep
+the batch-granular caveat documented on the dialog).
 
 UI note: the in-collection Import dialog accepts data files only
 (`.jsonl` / `.ndjson`). Snapshot packages are a collection-level concern and

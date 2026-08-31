@@ -213,7 +213,8 @@
           "stats": "Stats",
           "documents": "Documents",
           "search": "Search",
-          "viz": "Visualization"
+          "viz": "Visualization",
+          "data": "Import / Export"
         },
         "loadingCollection": "Loading collection…",
         "loadFailed": "Failed to load collection \"{{name}}\".",
@@ -228,7 +229,9 @@
           "path": "Path",
           "openFolder": "Open Folder",
           "optimize": "Optimize",
-          "optimizeDocs": "Optimize docs"
+          "optimizeDocs": "Optimize docs",
+          "dataIoTitle": "Data import / export",
+          "dataIoHint": "Import a JSONL file or export the whole collection (JSONL or snapshot)."
         },
         "schema": {
           "vectorsTitle": "Vector fields",
@@ -373,9 +376,9 @@
             "fileHelp": "A JSONL file — one JSON document per line. The file is read from this machine. To import a whole collection from a snapshot (.tar.gz), use Collections → Import Collection.",
             "browse": "Browse…",
             "pickerTitle": "Choose a JSONL file",
-            "modeLabel": "Write mode",
-            "modeReplace": "Replace (overwrite documents with the same id)",
-            "modeReplaceHelp": "The file's content becomes the whole document for that id — fields absent from the file are cleared. Importing the same file twice gives the same result.",
+            "modeLabel": "Import mode",
+            "modeReplace": "Upsert (insert new ids, overwrite existing ones)",
+            "modeReplaceHelp": "New ids are inserted; existing ids are replaced by the file's content as a whole document (fields absent from the file are cleared). Re-importing the same file gives the same result.",
             "modeInsert": "Insert only (fail rows whose id already exists)",
             "onErrorLabel": "On row error",
             "onErrorAbort": "Abort at the first failing row",
@@ -399,14 +402,18 @@
             "modeSnapshot": "Collection snapshot (.tar.gz)",
             "modeHelp": "A snapshot bundles the schema with the data so the collection can be recreated elsewhere.",
             "includeVector": "Include vector data",
-            "includeVectorHelp": "Vectors are the main source of file size; uncheck to export fields only.",
+            "includeVectorHelp": "Uncheck to omit vector data from the file — it shrinks a lot.",
             "fieldsLabel": "Field filter (optional)",
             "fieldsHelp": "Select specific scalar fields, or leave all unchecked to export every field.",
             "submit": "Start export",
             "cancel": "Cancel",
             "startedTitle": "Export started",
             "startedBody": "Your download has begun — check the browser's download area.",
-            "maintenanceHint": "Reads and writes stay available during the export; maintenance (index creation, optimize, …) is briefly rejected until it finishes."
+            "maintenanceHint": "Reads and writes stay available during the export; maintenance (index creation, optimize, …) is briefly rejected until it finishes.",
+            "includeFields": "Include scalar fields",
+            "includeFieldsHelp": "Checked: scalar fields are exported — optionally pick specific ones below (none picked = all). Unchecked: only the primary key and vectors are exported.",
+            "nothingSelectedWarning": "Neither vectors nor scalar fields are selected: the file will contain only primary keys.",
+            "snapshotFullDataHint": "To trim data, switch to Data file."
           }
         },
         "searchPanel": {
@@ -626,6 +633,10 @@
           "modeForm": "Form",
           "modeJson": "JSON",
           "idRequired": "Document ID"
+        },
+        "data": {
+          "importHint": "Load documents from a local JSONL file into this collection (existing ids are overwritten).",
+          "exportHint": "Export the whole collection as a JSONL file, or bundle it as a schema-carrying snapshot (.tar.gz)."
         }
       },
       "importCollection": {

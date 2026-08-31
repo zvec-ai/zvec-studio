@@ -18,6 +18,8 @@
   background: none;
   border-top: none;
   border-left: none;
+  /* Multi-character zh labels ("导入导出") must not wrap inside the tab bar. */
+  white-space: nowrap;
   border-right: none;
   font-family: var(--zv-font-family);
 }

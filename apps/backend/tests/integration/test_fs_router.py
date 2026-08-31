@@ -113,7 +113,9 @@ def _picker_sandbox(tmp_path: Path) -> Path:
     sandbox = tmp_path / "picker"
     sandbox.mkdir()
     (sandbox / "subdir").mkdir()
-    (sandbox / "data.jsonl").write_text('{"id": "a"}\n')
+    # Binary write: text mode would translate "\n" to "\r\n" on Windows and
+    # break the exact byte-size assertion below.
+    (sandbox / "data.jsonl").write_bytes(b'{"id": "a"}\n')
     (sandbox / "archive.tar.gz").write_bytes(b"\x1f\x8b\x08\x00")
     (sandbox / "notes.txt").write_text("hello")
     return sandbox

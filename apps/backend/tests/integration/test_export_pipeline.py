@@ -284,6 +284,22 @@ class TestExportEndpoint:
         row = json.loads(resp.text.strip())
         assert row == {"id": "doc-000", "title": "t0"}
 
+    async def test_include_fields_false_keeps_pk_and_vectors_only(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        """Scalars-only export direction: ``includeFields=false`` keeps the
+        primary key and the vectors, dropping every scalar column."""
+        await _seed(client, tmp_path, "demo", 1)
+
+        resp = await client.get(
+            f"{API}/collections/demo/documents:export",
+            params={"includeFields": "false"},
+        )
+
+        assert resp.status_code == 200, resp.text
+        row = json.loads(resp.text.strip())
+        assert row == {"id": "doc-000", "embedding": [0.0, 0.0, 0.0, 0.0]}
+
     async def test_empty_collection_yields_empty_body(
         self, client: AsyncClient, tmp_path: Path
     ) -> None:

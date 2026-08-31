@@ -49,4 +49,14 @@ describe('buildExportUrl', () => {
     const url = buildExportUrl(base, 'demo', { includeVector: true, mode: 'data' });
     expect(url).not.toContain('mode=');
   });
+
+  it('sets includeFields=false for vectors-only exports', () => {
+    const url = buildExportUrl(base, 'demo', { includeVector: true, includeFields: false });
+    expect(url).toContain('includeFields=false');
+  });
+
+  it('does not send includeFields when scalars are included (default)', () => {
+    const url = buildExportUrl(base, 'demo', { includeVector: true });
+    expect(url).not.toContain('includeFields=');
+  });
 });

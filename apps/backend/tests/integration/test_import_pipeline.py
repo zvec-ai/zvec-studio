@@ -8,6 +8,7 @@ shape defined in design doc §6.4.
 from __future__ import annotations
 
 import json
+import platform
 from pathlib import Path
 
 import pytest
@@ -148,9 +149,13 @@ class TestWriteModes:
 
     def test_insert_mode_rejects_duplicate_and_aborts(self, tmp_path: Path) -> None:
         backend = _make_backend_and_collection(tmp_path)
-        backend.insert_documents("import_target", [_row(0)])
+        backend.insert_documents("import_target", [_row(0), _row(1)])
 
-        source = _write_jsonl(tmp_path, [_row(0, title="dup"), _row(1)])
+        # Line 1 clashes; lines 2-3 are new. True prefix semantics: nothing
+        # after the first failing row may survive an aborted import.
+        source = _write_jsonl(
+            tmp_path, [_row(0, title="dup"), _row(2), _row(3), _row(4)]
+        )
         report = backend.import_documents(
             "import_target",
             source_path=str(source),
@@ -163,10 +168,10 @@ class TestWriteModes:
         assert report.failed == 1
         assert report.errors[0].line == 1
         assert report.errors[0].code == "DOCUMENT_CONFLICT"
-        # Abort granularity is the batch: both rows were already submitted to
-        # the SDK, whose per-doc statuses are independent — the valid row in
-        # the same batch lands. No further rows are read afterwards.
-        assert report.imported == 1
+        # Rows after the first failure were already persisted by the batch
+        # write; they are compensated away, so only the pre-existing rows
+        # remain and the count stays honest.
+        assert report.imported == 0
         assert backend.stats("import_target").documentCount == 2
 
     def test_insert_mode_skip_records_and_continues(self, tmp_path: Path) -> None:
@@ -248,7 +253,7 @@ class TestErrorPolicies:
             on_error=OnErrorMode.SKIP,
         )
 
-        assert (report.imported, report.failed) == (2, 1)
+        assert (report.imported, report.failed, report.total_lines) == (2, 1, 3)
         assert report.errors[0].line == 2
         assert report.errors[0].code == "INVALID_DOCUMENT"
 
@@ -288,6 +293,10 @@ class TestSourceValidation:
             )
         assert exc.value.status_code == 404
 
+    @pytest.mark.skipif(
+        platform.system() == "Windows",
+        reason="chmod(0o000) is not enforced on Windows (no POSIX permission bits)",
+    )
     def test_unreadable_file(self, tmp_path: Path) -> None:
         backend = _make_backend_and_collection(tmp_path)
         source = _write_jsonl(tmp_path, [_row(0)])

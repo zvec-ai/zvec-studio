@@ -256,6 +256,10 @@ def export_documents(
         bool,
         Query(description="Include vector data in each row (default true)."),
     ] = True,
+    includeFields: Annotated[
+        bool,
+        Query(description="Include scalar fields in each row (default true)."),
+    ] = True,
     outputFields: Annotated[
         str | None,
         Query(description="Comma-separated scalar fields to include; omit for all."),
@@ -303,10 +307,14 @@ def export_documents(
             manifest = build_manifest(
                 schema=record.schema,
                 include_vector=includeVector,
-                output_fields=fields,
+                # An empty list is meaningful: it prunes every scalar column.
+                output_fields=fields if includeFields else [],
             )
             rows = backend.iter_documents(
-                resolved, include_vector=includeVector, output_fields=fields
+                resolved,
+                include_vector=includeVector,
+                output_fields=fields,
+                include_fields=includeFields,
             )
             manifest_path, data_path = write_snapshot_package(
                 rows=rows, serialize=fmt.serialize, manifest=manifest, tmp_dir=tmp_dir
@@ -342,7 +350,10 @@ def export_documents(
         )
 
     rows = backend.iter_documents(
-        resolved, include_vector=includeVector, output_fields=fields
+        resolved,
+        include_vector=includeVector,
+        output_fields=fields,
+        include_fields=includeFields,
     )
     chunks = fmt.serialize(rows)
 

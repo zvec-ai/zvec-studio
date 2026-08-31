@@ -35,17 +35,31 @@ export function ExportDocumentsDialog({
   const apiClient = useApiClient();
 
   const [includeVector, setIncludeVector] = useState<boolean>(true);
+  const [includeFields, setIncludeFields] = useState<boolean>(true);
   const [mode, setMode] = useState<'data' | 'snapshot'>('data');
   const [selectedFields, setSelectedFields] = useState<ReadonlySet<string>>(new Set());
 
   useEffect(() => {
     if (!open) return;
     setIncludeVector(true);
+    setIncludeFields(true);
     setMode('data');
     setSelectedFields(new Set());
   }, [open]);
 
   const scalarFields = schema.fields ?? [];
+  const hasVectors = (schema.vectors ?? []).length > 0;
+  // Options that have nothing to offer are hidden entirely (never rendered
+  // disabled), so the visible help text always matches what can be done.
+  const hasFields = scalarFields.length > 0;
+  // Snapshot mode is all-or-nothing: its manifest must describe a collection
+  // the packaged data can fully rebuild, so trimming options are disabled
+  // there and apply to data exports only (the backend pre-check still
+  // rejects partial API-built snapshots as a safety net).
+  const full = mode === 'snapshot';
+  // Exporting neither is allowed in data mode (a bare id list is a valid, if
+  // niche, artifact) — the dialog just says what the file will contain.
+  const bothExcluded = !full && !includeVector && !includeFields;
 
   function toggleField(name: string): void {
     setSelectedFields((prev) => {
@@ -57,9 +71,13 @@ export function ExportDocumentsDialog({
   }
 
   function startExport(): void {
+    // Picked fields apply only to data exports that include scalars.
+    const outputFields =
+      !full && includeFields && selectedFields.size > 0 ? [...selectedFields] : undefined;
     const url = buildExportUrl(apiClient.baseUrl, collection, {
-      includeVector,
-      outputFields: selectedFields.size > 0 ? [...selectedFields] : undefined,
+      includeVector: full || includeVector,
+      includeFields: full || includeFields,
+      outputFields,
       mode,
     });
     const anchor = document.createElement('a');
@@ -93,6 +111,10 @@ export function ExportDocumentsDialog({
         </>
       }
     >
+      <p className="zv-import-dialog__hint">
+        {t('pages.collections.detail.documentsPanel.export.maintenanceHint')}
+      </p>
+
       <fieldset className="zv-import-dialog__fieldset" data-testid="zv-export-mode">
         <legend>{t('pages.collections.detail.documentsPanel.export.modeLabel')}</legend>
         <label>
@@ -117,24 +139,56 @@ export function ExportDocumentsDialog({
         <p className="zv-import-dialog__hint">
           {t('pages.collections.detail.documentsPanel.export.modeHelp')}
         </p>
+        {full && (
+          <p className="zv-import-dialog__hint" data-testid="zv-export-snapshot-full-hint">
+            {t('pages.collections.detail.documentsPanel.export.snapshotFullDataHint')}
+          </p>
+        )}
       </fieldset>
 
-      <div className="zv-import-dialog__fieldset">
-        <label>
-          <input
-            type="checkbox"
-            checked={includeVector}
-            onChange={(e) => setIncludeVector(e.target.checked)}
-            data-testid="zv-export-include-vector"
-          />
-          {t('pages.collections.detail.documentsPanel.export.includeVector')}
-        </label>
-        <p className="zv-import-dialog__hint">
-          {t('pages.collections.detail.documentsPanel.export.includeVectorHelp')}
-        </p>
-      </div>
+      {hasVectors && (
+        <div className="zv-import-dialog__fieldset">
+          <label>
+            <input
+              type="checkbox"
+              checked={full || includeVector}
+              disabled={full}
+              onChange={(e) => setIncludeVector(e.target.checked)}
+              data-testid="zv-export-include-vector"
+            />
+            {t('pages.collections.detail.documentsPanel.export.includeVector')}
+          </label>
+          <p className="zv-import-dialog__hint">
+            {t('pages.collections.detail.documentsPanel.export.includeVectorHelp')}
+          </p>
+        </div>
+      )}
 
-      {scalarFields.length > 0 && (
+      {hasFields && (
+        <div className="zv-import-dialog__fieldset">
+          <label>
+            <input
+              type="checkbox"
+              checked={full || includeFields}
+              disabled={full}
+              onChange={(e) => setIncludeFields(e.target.checked)}
+              data-testid="zv-export-include-fields"
+            />
+            {t('pages.collections.detail.documentsPanel.export.includeFields')}
+          </label>
+          <p className="zv-import-dialog__hint">
+            {t('pages.collections.detail.documentsPanel.export.includeFieldsHelp')}
+          </p>
+        </div>
+      )}
+
+      {bothExcluded && (
+        <p className="zv-import-dialog__hint" data-testid="zv-export-nothing-warning">
+          {t('pages.collections.detail.documentsPanel.export.nothingSelectedWarning')}
+        </p>
+      )}
+
+      {!full && includeFields && hasFields && (
         <fieldset className="zv-import-dialog__fieldset" data-testid="zv-export-fields">
           <legend>{t('pages.collections.detail.documentsPanel.export.fieldsLabel')}</legend>
           <p className="zv-import-dialog__hint">
@@ -152,10 +206,6 @@ export function ExportDocumentsDialog({
           ))}
         </fieldset>
       )}
-
-      <p className="zv-import-dialog__hint">
-        {t('pages.collections.detail.documentsPanel.export.maintenanceHint')}
-      </p>
     </Dialog>
   );
 }

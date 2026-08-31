@@ -5,10 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useApiClient } from '@/lib/api-client-context';
 import { createFsApi } from '@/lib/fs-api';
 import type { CollectionSummary } from '@/features/collections/api';
-import {
-  useDestroyCollection,
-  useOptimizeCollection,
-} from '@/features/collections/hooks';
+import { useDestroyCollection, useOptimizeCollection } from '@/features/collections/hooks';
 
 import { Button, Dialog } from '@/components/ui';
 import { useToast } from '@/components/ui/toast-context';
@@ -81,9 +78,10 @@ export function OverviewTab({ collection }: OverviewTabProps): JSX.Element {
     destroy.mutate(collection.name, {
       onSuccess: () => navigate('/collections'),
       onError: (err) => {
-        const title = err instanceof ApiError
-          ? t(err.error.messageKey, { defaultValue: err.error.message })
-          : t('errors.unknown');
+        const title =
+          err instanceof ApiError
+            ? t(err.error.messageKey, { defaultValue: err.error.message })
+            : t('errors.unknown');
         toast.push({ title, severity: 'error' });
       },
     });
@@ -95,7 +93,9 @@ export function OverviewTab({ collection }: OverviewTabProps): JSX.Element {
       <div className="zv-overview-stats">
         <div className="zv-stat-card">
           <div className="zv-stat-label">{t('pages.collections.detail.overview.documents')}</div>
-          <div className="zv-stat-value zv-stat-value--primary">{stats.documentCount.toLocaleString()}</div>
+          <div className="zv-stat-value zv-stat-value--primary">
+            {stats.documentCount.toLocaleString()}
+          </div>
         </div>
         <div className="zv-stat-card">
           <div className="zv-stat-label">{t('pages.collections.detail.overview.storage')}</div>
@@ -105,7 +105,9 @@ export function OverviewTab({ collection }: OverviewTabProps): JSX.Element {
           <div className="zv-stat-label">{t('pages.collections.detail.overview.fields')}</div>
           <div className="zv-stat-value">
             {vectors.length + fields.length}
-            <span className="zv-stat-sub">{vectors.length}v · {fields.length}s</span>
+            <span className="zv-stat-sub">
+              {vectors.length}v · {fields.length}s
+            </span>
           </div>
         </div>
         <div className="zv-stat-card">
@@ -120,28 +122,49 @@ export function OverviewTab({ collection }: OverviewTabProps): JSX.Element {
       {/* Quick schema glance */}
       <div className="zv-schema-glance">
         {vectors.map((v) => (
-          <span key={v.name} className="zv-tag zv-tag--blue">{v.name} <span className="zv-tag__dim">{vectorDimensionLabel(v)}</span></span>
+          <span key={v.name} className="zv-tag zv-tag--blue">
+            {v.name} <span className="zv-tag__dim">{vectorDimensionLabel(v)}</span>
+          </span>
         ))}
         {fields.map((f) => (
-          <span key={f.name} className="zv-tag zv-tag--green">{f.name}</span>
+          <span key={f.name} className="zv-tag zv-tag--green">
+            {f.name}
+          </span>
         ))}
       </div>
 
       {/* Schema DDL (vectors + fields tables with all dialogs) */}
-      <SchemaPanelDdl summary={collection} indexCompleteness={completenessEntries} completenessColor={completenessColor} />
+      <SchemaPanelDdl
+        summary={collection}
+        indexCompleteness={completenessEntries}
+        completenessColor={completenessColor}
+      />
 
       {/* Management bar */}
       <div className="zv-info-card zv-info-card--compact">
         <div className="zv-manage-inline">
-          <span className="zv-info-label">{t('pages.collections.detail.overview.collectionPath')}</span>
-          <span className="zv-info-value zv-mono" style={{ fontSize: 12 }}>{collection.path}</span>
+          <span className="zv-info-label">
+            {t('pages.collections.detail.overview.collectionPath')}
+          </span>
+          <span className="zv-info-value zv-mono" style={{ fontSize: 12 }}>
+            {collection.path}
+          </span>
           <button
             type="button"
             className="zv-manage-inline__icon-btn"
             onClick={handleReveal}
             title={t('pages.collections.detail.overview.openFolder')}
           >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M2 4.5V12a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 14 12V6.5A1.5 1.5 0 0 0 12.5 5H8L6.5 3H3.5A1.5 1.5 0 0 0 2 4.5z" />
               <path d="M9 9.5l2-2m0 0l-2-2m2 2H6" />
             </svg>
@@ -155,18 +178,40 @@ export function OverviewTab({ collection }: OverviewTabProps): JSX.Element {
               loading={optimize.isPending}
               onClick={() =>
                 optimize.mutate(collection.name, {
-                  onSuccess: () => toast.push({ severity: 'info', title: t('pages.collections.detail.maintenance.optimizeSuccess') }),
-                  onError: (err) => toast.push({ severity: 'error', title: err instanceof Error ? err.message : String(err) }),
+                  onSuccess: () =>
+                    toast.push({
+                      severity: 'info',
+                      title: t('pages.collections.detail.maintenance.optimizeSuccess'),
+                    }),
+                  onError: (err) =>
+                    toast.push({
+                      severity: 'error',
+                      title: err instanceof Error ? err.message : String(err),
+                    }),
                 })
               }
             >
               {t('pages.collections.detail.overview.optimize')}
             </Button>
             <span className="zv-manage-inline__hint">
-              {t('pages.collections.detail.maintenance.optimizeHint')}
-              {' '}
-              <a href="https://zvec.org/docs/api/optimize" target="_blank" rel="noopener noreferrer" title={t('pages.collections.detail.overview.optimizeDocs')}>
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: '-1px' }}>
+              {t('pages.collections.detail.maintenance.optimizeHint')}{' '}
+              <a
+                href="https://zvec.org/docs/api/optimize"
+                target="_blank"
+                rel="noopener noreferrer"
+                title={t('pages.collections.detail.overview.optimizeDocs')}
+              >
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{ verticalAlign: '-1px' }}
+                >
                   <path d="M6 3H3.5A1.5 1.5 0 0 0 2 4.5v8A1.5 1.5 0 0 0 3.5 14h8a1.5 1.5 0 0 0 1.5-1.5V10" />
                   <path d="M9 2h5v5" />
                   <path d="M14 2L7 9" />
@@ -179,7 +224,10 @@ export function OverviewTab({ collection }: OverviewTabProps): JSX.Element {
             <Button
               variant="danger"
               size="sm"
-              onClick={() => { setDestroyConfirm(''); setDestroyOpen(true); }}
+              onClick={() => {
+                setDestroyConfirm('');
+                setDestroyOpen(true);
+              }}
             >
               {t('pages.collections.detail.maintenance.destroy')}
             </Button>
@@ -200,7 +248,9 @@ export function OverviewTab({ collection }: OverviewTabProps): JSX.Element {
         <input
           className="zv-form-input"
           style={{ width: '100%', marginBottom: 16 }}
-          placeholder={t('pages.collections.detail.maintenance.destroyAcknowledgePlaceholder', { name: collection.name })}
+          placeholder={t('pages.collections.detail.maintenance.destroyAcknowledgePlaceholder', {
+            name: collection.name,
+          })}
           value={destroyConfirm}
           onChange={(e) => setDestroyConfirm(e.target.value)}
         />

@@ -1580,6 +1580,9 @@ class SdkBackend:
                 raise
             except ZvecStudioError as exc:
                 # Format-level row error (invalid JSON, wrong shape, ...).
+                # Malformed lines count toward total_lines too, so the
+                # invariant imported + failed == total_lines always holds.
+                report.total_lines += 1
                 raw_line = exc.extra.get("line", 0)
                 report.add_failure(
                     ImportFailure(
@@ -1660,23 +1663,44 @@ class SdkBackend:
             )
 
         failed_in_batch = False
-        first_failure_recorded = False
+        first_failure_idx: int | None = None
         for i, s in enumerate(statuses):
             if _status_ok(s):
                 report.imported += 1
                 continue
             failed_in_batch = True
+            if first_failure_idx is None:
+                first_failure_idx = i
             # ``abort`` reports only the first failing row (the import stops);
             # ``skip`` records all of them.
-            if on_error is OnErrorMode.SKIP or not first_failure_recorded:
+            if on_error is OnErrorMode.SKIP or first_failure_idx == i:
                 msg = _status_msg(s)
                 report.add_failure(
                     ImportFailure(
                         line=lines[i], code=_classify_status_code(msg), message=msg
                     )
                 )
-                first_failure_recorded = True
-        return not (failed_in_batch and on_error is OnErrorMode.ABORT)
+        if failed_in_batch and on_error is OnErrorMode.ABORT:
+            if mode is ImportMode.INSERT and first_failure_idx is not None:
+                # True prefix semantics: rows submitted *after* the first
+                # failing one were already persisted by the batch write.
+                # An insert-confirmed id is guaranteed to be fresh (a clash
+                # would have failed), so deleting them cannot touch
+                # pre-existing data. REPLACE mode is excluded — an upserted
+                # row may have overwritten an existing document, and
+                # deleting it would destroy the original instead of
+                # restoring it.
+                stale = [
+                    sdk_docs[j].id
+                    for j in range(first_failure_idx + 1, len(statuses))
+                    if _status_ok(statuses[j])
+                ]
+                if stale:
+                    with contextlib.suppress(Exception):
+                        record.sdk_obj.delete(stale)
+                    report.imported -= len(stale)
+            return False
+        return True
 
     def _import_write_one_by_one(
         self,
@@ -1725,6 +1749,7 @@ class SdkBackend:
         *,
         include_vector: bool,
         output_fields: list[str] | None = None,
+        include_fields: bool = True,
         path: str | None = None,
     ) -> Iterator[dict[str, Any]]:
         """Stream every document as a wire row (design doc §6.3).
@@ -1733,13 +1758,27 @@ class SdkBackend:
         the iterator — which blocks maintenance operations while open — is
         released on EVERY exit path: normal exhaustion, early ``close()``
         (client disconnect), and exceptions mid-stream.
+
+        ``include_fields=False`` keeps only the primary key and the vectors
+        (the reverse of ``include_vector=False``).
         """
         record = self.get(name, path=path)
         with record.sdk_obj.iter_docs(
             output_fields=output_fields, include_vector=include_vector
         ) as iterator:
-            for doc in iterator:
-                yield doc_to_row(doc, schema=record.schema, include_vector=include_vector)
+            if include_fields:
+                for doc in iterator:
+                    yield doc_to_row(
+                        doc, schema=record.schema, include_vector=include_vector
+                    )
+            else:
+                vectors = {v.name for v in record.schema.vectors}
+                pk = pk_key(record.schema)
+                for doc in iterator:
+                    row = doc_to_row(
+                        doc, schema=record.schema, include_vector=include_vector
+                    )
+                    yield {k: v for k, v in row.items() if k == pk or k in vectors}
 
     def get_document(self, name: str, doc_id: str) -> dict[str, Any]:
         record = self.get(name)

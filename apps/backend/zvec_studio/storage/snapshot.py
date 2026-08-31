@@ -180,13 +180,25 @@ def check_schema_compatible(manifest: dict[str, Any], target: CollectionSchema) 
     # ``outputFields`` prunes columns out of the data rows; only the kept
     # columns need to line up with the target schema.
     raw_output_fields = options.get("outputFields")
-    pruned: set[str] | None = None
-    if isinstance(raw_output_fields, list) and raw_output_fields:
+    pruned: set[str] | None = None  # None = not recorded: check every field
+    if isinstance(raw_output_fields, list):
+        # An empty list is meaningful: it says every scalar column was
+        # pruned from the data, so all of them are exempt.
         pruned = {str(name) for name in raw_output_fields}
 
     target_fields = {f.name: f for f in target.fields}
     for f in source.fields:
         if pruned is not None and f.name not in pruned:
+            # The data does not carry this column. That is fine only when the
+            # target accepts rows without it: a required (non-nullable) column
+            # makes every write fail, which the pre-check must surface instead
+            # of letting the row writes fail one by one.
+            tf = target_fields.get(f.name)
+            if tf is not None and not tf.nullable:
+                mismatches.append(
+                    f"Field '{f.name}' is pruned from the snapshot data but is "
+                    f"required (non-nullable) on the target collection."
+                )
             continue
         tf = target_fields.get(f.name)
         if tf is None:

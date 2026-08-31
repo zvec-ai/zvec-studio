@@ -213,7 +213,8 @@
           "stats": "统计",
           "documents": "文档",
           "search": "搜索",
-          "viz": "可视化"
+          "viz": "可视化",
+          "data": "导入导出"
         },
         "loadingCollection": "正在加载集合…",
         "loadFailed": "无法加载集合「{{name}}」。",
@@ -373,9 +374,9 @@
             "fileHelp": "JSONL 文件（每行一个 JSON 文档）。文件将从本机读取。若要从快照（.tar.gz）导入整个集合，请使用侧边栏「导入集合」。",
             "browse": "浏览…",
             "pickerTitle": "选择 JSONL 文件",
-            "modeLabel": "写入模式",
-            "modeReplace": "覆盖（同 id 的文档整条覆盖）",
-            "modeReplaceHelp": "文件内容将成为该 id 的完整文档 — 文件中未出现的字段会被清空。重复导入同一文件结果一致。",
+            "modeLabel": "导入模式",
+            "modeReplace": "更新（新 id 将被插入；已存在的 id 整条覆盖）",
+            "modeReplaceHelp": "文件中不存在于集合的 id 将被插入；已存在的 id 用文件内容整条覆盖（文件中未出现的字段会被清空）。重复导入同一文件结果一致。",
             "modeInsert": "仅新增（id 已存在的行将失败）",
             "onErrorLabel": "遇到行错误时",
             "onErrorAbort": "在第一个失败行中止",
@@ -399,14 +400,18 @@
             "modeSnapshot": "集合快照（.tar.gz）",
             "modeHelp": "快照将 schema 与数据一起打包，便于在别处重建集合。",
             "includeVector": "包含向量数据",
-            "includeVectorHelp": "向量是文件体积的主要来源；取消勾选则仅导出字段。",
+            "includeVectorHelp": "取消后文件不包含向量数据，体积显著变小。",
             "fieldsLabel": "字段筛选（可选）",
             "fieldsHelp": "勾选特定标量字段，或全部不勾以导出所有字段。",
             "submit": "开始导出",
             "cancel": "取消",
             "startedTitle": "导出已开始",
             "startedBody": "下载已开始 — 请查看浏览器的下载区域。",
-            "maintenanceHint": "导出期间读写仍可用；建索引、优化等维护操作会在导出完成前被暂时拒绝。"
+            "maintenanceHint": "导出期间读写仍可用；建索引、优化等维护操作会在导出完成前被暂时拒绝。",
+            "includeFields": "包含标量字段",
+            "includeFieldsHelp": "导出标量字段，勾选后可在下方选择具体字段（不选则全部导出）；取消勾选则仅导出主键与向量。",
+            "nothingSelectedWarning": "向量与标量字段均未勾选：文件将只包含主键。",
+            "snapshotFullDataHint": "如需裁剪数据，请改用数据文件。"
           }
         },
         "searchPanel": {
@@ -626,6 +631,10 @@
           "modeForm": "表单",
           "modeJson": "JSON",
           "idRequired": "文档 ID"
+        },
+        "data": {
+          "importHint": "从本机 JSONL 文件把文档灌入该集合（可整条覆盖已存在的 id）。",
+          "exportHint": "把整个集合导出为 JSONL 文件，或打包为含 schema 的快照（.tar.gz）。"
         }
       },
       "importCollection": {

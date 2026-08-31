@@ -122,6 +122,8 @@ export function createDocumentsApi(client: ApiClient): DocumentsApi {
 
 export interface ExportOptions {
   readonly includeVector: boolean;
+  /** ``false`` keeps only the primary key and the vectors (default true). */
+  readonly includeFields?: boolean;
   readonly outputFields?: ReadonlyArray<string>;
   readonly format?: string;
   /** ``data`` (single JSONL file, default) or ``snapshot`` (tar.gz bundle). */
@@ -142,6 +144,9 @@ export function buildExportUrl(
 ): string {
   const params = new URLSearchParams();
   params.set('includeVector', String(options.includeVector));
+  if (options.includeFields === false) {
+    params.set('includeFields', 'false');
+  }
   if (options.outputFields && options.outputFields.length > 0) {
     params.set('outputFields', options.outputFields.join(','));
   }
