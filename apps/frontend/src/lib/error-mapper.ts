@@ -62,6 +62,8 @@ const KNOWN_CODES = new Set<string>([
   'EXPORT_NON_FINITE_VALUE',
   'MAINTENANCE_BLOCKED',
   'UNSUPPORTED_VECTOR_DATA_TYPE',
+  'IMPORT_UNSUPPORTED_FORMAT',
+  'EXPORT_UNSUPPORTED_FORMAT',
 ]);
 
 function severityFor(status: number): ErrorSeverity {

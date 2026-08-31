@@ -31,12 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `GET /fs/list` gained `includeFiles` / `extensions` parameters and
   `kind`/`size` entry fields for the import file picker.
 - New error codes: `DOCUMENT_CONFLICT` (409), `INVALID_DOCUMENT` (422),
+  `EXPORT_BLOCKED` (409), `EXPORT_NON_FINITE_VALUE` (422),
   `MAINTENANCE_BLOCKED` (409), `UNSUPPORTED_VECTOR_DATA_TYPE` (422),
   `IMPORT_*` request-level codes.
 
 **Frontend**
-- Import / Export dialogs on the collection Browse tab (file picker, write
-  mode, error policy, native streamed download) with full zh-CN coverage.
+- Import / Export dialogs on a dedicated collection Data tab (sibling of
+  Overview/Browse/Query/Write; file picker, import mode, error policy,
+  native streamed download) with full zh-CN coverage.
 - "Import Collection…" entry in the sidebar "+" menu (alongside Create
   Collection): rebuilds a whole collection from a snapshot package, with
   auto-prefilled target directory (sibling of the snapshot file) and

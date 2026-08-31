@@ -145,7 +145,11 @@ export function ImportDocumentsDialog({
                   })}`
                 : ''}
               {report.aborted
-                ? ` · ${t('pages.collections.detail.documentsPanel.import.aborted')}`
+                ? ` · ${t(
+                    mode === 'replace'
+                      ? 'pages.collections.detail.documentsPanel.import.abortedReplace'
+                      : 'pages.collections.detail.documentsPanel.import.abortedInsert',
+                  )}`
                 : ''}
             </p>
             {report.errors.length > 0 && (

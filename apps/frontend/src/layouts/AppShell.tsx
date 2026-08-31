@@ -120,6 +120,8 @@ function DemoTabs(): JSX.Element {
         <button className="zv-detail-tab">{t('pages.collections.detail.tabs.browse')}</button>
         <button className="zv-detail-tab">{t('pages.collections.detail.tabs.query')}</button>
         <button className="zv-detail-tab">{t('pages.collections.detail.tabs.write')}</button>
+        {/* keep the tour demo in sync with the real 5-tab detail page */}
+        <button className="zv-detail-tab">{t('pages.collections.detail.tabs.data')}</button>
       </div>
     </div>
   );

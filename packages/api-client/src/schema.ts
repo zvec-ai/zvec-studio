@@ -3032,6 +3032,8 @@ export interface operations {
                 path?: string | null;
                 /** @description Include vector data in each row (default true). */
                 includeVector?: boolean;
+                /** @description Include scalar fields in each row (default true). */
+                includeFields?: boolean;
                 /** @description Comma-separated scalar fields to include; omit for all. */
                 outputFields?: string | null;
                 /** @description Export format name. Supported: jsonl. */

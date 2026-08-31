@@ -376,7 +376,7 @@
             "pickerTitle": "选择 JSONL 文件",
             "modeLabel": "导入模式",
             "modeReplace": "更新（新 id 将被插入；已存在的 id 整条覆盖）",
-            "modeReplaceHelp": "文件中不存在于集合的 id 将被插入；已存在的 id 用文件内容整条覆盖（文件中未出现的字段会被清空）。重复导入同一文件结果一致。",
+            "modeReplaceHelp": "新 id 将被插入；已存在的 id 整条覆盖（文件中未出现的字段会被清空）。重复导入同一文件结果一致。",
             "modeInsert": "仅新增（id 已存在的行将失败）",
             "onErrorLabel": "遇到行错误时",
             "onErrorAbort": "在第一个失败行中止",
@@ -388,9 +388,10 @@
             "resultTitle": "已导入 {{imported}} 条，失败 {{failed}} 条",
             "reportSummary": "共 {{total}} 行，已导入 {{imported}} 条，失败 {{failed}} 条。",
             "duration": "耗时 {{seconds}} 秒",
-            "aborted": "导入在第一个错误处停止（此前已写入的行保留）。",
             "errorsCaption": "失败的行：",
-            "errorsTruncated": "（仅显示前 100 条）"
+            "errorsTruncated": "（仅显示前 100 条）",
+            "abortedInsert": "导入在第一个错误处停止。失败行之前的文档已导入。",
+            "abortedReplace": "导入在第一个错误处停止。失败行之前的文档已导入；更新模式下，紧随失败行的部分文档可能也已写入。"
           },
           "export": {
             "openLabel": "导出",
@@ -866,7 +867,9 @@
       "EXPORT_BLOCKED": "当前无法开始导出。请等待其他导出结束后重试。",
       "EXPORT_NON_FINITE_VALUE": "文档中包含 NaN/Infinity，无法导出为 JSON。",
       "MAINTENANCE_BLOCKED": "导出进行中，操作被暂时拒绝。请等待导出完成后重试。",
-      "UNSUPPORTED_VECTOR_DATA_TYPE": "该集合使用的向量数据类型在当前 Studio 版本中不受支持。"
+      "UNSUPPORTED_VECTOR_DATA_TYPE": "该集合使用的向量数据类型在当前 Studio 版本中不受支持。",
+      "IMPORT_UNSUPPORTED_FORMAT": "不支持的导入格式，当前支持：jsonl。",
+      "EXPORT_UNSUPPORTED_FORMAT": "不支持的导出格式，当前支持：jsonl。"
     }
   },
   "status": {

@@ -174,7 +174,8 @@ IMPORT_FORMATS: dict[str, ImportFormat] = {
     "jsonl": JsonlFormat(),
 }
 
-#: Export formats keyed by canonical name (see ``storage/export.py``).
+#: Export formats keyed by canonical name (consumed by
+#: ``routers/documents.py::export_documents``).
 EXPORT_FORMATS: dict[str, ExportFormat] = {
     "jsonl": JsonlFormat(),
 }

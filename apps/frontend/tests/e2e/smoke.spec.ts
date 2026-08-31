@@ -312,7 +312,7 @@ test.describe('App shell & navigation', () => {
     await page.locator('.zv-sidebar__item', { hasText: 'nav_test' }).click();
 
     // Should navigate to the detail page and show tabs.
-    await expect(page.locator('.zv-detail-tab')).toHaveCount(4);
+    await expect(page.locator('.zv-detail-tab')).toHaveCount(5);
     await expect(page.locator('.zv-detail-tab--active')).toContainText(/overview/i);
   });
 
@@ -320,7 +320,7 @@ test.describe('App shell & navigation', () => {
     await mountFakeBackend(page, [{ name: 'direct_nav', path: '/tmp/direct_nav' }]);
     await page.goto('/collections/direct_nav?path=%2Ftmp%2Fdirect_nav');
 
-    await expect(page.locator('.zv-detail-tab')).toHaveCount(4);
+    await expect(page.locator('.zv-detail-tab')).toHaveCount(5);
   });
 });
 

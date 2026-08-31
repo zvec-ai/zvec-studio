@@ -229,9 +229,7 @@
           "path": "Path",
           "openFolder": "Open Folder",
           "optimize": "Optimize",
-          "optimizeDocs": "Optimize docs",
-          "dataIoTitle": "Data import / export",
-          "dataIoHint": "Import a JSONL file or export the whole collection (JSONL or snapshot)."
+          "optimizeDocs": "Optimize docs"
         },
         "schema": {
           "vectorsTitle": "Vector fields",
@@ -390,9 +388,10 @@
             "resultTitle": "Imported {{imported}}, failed {{failed}}",
             "reportSummary": "{{imported}} of {{total}} row(s) imported; {{failed}} failed.",
             "duration": "took {{seconds}}s",
-            "aborted": "Import stopped at the first error (rows written before it are kept).",
             "errorsCaption": "Failing rows:",
-            "errorsTruncated": "(showing the first 100)"
+            "errorsTruncated": "(showing the first 100)",
+            "abortedInsert": "Import stopped at the first error. Documents before the failing row were imported.",
+            "abortedReplace": "Import stopped at the first error. Documents before the failing row were imported; in replace mode, some documents right after it may also have been written."
           },
           "export": {
             "openLabel": "Export",
@@ -868,7 +867,9 @@
       "EXPORT_BLOCKED": "Export cannot start right now. Close other exports and retry.",
       "EXPORT_NON_FINITE_VALUE": "A document contains NaN/Infinity and cannot be exported to JSON.",
       "MAINTENANCE_BLOCKED": "Blocked while an export is running. Retry after the export finishes.",
-      "UNSUPPORTED_VECTOR_DATA_TYPE": "This collection uses a vector data type this Studio version does not support."
+      "UNSUPPORTED_VECTOR_DATA_TYPE": "This collection uses a vector data type this Studio version does not support.",
+      "IMPORT_UNSUPPORTED_FORMAT": "Unsupported import format. Supported: jsonl.",
+      "EXPORT_UNSUPPORTED_FORMAT": "Unsupported export format. Supported: jsonl."
     }
   },
   "status": {

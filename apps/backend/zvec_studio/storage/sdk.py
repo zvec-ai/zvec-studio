@@ -1580,8 +1580,11 @@ class SdkBackend:
                 raise
             except ZvecStudioError as exc:
                 # Format-level row error (invalid JSON, wrong shape, ...).
-                # Malformed lines count toward total_lines too, so the
-                # invariant imported + failed == total_lines always holds.
+                # Malformed lines count toward total_lines too. In skip mode
+                # the invariant imported + failed == total_lines holds; under
+                # abort, same-batch rows after the first failure are
+                # compensated (deleted) and counted in neither bucket, so
+                # imported + failed may be less than total_lines.
                 report.total_lines += 1
                 raw_line = exc.extra.get("line", 0)
                 report.add_failure(

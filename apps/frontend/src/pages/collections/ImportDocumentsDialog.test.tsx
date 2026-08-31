@@ -105,6 +105,47 @@ describe('ImportDocumentsDialog', () => {
     expect(screen.getByTestId('zv-import-done')).toBeInTheDocument();
   });
 
+  it('states abort consequences per write mode', async () => {
+    // replace: same-batch rows right after the failure may persist — the
+    // report must say so; insert: clean prefix, no caveat.
+    const user = userEvent.setup();
+    const abortedReport = { ...PARTIAL_REPORT, aborted: true };
+    const replaceState: FakeState = { calls: [], response: abortedReport };
+    renderWithProviders(<ImportDocumentsDialog open onClose={() => {}} collection="demo" />, {
+      apiClient: makeClient(replaceState),
+    });
+
+    await user.type(screen.getByTestId('zv-import-path'), '/data/demo.jsonl');
+    await user.click(screen.getByTestId('zv-import-submit'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('zv-import-report').textContent).toContain(
+        'some documents right after it may also have been written',
+      );
+    });
+  });
+
+  it('states the clean prefix result for insert-mode aborts', async () => {
+    const user = userEvent.setup();
+    const abortedReport = { ...PARTIAL_REPORT, aborted: true };
+    const state: FakeState = { calls: [], response: abortedReport };
+    renderWithProviders(<ImportDocumentsDialog open onClose={() => {}} collection="demo" />, {
+      apiClient: makeClient(state),
+    });
+
+    await user.type(screen.getByTestId('zv-import-path'), '/data/demo.jsonl');
+    await user.click(
+      screen.getByRole('radio', { name: 'Insert only (fail rows whose id already exists)' }),
+    );
+    await user.click(screen.getByTestId('zv-import-submit'));
+
+    await waitFor(() => {
+      const text = screen.getByTestId('zv-import-report').textContent;
+      expect(text).toContain('Documents before the failing row were imported');
+      expect(text).not.toContain('may also have been written');
+    });
+  });
+
   it('sends insert mode and skip policy when selected', async () => {
     const user = userEvent.setup();
     const state: FakeState = { calls: [], response: OK_REPORT };
