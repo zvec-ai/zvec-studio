@@ -51,6 +51,19 @@ const KNOWN_CODES = new Set<string>([
   'AI_FUNCTION_INVOCATION_FAILED',
   'VALIDATION_ERROR',
   'INTERNAL_ERROR',
+  // Import / export (see zvec_studio/exceptions.py — keep in sync).
+  'DOCUMENT_CONFLICT',
+  'INVALID_DOCUMENT',
+  'IMPORT_FILE_NOT_FOUND',
+  'IMPORT_FILE_NOT_READABLE',
+  'IMPORT_MANIFEST_INVALID',
+  'IMPORT_SCHEMA_MISMATCH',
+  'EXPORT_BLOCKED',
+  'EXPORT_NON_FINITE_VALUE',
+  'MAINTENANCE_BLOCKED',
+  'UNSUPPORTED_VECTOR_DATA_TYPE',
+  'IMPORT_UNSUPPORTED_FORMAT',
+  'EXPORT_UNSUPPORTED_FORMAT',
 ]);
 
 function severityFor(status: number): ErrorSeverity {
@@ -108,7 +121,10 @@ export async function mapUnknownError(value: unknown): Promise<UserFacingError> 
       const body = (await value.clone().json()) as ProblemDetails;
       return mapProblem({ ...body, traceId: body.traceId ?? traceId ?? undefined }, value.status);
     } catch {
-      const text = await value.clone().text().catch(() => '');
+      const text = await value
+        .clone()
+        .text()
+        .catch(() => '');
       return fallback(value.status, text || value.statusText || 'Request failed', traceId);
     }
   }

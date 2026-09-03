@@ -25,6 +25,8 @@ import {
   type DocumentBrowseResponse,
   type DocumentDeleteByFilterRequest,
   type DocumentDeleteByFilterResponse,
+  type DocumentImportRequest,
+  type DocumentImportResponse,
   type DocumentInsertRequest,
   type DocumentInsertResponse,
   type DocumentRecord,
@@ -202,6 +204,23 @@ export function useDeleteDocumentsByFilter(
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (body) => api.deleteByFilter(collection, body),
+    onSuccess: () => invalidateAfterWrite(queryClient, collection),
+  });
+}
+
+/**
+ * Bulk import from a local JSONL file. The response carries a per-row report
+ * (imported / failed / errors); the HTTP status stays 200 for partial
+ * success, so callers inspect ``data`` rather than treating it as failure.
+ */
+export function useImportDocuments(
+  collection: string,
+): UseMutationResult<DocumentImportResponse, unknown, DocumentImportRequest> {
+  const client = useApiClient();
+  const api = createDocumentsApi(client);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => api.importDocuments(collection, body),
     onSuccess: () => invalidateAfterWrite(queryClient, collection),
   });
 }

@@ -20,6 +20,8 @@ import {
   type CollectionCreateRequest,
   type CollectionListResponse,
   type CollectionOpenRequest,
+  type CollectionImportRequest,
+  type CollectionImportResponse,
   type CollectionSummary,
   type FieldAddRequest,
   type FieldRenameRequest,
@@ -35,7 +37,9 @@ export const collectionsQueryKey = ['collections', 'list'] as const;
 
 /** Query key factory for a single Collection detail. */
 export const collectionDetailQueryKey = (name: string, path?: string) =>
-  path ? (['collections', 'detail', name, path] as const) : (['collections', 'detail', name] as const);
+  path
+    ? (['collections', 'detail', name, path] as const)
+    : (['collections', 'detail', name] as const);
 
 /** Canonical query key for the recently-opened collections list. */
 export const recentCollectionsQueryKey = ['collections', 'recent', 'list'] as const;
@@ -96,6 +100,28 @@ export function useOpenCollection(): UseMutationResult<
   });
 }
 
+/**
+ * Import a collection from a snapshot package — a collection-level
+ * lifecycle operation (create the collection from the manifest schema and
+ * load its data in one pass), not a variant of document import.
+ */
+export function useImportCollection(): UseMutationResult<
+  CollectionImportResponse,
+  unknown,
+  CollectionImportRequest
+> {
+  const client = useApiClient();
+  const api = createCollectionsApi(client);
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CollectionImportRequest) => api.importCollection(body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: collectionsQueryKey });
+      void qc.invalidateQueries({ queryKey: recentCollectionsQueryKey });
+    },
+  });
+}
+
 export interface CloseCollectionVariables {
   readonly name: string;
   readonly path?: string;
@@ -125,11 +151,7 @@ function invalidateCollection(
   ]);
 }
 
-export function useFlushCollection(): UseMutationResult<
-  MaintenanceResponse,
-  unknown,
-  string
-> {
+export function useFlushCollection(): UseMutationResult<MaintenanceResponse, unknown, string> {
   const client = useApiClient();
   const api = createCollectionsApi(client);
   const qc = useQueryClient();
@@ -139,11 +161,7 @@ export function useFlushCollection(): UseMutationResult<
   });
 }
 
-export function useOptimizeCollection(): UseMutationResult<
-  MaintenanceResponse,
-  unknown,
-  string
-> {
+export function useOptimizeCollection(): UseMutationResult<MaintenanceResponse, unknown, string> {
   const client = useApiClient();
   const api = createCollectionsApi(client);
   const qc = useQueryClient();
@@ -176,11 +194,7 @@ export interface AddFieldVariables {
   readonly body: FieldAddRequest;
 }
 
-export function useAddField(): UseMutationResult<
-  CollectionSummary,
-  unknown,
-  AddFieldVariables
-> {
+export function useAddField(): UseMutationResult<CollectionSummary, unknown, AddFieldVariables> {
   const client = useApiClient();
   const api = createCollectionsApi(client);
   const qc = useQueryClient();
@@ -195,11 +209,7 @@ export interface DropFieldVariables {
   readonly field: string;
 }
 
-export function useDropField(): UseMutationResult<
-  CollectionSummary,
-  unknown,
-  DropFieldVariables
-> {
+export function useDropField(): UseMutationResult<CollectionSummary, unknown, DropFieldVariables> {
   const client = useApiClient();
   const api = createCollectionsApi(client);
   const qc = useQueryClient();
@@ -253,11 +263,7 @@ export interface DropIndexVariables {
   readonly vectorField: string;
 }
 
-export function useDropIndex(): UseMutationResult<
-  CollectionSummary,
-  unknown,
-  DropIndexVariables
-> {
+export function useDropIndex(): UseMutationResult<CollectionSummary, unknown, DropIndexVariables> {
   const client = useApiClient();
   const api = createCollectionsApi(client);
   const qc = useQueryClient();
@@ -310,10 +316,7 @@ export function useDropScalarIndex(): UseMutationResult<
 
 // ── Recently opened collections ─────────────────────────────────────────────
 
-export function useListRecent(): UseQueryResult<
-  RecentCollectionListResponse,
-  unknown
-> {
+export function useListRecent(): UseQueryResult<RecentCollectionListResponse, unknown> {
   const client = useApiClient();
   const api = createCollectionsApi(client);
   return useQuery({
@@ -322,11 +325,7 @@ export function useListRecent(): UseQueryResult<
   });
 }
 
-export function useForgetRecent(): UseMutationResult<
-  void,
-  unknown,
-  RecentForgetRequest
-> {
+export function useForgetRecent(): UseMutationResult<void, unknown, RecentForgetRequest> {
   const client = useApiClient();
   const api = createCollectionsApi(client);
   const qc = useQueryClient();

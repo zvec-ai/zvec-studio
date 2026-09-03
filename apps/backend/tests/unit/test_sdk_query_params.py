@@ -148,6 +148,24 @@ def test_rotated_quantizer_rejects_unsupported_combinations(spec: dict) -> None:
         _build_index_param(VectorIndexParam.model_validate(spec))
 
 
+def test_unknown_vector_dtype_raises_dedicated_error_not_404() -> None:
+    """A collection with a dtype Studio does not represent (e.g. legacy
+    VECTOR_FP64) exists — the error must say so, not claim 404 not-found."""
+    from zvec_studio.exceptions import UnsupportedVectorDataTypeError
+
+    sdk_schema = zvec.CollectionSchema(
+        name="demo",
+        vectors=[zvec.VectorSchema("embedding", zvec.DataType.VECTOR_FP64, 4)],
+        fields=None,
+    )
+
+    with pytest.raises(UnsupportedVectorDataTypeError) as exc:
+        _from_sdk_schema(sdk_schema, Path("/tmp/demo"))
+    assert exc.value.status_code == 422
+    assert exc.value.code == "UNSUPPORTED_VECTOR_DATA_TYPE"
+    assert exc.value.extra["vector"] == "embedding"
+
+
 def test_sdk_schema_with_pybind_enum_index_param_serializes_for_summary() -> None:
     sdk_schema = zvec.CollectionSchema(
         name="demo",

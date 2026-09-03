@@ -21,10 +21,11 @@ export type DocumentUpsertRequest = components['schemas']['DocumentUpsertRequest
 export type DocumentUpsertResponse = components['schemas']['DocumentUpsertResponse'];
 export type DocumentUpdateRequest = components['schemas']['DocumentUpdateRequest'];
 export type DocumentUpdateResponse = components['schemas']['DocumentUpdateResponse'];
-export type DocumentDeleteByFilterRequest =
-  components['schemas']['DocumentDeleteByFilterRequest'];
+export type DocumentDeleteByFilterRequest = components['schemas']['DocumentDeleteByFilterRequest'];
 export type DocumentDeleteByFilterResponse =
   components['schemas']['DocumentDeleteByFilterResponse'];
+export type DocumentImportRequest = components['schemas']['DocumentImportRequest'];
+export type DocumentImportResponse = components['schemas']['DocumentImportResponse'];
 /** A single document row. The backend returns an open-ended dict of fields. */
 export type DocumentRecord = Record<string, unknown>;
 
@@ -61,6 +62,11 @@ export interface DocumentsApi {
     body: DocumentDeleteByFilterRequest,
     signal?: AbortSignal,
   ): Promise<DocumentDeleteByFilterResponse>;
+  importDocuments(
+    collection: string,
+    body: DocumentImportRequest,
+    signal?: AbortSignal,
+  ): Promise<DocumentImportResponse>;
 }
 
 /** Build a DocumentsApi bound to the given transport. */
@@ -106,5 +112,48 @@ export function createDocumentsApi(client: ApiClient): DocumentsApi {
         `/collections/${encodeURIComponent(collection)}/documents:deleteByFilter`,
         { method: 'POST', body, signal },
       ),
+    importDocuments: (collection, body, signal) =>
+      client.request<DocumentImportResponse>(
+        `/collections/${encodeURIComponent(collection)}/documents:import`,
+        { method: 'POST', body, signal },
+      ),
   };
+}
+
+export interface ExportOptions {
+  readonly includeVector: boolean;
+  /** ``false`` keeps only the primary key and the vectors (default true). */
+  readonly includeFields?: boolean;
+  readonly outputFields?: ReadonlyArray<string>;
+  readonly format?: string;
+  /** ``data`` (single JSONL file, default) or ``snapshot`` (tar.gz bundle). */
+  readonly mode?: 'data' | 'snapshot';
+}
+
+/**
+ * Build the download URL for ``GET /collections/{name}/documents:export``.
+ *
+ * Exported through a *native* browser download (``<a download>``), never
+ * ``fetch``: the response streams a potentially gigabyte-sized file and
+ * buffering it in JS memory would crash the tab (design doc §6.3).
+ */
+export function buildExportUrl(
+  baseUrl: string,
+  collection: string,
+  options: ExportOptions,
+): string {
+  const params = new URLSearchParams();
+  params.set('includeVector', String(options.includeVector));
+  if (options.includeFields === false) {
+    params.set('includeFields', 'false');
+  }
+  if (options.outputFields && options.outputFields.length > 0) {
+    params.set('outputFields', options.outputFields.join(','));
+  }
+  params.set('format', options.format ?? 'jsonl');
+  if (options.mode === 'snapshot') {
+    params.set('mode', 'snapshot');
+  }
+  const qs = params.toString();
+  return `${baseUrl}/collections/${encodeURIComponent(collection)}/documents:export?${qs}`;
 }

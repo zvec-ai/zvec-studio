@@ -117,7 +117,11 @@ async function mountFakeBackend(
           fields: [{ name: 'id', dataType: 'INT64', isPrimary: true, description: null }],
           indexParams: { indexType: 'HNSW', metric: 'COSINE', params: {} },
         },
-        stats: { documentCount: record.documents?.length ?? 0, indexState: 'none', storageBytes: 0 },
+        stats: {
+          documentCount: record.documents?.length ?? 0,
+          indexState: 'none',
+          storageBytes: 0,
+        },
       }),
     });
   }
@@ -174,7 +178,10 @@ async function mountFakeBackend(
           contentType: 'application/json',
           body: JSON.stringify({ items: all.slice(0, 50), truncated: all.length > 50 }),
         });
-      } else if (method === 'POST' && (lastSeg === 'documents' || lastSeg.startsWith('documents'))) {
+      } else if (
+        method === 'POST' &&
+        (lastSeg === 'documents' || lastSeg.startsWith('documents'))
+      ) {
         const body = JSON.parse(route.request().postData() ?? '{}') as {
           documents?: Array<Record<string, unknown>>;
         };
@@ -256,7 +263,9 @@ test.describe('Onboarding', () => {
     await page.addInitScript(() => {
       try {
         window.localStorage.removeItem('zvec-studio:onboarded');
-      } catch { /* noop */ }
+      } catch {
+        /* noop */
+      }
     });
     await mountFakeBackend(page, []);
     await page.goto('/');
@@ -275,14 +284,14 @@ test.describe('App shell & navigation', () => {
     await page.addInitScript(() => {
       try {
         window.localStorage.setItem('zvec-studio:onboarded', '1');
-      } catch { /* noop */ }
+      } catch {
+        /* noop */
+      }
     });
   });
 
   test('renders the app shell with sidebar and main content', async ({ page }) => {
-    await mountFakeBackend(page, [
-      { name: 'my_collection', path: '/tmp/my_collection' },
-    ]);
+    await mountFakeBackend(page, [{ name: 'my_collection', path: '/tmp/my_collection' }]);
     // Use /collections path where the sidebar is visible (sidebar is hidden on /).
     await page.goto('/collections');
 
@@ -290,30 +299,28 @@ test.describe('App shell & navigation', () => {
     await expect(page.getByTestId('app-content')).toBeVisible();
 
     // Sidebar shows collection names.
-    await expect(page.locator('.zv-sidebar__item-name', { hasText: 'my_collection' })).toBeVisible();
+    await expect(
+      page.locator('.zv-sidebar__item-name', { hasText: 'my_collection' }),
+    ).toBeVisible();
   });
 
   test('navigates to collection detail page from sidebar', async ({ page }) => {
-    await mountFakeBackend(page, [
-      { name: 'nav_test', path: '/tmp/nav_test' },
-    ]);
+    await mountFakeBackend(page, [{ name: 'nav_test', path: '/tmp/nav_test' }]);
     await page.goto('/collections');
 
     // Click the collection in the sidebar.
     await page.locator('.zv-sidebar__item', { hasText: 'nav_test' }).click();
 
     // Should navigate to the detail page and show tabs.
-    await expect(page.locator('.zv-detail-tab')).toHaveCount(4);
+    await expect(page.locator('.zv-detail-tab')).toHaveCount(5);
     await expect(page.locator('.zv-detail-tab--active')).toContainText(/overview/i);
   });
 
   test('navigates to collection detail via URL', async ({ page }) => {
-    await mountFakeBackend(page, [
-      { name: 'direct_nav', path: '/tmp/direct_nav' },
-    ]);
+    await mountFakeBackend(page, [{ name: 'direct_nav', path: '/tmp/direct_nav' }]);
     await page.goto('/collections/direct_nav?path=%2Ftmp%2Fdirect_nav');
 
-    await expect(page.locator('.zv-detail-tab')).toHaveCount(4);
+    await expect(page.locator('.zv-detail-tab')).toHaveCount(5);
   });
 });
 
@@ -326,7 +333,9 @@ test.describe('Create Collection', () => {
     await page.addInitScript(() => {
       try {
         window.localStorage.setItem('zvec-studio:onboarded', '1');
-      } catch { /* noop */ }
+      } catch {
+        /* noop */
+      }
     });
   });
 
@@ -334,8 +343,9 @@ test.describe('Create Collection', () => {
     const state = await mountFakeBackend(page, []);
     await page.goto('/collections');
 
-    // Click the + button in the sidebar Collections section.
+    // The "+" button toggles a menu holding the collection-level actions.
     await page.locator('[data-tour="collection-actions"] .zv-sidebar__action-btn').first().click();
+    await page.getByTestId('zv-collections-menu-create').click();
 
     // Fill the dialog form.
     await expect(page.getByTestId('zv-create-name')).toBeVisible();
@@ -358,14 +368,14 @@ test.describe('Spotlight Tour', () => {
     await page.addInitScript(() => {
       try {
         window.localStorage.setItem('zvec-studio:onboarded', '1');
-      } catch { /* noop */ }
+      } catch {
+        /* noop */
+      }
     });
   });
 
   test('opens the spotlight tour from the sidebar guide button', async ({ page }) => {
-    await mountFakeBackend(page, [
-      { name: 'tour_col', path: '/tmp/tour_col' },
-    ]);
+    await mountFakeBackend(page, [{ name: 'tour_col', path: '/tmp/tour_col' }]);
     await page.goto('/collections/tour_col?path=%2Ftmp%2Ftour_col');
 
     // Wait for page to settle with sidebar visible.

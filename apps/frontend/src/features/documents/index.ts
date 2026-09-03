@@ -1,7 +1,8 @@
 /**
  * Public surface of the documents feature module.
  */
-export { createDocumentsApi } from './api';
+export { buildExportUrl, createDocumentsApi } from './api';
+export type { ExportOptions } from './api';
 export type {
   DocumentBatchDeleteRequest,
   DocumentBatchDeleteResponse,
@@ -9,6 +10,8 @@ export type {
   DocumentBrowseResponse,
   DocumentDeleteByFilterRequest,
   DocumentDeleteByFilterResponse,
+  DocumentImportRequest,
+  DocumentImportResponse,
   DocumentInsertRequest,
   DocumentInsertResponse,
   DocumentRecord,
@@ -28,6 +31,7 @@ export {
   useDeleteDocument,
   useDeleteDocumentsBatch,
   useDeleteDocumentsByFilter,
+  useImportDocuments,
   useUpdateDocuments,
   useUpsertDocuments,
 } from './hooks';

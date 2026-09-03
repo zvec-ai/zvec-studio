@@ -31,11 +31,13 @@ function freshState(): FakeShellState {
     collections: [{ name: 'open-demo', path: '/tmp/open-demo' }],
     recent: [{ name: 'closed-demo', path: '/tmp/closed-demo' }],
     embeddings: [
-      { name: 'local-dense', description: null, config: { type: 'default_local_dense', dimension: 4 } },
+      {
+        name: 'local-dense',
+        description: null,
+        config: { type: 'default_local_dense', dimension: 4 },
+      },
     ],
-    rerankers: [
-      { name: 'rrf', description: null, config: { type: 'rrf', rankConstant: 60 } },
-    ],
+    rerankers: [{ name: 'rrf', description: null, config: { type: 'rrf', rankConstant: 60 } }],
     openedPaths: [],
     closed: [],
     forgotten: [],
@@ -129,10 +131,22 @@ function renderShell(
               <Routes>
                 <Route path="/" element={<AppShell />}>
                   <Route index element={<div data-testid="child">root</div>} />
-                  <Route path="collections" element={<div data-testid="collections-page">collections</div>} />
-                  <Route path="collections/:name" element={<div data-testid="collection-detail">collection detail</div>} />
-                  <Route path="embeddings/:name" element={<div data-testid="embedding-detail">embedding detail</div>} />
-                  <Route path="rerankers/:name" element={<div data-testid="reranker-detail">reranker detail</div>} />
+                  <Route
+                    path="collections"
+                    element={<div data-testid="collections-page">collections</div>}
+                  />
+                  <Route
+                    path="collections/:name"
+                    element={<div data-testid="collection-detail">collection detail</div>}
+                  />
+                  <Route
+                    path="embeddings/:name"
+                    element={<div data-testid="embedding-detail">embedding detail</div>}
+                  />
+                  <Route
+                    path="rerankers/:name"
+                    element={<div data-testid="reranker-detail">reranker detail</div>}
+                  />
                 </Route>
               </Routes>
             </MemoryRouter>
@@ -219,12 +233,24 @@ describe('AppShell', () => {
     const user = userEvent.setup();
     renderShell('/collections', freshState());
 
-    await user.click(await screen.findByTitle('Create Collection'));
+    // The "+" button toggles a menu holding the collection-level actions.
+    await user.click(await screen.findByTestId('zv-collections-add'));
+    await user.click(screen.getByTestId('zv-collections-menu-create'));
     expect(await screen.findByRole('dialog', { name: /create collection/i })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /cancel/i }));
     await user.click(screen.getByTitle('Open existing'));
     expect(await screen.findByRole('dialog', { name: /open collection/i })).toBeInTheDocument();
+  });
+
+  it('opens the import-collection dialog from the "+" menu', async () => {
+    const user = userEvent.setup();
+    renderShell('/collections', freshState());
+
+    await user.click(await screen.findByTestId('zv-collections-add'));
+    await user.click(screen.getByTestId('zv-collections-menu-import'));
+
+    expect(await screen.findByRole('dialog', { name: /import collection/i })).toBeInTheDocument();
   });
 
   it('toggles sidebar visibility, theme, language, and the guide tour', async () => {

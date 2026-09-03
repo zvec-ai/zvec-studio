@@ -26,6 +26,8 @@ export type { DirectoryInputProps } from './DirectoryInput';
 
 export { DirectoryPickerDialog } from './DirectoryPickerDialog';
 export type { DirectoryPickerDialogProps } from './DirectoryPickerDialog';
+export { FilePickerDialog } from './FilePickerDialog';
+export type { FilePickerDialogProps } from './FilePickerDialog';
 
 export { Select } from './Select';
 export type { SelectOption, SelectProps } from './Select';

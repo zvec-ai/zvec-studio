@@ -6,15 +6,16 @@ import { ApiError } from '@/lib/api-client';
 import { Button } from '@/components/ui';
 import { useCollection, useListRecent, useOpenCollection } from '@/features/collections/hooks';
 import { OverviewTab } from './OverviewTab';
+import { DataTab } from './DataTab';
 import { QueryTab } from './QueryTab';
 import { BrowseTab } from './BrowseTab';
 import { MutateTab } from './MutateTab';
 
 import './CollectionDetailPage.css';
 
-type Tab = 'overview' | 'browse' | 'query' | 'write';
+type Tab = 'overview' | 'browse' | 'query' | 'write' | 'data';
 
-const TAB_KEYS: Tab[] = ['overview', 'browse', 'query', 'write'];
+const TAB_KEYS: Tab[] = ['overview', 'browse', 'query', 'write', 'data'];
 
 const VALID_TABS = new Set<string>(TAB_KEYS);
 
@@ -40,15 +41,18 @@ export function CollectionDetailPage(): JSX.Element {
   const openCollection = useOpenCollection();
 
   function setActiveTab(tab: Tab): void {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      if (tab === 'overview') {
-        next.delete('tab');
-      } else {
-        next.set('tab', tab);
-      }
-      return next;
-    }, { replace: true });
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (tab === 'overview') {
+          next.delete('tab');
+        } else {
+          next.set('tab', tab);
+        }
+        return next;
+      },
+      { replace: true },
+    );
   }
 
   const autoOpenAttempted = useRef<string | null>(null);
@@ -73,9 +77,7 @@ export function CollectionDetailPage(): JSX.Element {
   const recentMatch = useMemo(
     () =>
       name && recentQuery.data
-        ? recentQuery.data.items.find(
-            (r) => r.name === name || nameFromPath(r.path) === name,
-          )
+        ? recentQuery.data.items.find((r) => r.name === name || nameFromPath(r.path) === name)
         : undefined,
     [name, recentQuery.data],
   );
@@ -105,7 +107,12 @@ export function CollectionDetailPage(): JSX.Element {
     return (
       <div className="zv-empty-state">
         {t('pages.collections.detail.loadFailed', { name })}
-        <Button variant="secondary" size="sm" style={{ marginTop: 12 }} onClick={() => collectionQuery.refetch()}>
+        <Button
+          variant="secondary"
+          size="sm"
+          style={{ marginTop: 12 }}
+          onClick={() => collectionQuery.refetch()}
+        >
           {t('actions.retry')}
         </Button>
       </div>
@@ -150,6 +157,11 @@ export function CollectionDetailPage(): JSX.Element {
       {shouldRenderTab('write') && (
         <div hidden={activeTab !== 'write'}>
           <MutateTab key={`write:${collectionTabKey}`} collection={collection} />
+        </div>
+      )}
+      {shouldRenderTab('data') && (
+        <div hidden={activeTab !== 'data'}>
+          <DataTab key={`data:${collectionTabKey}`} collection={collection} />
         </div>
       )}
     </div>

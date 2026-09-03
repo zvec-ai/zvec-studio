@@ -41,13 +41,13 @@ function fixtures(): Record<string, FsListing> {
       path: '/',
       parent: null,
       home: '/home/bob',
-      entries: [{ name: 'tmp', path: '/tmp' }],
+      entries: [{ name: 'tmp', path: '/tmp', kind: 'dir', size: null }],
     },
     '/tmp': {
       path: '/tmp',
       parent: '/',
       home: '/home/bob',
-      entries: [{ name: 'projects', path: '/tmp/projects' }],
+      entries: [{ name: 'projects', path: '/tmp/projects', kind: 'dir', size: null }],
     },
     '/tmp/projects': {
       path: '/tmp/projects',

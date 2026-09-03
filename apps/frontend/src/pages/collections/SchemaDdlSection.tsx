@@ -447,12 +447,9 @@ function AddFieldDialog({ open, onClose, collection, toast }: AddFieldDialogProp
       setError(t('pages.collections.detail.schema.ddl.addFieldDialog.errors.nameRequired'));
       return;
     }
-    if (trimmed === 'id') {
-      setError(
-        t('pages.collections.detail.schema.ddl.addFieldDialog.errors.reservedName', { name: trimmed }),
-      );
-      return;
-    }
+    // Note: a column named ``id`` is allowed — zvec keeps Doc.id and the
+    // column separate, and Studio carries the primary key on ``$id`` in that
+    // case (see storage/doc_repr.py).
     try {
       await mutation.mutateAsync({
         name: collection,
@@ -504,7 +501,11 @@ function AddFieldDialog({ open, onClose, collection, toast }: AddFieldDialogProp
       <Input
         label={t('pages.collections.detail.schema.ddl.addFieldDialog.nameLabel')}
         placeholder={t('pages.collections.detail.schema.ddl.addFieldDialog.namePlaceholder')}
-        helperText={t('pages.collections.detail.schema.ddl.addFieldDialog.nameHelp')}
+        helperText={
+          name.trim() === 'id'
+            ? t('pages.collections.create.hints.idColumn')
+            : t('pages.collections.detail.schema.ddl.addFieldDialog.nameHelp')
+        }
         errorText={error ?? undefined}
         value={name}
         onChange={(event) => {

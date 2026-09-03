@@ -23,10 +23,7 @@ interface FakeState {
 function makeApiClient(state: FakeState): ApiClient {
   return {
     baseUrl: 'fake',
-    request: async <T,>(
-      path: string,
-      opts?: { method?: string; body?: unknown },
-    ): Promise<T> => {
+    request: async <T,>(path: string, opts?: { method?: string; body?: unknown }): Promise<T> => {
       const method = opts?.method ?? 'GET';
       state.calls.push({ method, path, body: opts?.body });
 
@@ -82,15 +79,12 @@ const COLLECTION = {
   },
 };
 
-function renderTab(
-  state: FakeState,
-  overrides?: { collection?: Record<string, unknown> },
-) {
+function renderTab(state: FakeState, overrides?: { collection?: Record<string, unknown> }) {
   const col = { ...COLLECTION, ...(overrides?.collection ?? {}) };
-  return renderWithProviders(
-    <OverviewTab collection={col as any} />,
-    { apiClient: makeApiClient(state), queryClient: makeQueryClient() },
-  );
+  return renderWithProviders(<OverviewTab collection={col as any} />, {
+    apiClient: makeApiClient(state),
+    queryClient: makeQueryClient(),
+  });
 }
 
 describe('OverviewTab', () => {
@@ -144,9 +138,9 @@ describe('OverviewTab', () => {
     // 1 vector + 2 fields = 3 total
     expect(screen.getByText('3')).toBeInTheDocument();
     // 1v · 2s — split across child elements, match container
-    expect(screen.getByText((_, el) =>
-      el?.className === 'zv-stat-sub' && el.textContent === '1v · 2s',
-    )).toBeInTheDocument();
+    expect(
+      screen.getByText((_, el) => el?.className === 'zv-stat-sub' && el.textContent === '1v · 2s'),
+    ).toBeInTheDocument();
   });
 
   it('displays collection path', () => {

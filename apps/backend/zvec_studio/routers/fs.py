@@ -7,10 +7,12 @@ selected directory's leaf name (W3C File System Access spec, security
 model), which is useless when the user wants to specify an absolute storage
 path.
 
-This router exposes a single read-only endpoint that lists *directory*
-entries on the host filesystem. The frontend renders a custom modal picker
-on top of it, navigating up/down the tree and returning a real absolute
-path. The endpoint never reads file contents.
+This router exposes a read-only listing endpoint that walks the host
+filesystem for the picker UIs, navigating up/down the tree and returning
+real absolute paths, plus a reveal helper. By default only directories are
+listed (the collection-open picker); with ``includeFiles=true`` files appear
+as well (the import file picker), optionally filtered by extension. The
+endpoints never read file contents.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from __future__ import annotations
 import platform
 import subprocess
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -27,10 +29,18 @@ router = APIRouter(prefix="/fs", tags=["fs"])
 
 
 class FsEntry(BaseModel):
-    """A single subdirectory entry."""
+    """A single directory (or file) entry."""
 
-    name: str = Field(..., description="Leaf name of the directory.")
-    path: str = Field(..., description="Absolute path of the directory.")
+    name: str = Field(..., description="Leaf name of the entry.")
+    path: str = Field(..., description="Absolute path of the entry.")
+    kind: Literal["dir", "file"] = Field(
+        default="dir",
+        description="Entry kind. 'file' entries only appear when includeFiles is set.",
+    )
+    size: int | None = Field(
+        default=None,
+        description="Size in bytes for files; null for directories.",
+    )
 
 
 class FsListing(BaseModel):
@@ -44,7 +54,10 @@ class FsListing(BaseModel):
     home: str = Field(..., description="The current user's home directory (absolute).")
     entries: list[FsEntry] = Field(
         default_factory=list,
-        description="Sorted subdirectories (excludes hidden entries by default).",
+        description=(
+            "Entries sorted by name (case-insensitive). Files only appear "
+            "when includeFiles=true."
+        ),
     )
 
 
@@ -107,6 +120,28 @@ def reveal_in_file_manager(body: RevealRequest) -> None:
         ) from exc
 
 
+def _parse_extensions(raw: str | None) -> tuple[str, ...] | None:
+    """Normalise a comma-separated extension filter (``.jsonl,.tar.gz``).
+
+    Returns lowered suffixes (including multi-part ones like ``.tar.gz``),
+    or None when no filter was requested.
+    """
+    if not raw:
+        return None
+    parts = [p.strip().lower() for p in raw.split(",") if p.strip()]
+    if not parts:
+        return None
+    return tuple(p if p.startswith(".") else f".{p}" for p in parts)
+
+
+def _file_size(path: Path) -> int | None:
+    try:
+        return path.stat().st_size
+    except OSError:
+        # Unstatable entries still show up, just without a size.
+        return None
+
+
 @router.get("/list", response_model=FsListing)
 def list_directory(
     path: Annotated[
@@ -117,25 +152,65 @@ def list_directory(
         bool,
         Query(description="Include dotfile-prefixed entries when true."),
     ] = False,
+    include_files: Annotated[
+        bool,
+        Query(
+            alias="includeFiles",
+            description=(
+                "Also list files (not only directories). Needed by the "
+                "import file picker; default keeps the legacy directory-only "
+                "behaviour."
+            ),
+        ),
+    ] = False,
+    extensions: Annotated[
+        str | None,
+        Query(
+            description=(
+                "Comma-separated file-extension filter applied when "
+                "includeFiles is set, e.g. '.jsonl,.tar.gz'. Directories "
+                "are never filtered out (they are needed for navigation). "
+                "Case-insensitive."
+            ),
+        ),
+    ] = None,
 ) -> FsListing:
-    """List subdirectories of ``path`` (or ``$HOME`` when omitted).
+    """List entries of ``path`` (or ``$HOME`` when omitted).
 
-    Returns the resolved absolute path, parent path, and sorted entries.
-    Files are intentionally excluded — the picker selects a directory only.
+    By default only subdirectories are returned (the original directory
+    picker contract). With ``includeFiles=true`` files are listed as well,
+    optionally narrowed by ``extensions``; each entry carries ``kind`` and,
+    for files, ``size``.
     """
     target = _resolve(path)
+    ext_filter = _parse_extensions(extensions) if include_files else None
     entries: list[FsEntry] = []
     try:
         for child in sorted(target.iterdir(), key=lambda p: p.name.lower()):
             if not show_hidden and child.name.startswith("."):
                 continue
             try:
-                if not child.is_dir():
-                    continue
+                is_dir = child.is_dir()
             except OSError:
                 # Broken symlinks / permission errors -> skip silently.
                 continue
-            entries.append(FsEntry(name=child.name, path=str(child)))
+            if is_dir:
+                entries.append(FsEntry(name=child.name, path=str(child), kind="dir"))
+                continue
+            if not include_files:
+                continue
+            if ext_filter is not None and not any(
+                child.name.lower().endswith(ext) for ext in ext_filter
+            ):
+                continue
+            entries.append(
+                FsEntry(
+                    name=child.name,
+                    path=str(child),
+                    kind="file",
+                    size=_file_size(child),
+                )
+            )
     except PermissionError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

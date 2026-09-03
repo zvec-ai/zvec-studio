@@ -89,6 +89,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/collections:import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Collection
+         * @description Import a collection from a snapshot package (``.tar.gz``).
+         *
+         *     Collection-level lifecycle operation (a sibling of create/open): the
+         *     manifest embedded in the snapshot supplies the schema, ``targetPath``
+         *     gives the new collection its home, and the embedded JSONL is loaded in
+         *     the same pass. Everything is validated before anything touches the disk
+         *     (missing/corrupt package, occupied target, name clash, incompatible
+         *     options); if the data load itself fails unexpectedly, the freshly
+         *     created collection is rolled back. Row-level failures follow the
+         *     standard import report semantics and keep the loaded rows.
+         */
+        post: operations["import_collection_api_v1_collections_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/collections/recent": {
         parameters: {
             query?: never;
@@ -466,6 +495,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/collections/{name}/documents:import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Documents
+         * @description Bulk-import documents from a JSONL file, streaming.
+         *
+         *     The file is read from the backend's local filesystem (Studio is
+         *     local-first — the file lives on the same machine), parsed row by row,
+         *     and written in SDK-sized batches. Row-level failures are reported in the
+         *     200 body (partial-success semantics); only request-level problems (bad
+         *     format, unreadable file, unknown collection) surface as 4xx.
+         *
+         *     ``format`` defaults to the file extension; extension-less files are
+         *     treated as JSONL. Snapshot packages (``.tar.gz`` / ``.tgz``) always
+         *     carry a JSONL data member, so their format resolves to ``jsonl``.
+         */
+        post: operations["import_documents_api_v1_collections__name__documents_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/collections/{name}/documents:export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Documents
+         * @description Stream every document in the collection as a downloadable file.
+         *
+         *     Uses the SDK snapshot iterator (constant memory; writes during the export
+         *     are invisible to it), so arbitrarily large collections can be exported.
+         *     The response is chunked — the frontend must trigger a *native* download
+         *     (``<a download>``), never ``fetch().blob()``, which would buffer the whole
+         *     body in memory.
+         *
+         *     In ``data`` mode the first chunk is pulled eagerly so failures that occur
+         *     before any byte is sent (blocked iterator, non-finite value in the first
+         *     row) still map to a proper 4xx/5xx instead of truncating a stream that
+         *     already started. In ``snapshot`` mode the JSONL is staged in a temp dir
+         *     first (a tar member must declare its size up front), then the tar.gz is
+         *     streamed; the temp dir is removed after the response finishes.
+         */
+        get: operations["export_documents_api_v1_collections__name__documents_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/fs/reveal": {
         parameters: {
             query?: never;
@@ -495,10 +587,12 @@ export interface paths {
         };
         /**
          * List Directory
-         * @description List subdirectories of ``path`` (or ``$HOME`` when omitted).
+         * @description List entries of ``path`` (or ``$HOME`` when omitted).
          *
-         *     Returns the resolved absolute path, parent path, and sorted entries.
-         *     Files are intentionally excluded — the picker selects a directory only.
+         *     By default only subdirectories are returned (the original directory
+         *     picker contract). With ``includeFiles=true`` files are listed as well,
+         *     optionally narrowed by ``extensions``; each entry carries ``kind`` and,
+         *     for files, ``size``.
          */
         get: operations["list_directory_api_v1_fs_list_get"];
         put?: never;
@@ -689,6 +783,36 @@ export interface components {
             /** Path */
             path: string;
             schema: components["schemas"]["CollectionSchema"];
+        };
+        /**
+         * CollectionImportRequest
+         * @description Import a collection from a snapshot package (``.tar.gz``).
+         *
+         *     A sibling of create/open, not a variant of document import: the manifest
+         *     embedded in the snapshot supplies the schema, ``targetPath`` gives the new
+         *     collection a home on disk, and the data rows are loaded in the same pass.
+         */
+        CollectionImportRequest: {
+            /** @description The snapshot package to import from (local path). */
+            source: components["schemas"]["ImportSourceSpec"];
+            /**
+             * Targetpath
+             * @description Directory for the imported collection. Must not exist (409 if it does, empty directories included); the collection is created there.
+             */
+            targetPath: string;
+            /**
+             * Name
+             * @description Optional new collection name. Defaults to the name recorded in the snapshot manifest; override it to avoid clashing with an open collection.
+             */
+            name?: string | null;
+        };
+        /**
+         * CollectionImportResponse
+         * @description The imported collection plus the row-level load report.
+         */
+        CollectionImportResponse: {
+            collection: components["schemas"]["CollectionSummary"];
+            report: components["schemas"]["DocumentImportResponse"];
         };
         /** CollectionListItem */
         CollectionListItem: {
@@ -902,6 +1026,78 @@ export interface components {
             deleted: number;
         };
         /**
+         * DocumentImportErrorEntry
+         * @description One failing row.
+         */
+        DocumentImportErrorEntry: {
+            /**
+             * Line
+             * @description 1-based physical line in the file.
+             */
+            line: number;
+            /**
+             * Code
+             * @description Studio error code for this row.
+             */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /**
+         * DocumentImportRequest
+         * @description Body for ``POST /collections/{name}/documents:import``.
+         */
+        DocumentImportRequest: {
+            source: components["schemas"]["ImportSourceSpec"];
+            /**
+             * Mode
+             * @description insert: existing primary keys fail the row. replace: the row's content becomes the whole document for that key (idempotent re-import).
+             * @default replace
+             * @enum {string}
+             */
+            mode: "insert" | "replace";
+            /**
+             * Onerror
+             * @description abort: stop at the first failing row; skip: record it and continue.
+             * @default abort
+             * @enum {string}
+             */
+            onError: "abort" | "skip";
+            /**
+             * Format
+             * @description Import format name ('jsonl'). When omitted, inferred from the file extension; extension-less files default to jsonl.
+             */
+            format?: string | null;
+            /**
+             * Batchsize
+             * @description Internal write batch size. Capped at the SDK's 1024-document limit; defaults to the benchmarked sweet spot (512).
+             */
+            batchSize?: number | null;
+        };
+        /** DocumentImportResponse */
+        DocumentImportResponse: {
+            /** Imported */
+            imported: number;
+            /** Failed */
+            failed: number;
+            /**
+             * Totallines
+             * @description Data rows read (blank lines excluded).
+             */
+            totalLines: number;
+            /** Aborted */
+            aborted: boolean;
+            /** Durationms */
+            durationMs: number;
+            /**
+             * Errors
+             * @description First 100 failing rows; see errorsTruncated.
+             */
+            errors: components["schemas"]["DocumentImportErrorEntry"][];
+            /** Errorstruncated */
+            errorsTruncated: boolean;
+        };
+        /**
          * DocumentInsertRequest
          * @description Body for ``POST /collections/{name}/documents``.
          */
@@ -1067,19 +1263,31 @@ export interface components {
         };
         /**
          * FsEntry
-         * @description A single subdirectory entry.
+         * @description A single directory (or file) entry.
          */
         FsEntry: {
             /**
              * Name
-             * @description Leaf name of the directory.
+             * @description Leaf name of the entry.
              */
             name: string;
             /**
              * Path
-             * @description Absolute path of the directory.
+             * @description Absolute path of the entry.
              */
             path: string;
+            /**
+             * Kind
+             * @description Entry kind. 'file' entries only appear when includeFiles is set.
+             * @default dir
+             * @enum {string}
+             */
+            kind: "dir" | "file";
+            /**
+             * Size
+             * @description Size in bytes for files; null for directories.
+             */
+            size?: number | null;
         };
         /**
          * FsListing
@@ -1103,7 +1311,7 @@ export interface components {
             home: string;
             /**
              * Entries
-             * @description Sorted subdirectories (excludes hidden entries by default).
+             * @description Entries sorted by name (case-insensitive). Files only appear when includeFiles=true.
              */
             entries?: components["schemas"]["FsEntry"][];
         };
@@ -1199,6 +1407,28 @@ export interface components {
              * @default false
              */
             isUsingRefiner: boolean;
+        };
+        /**
+         * ImportSourceSpec
+         * @description Where the import reads its data from.
+         *
+         *     Only ``localPath`` exists today — Studio is local-first, the backend runs
+         *     on the user's machine, and reading a path avoids shovelling gigabytes
+         *     through an HTTP upload. ``upload`` is reserved for the remote deployment
+         *     enhancement.
+         */
+        ImportSourceSpec: {
+            /**
+             * Kind
+             * @default localPath
+             * @constant
+             */
+            kind: "localPath";
+            /**
+             * Path
+             * @description Absolute path of the file to import.
+             */
+            path: string;
         };
         /**
          * IndexCreateRequest
@@ -1664,9 +1894,13 @@ export interface components {
         /**
          * VectorDataType
          * @description Vector dtypes supported by the Zvec SDK.
+         *
+         *     ``VECTOR_FP64`` is intentionally absent: zvec's schema validation rejects
+         *     it ("dense_vector's data type only support FP32"), so exposing it would
+         *     only let users build collections that fail at create time.
          * @enum {string}
          */
-        VectorDataType: "VECTOR_FP32" | "VECTOR_FP16" | "VECTOR_FP64" | "VECTOR_INT8" | "SPARSE_VECTOR_FP32" | "SPARSE_VECTOR_FP16";
+        VectorDataType: "VECTOR_FP32" | "VECTOR_FP16" | "VECTOR_INT8" | "SPARSE_VECTOR_FP32" | "SPARSE_VECTOR_FP16";
         /**
          * VectorIndexParam
          * @description Index build parameters attached to a single vector field.
@@ -1871,6 +2105,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CollectionSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_collection_api_v1_collections_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CollectionImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CollectionImportResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2722,6 +2989,86 @@ export interface operations {
             };
         };
     };
+    import_documents_api_v1_collections__name__documents_import_post: {
+        parameters: {
+            query?: {
+                path?: string | null;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentImportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_documents_api_v1_collections__name__documents_export_get: {
+        parameters: {
+            query?: {
+                path?: string | null;
+                /** @description Include vector data in each row (default true). */
+                includeVector?: boolean;
+                /** @description Include scalar fields in each row (default true). */
+                includeFields?: boolean;
+                /** @description Comma-separated scalar fields to include; omit for all. */
+                outputFields?: string | null;
+                /** @description Export format name. Supported: jsonl. */
+                format?: string;
+                /** @description data: a single JSONL file. snapshot: manifest.json + JSONL bundled in a tar.gz (carries the schema for migration). */
+                mode?: "data" | "snapshot";
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     reveal_in_file_manager_api_v1_fs_reveal_post: {
         parameters: {
             query?: never;
@@ -2760,6 +3107,10 @@ export interface operations {
                 path?: string | null;
                 /** @description Include dotfile-prefixed entries when true. */
                 show_hidden?: boolean;
+                /** @description Also list files (not only directories). Needed by the import file picker; default keeps the legacy directory-only behaviour. */
+                includeFiles?: boolean;
+                /** @description Comma-separated file-extension filter applied when includeFiles is set, e.g. '.jsonl,.tar.gz'. Directories are never filtered out (they are needed for navigation). Case-insensitive. */
+                extensions?: string | null;
             };
             header?: never;
             path?: never;

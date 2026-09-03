@@ -31,7 +31,10 @@ dependencies = [
     "orjson>=3.10,<4.0",
     "typing-extensions>=4.12",
     # Zvec embedded vector database SDK (core runtime dependency).
-    "zvec>=0.6,<0.7",
+    # 0.7 is the floor: ``Collection.iter_docs()`` (streaming full-collection
+    # traversal) only exists from 0.7 onwards and the export feature is built
+    # on it.
+    "zvec>=0.7,<0.8",
     # Required by zvec for numpy-backed vector payloads.
     "numpy>=1.23,<2.5",
 ]

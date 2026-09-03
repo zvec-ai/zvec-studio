@@ -10,6 +10,7 @@ import { useListEmbeddings, useEmbed, useListRerankers } from '@/features/ai/hoo
 import type { EmbedResponse, RerankerFunctionRecord } from '@/features/ai/api';
 import { getEmbeddingDimension, getEmbeddingTag } from '@/features/ai/utils';
 import { FilterBuilder } from './FilterBuilder';
+import { primaryKeyFor } from './doc-repr';
 import {
   embeddingMatchesVector,
   isDenseVectorType,
@@ -73,7 +74,16 @@ const DEFAULT_MULTIQUERY_RERANKER_RECORD: RerankerFunctionRecord = {
 };
 
 const CopyIcon = (
-  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <rect x="5.5" y="5.5" width="9" height="9" rx="1.5" />
     <path d="M10.5 5.5V3a1.5 1.5 0 0 0-1.5-1.5H3A1.5 1.5 0 0 0 1.5 3v6A1.5 1.5 0 0 0 3 10.5h2.5" />
   </svg>
@@ -142,25 +152,32 @@ function normalizeStoredQuery(
   const base = hasVectorField ? makeVectorQuery(candidate.field) : makeFtsQuery(candidate.field);
   return {
     ...base,
-    mode: candidate.mode === 'id' || candidate.mode === 'text' || candidate.mode === 'vector'
-      ? candidate.mode
-      : base.mode,
+    mode:
+      candidate.mode === 'id' || candidate.mode === 'text' || candidate.mode === 'vector'
+        ? candidate.mode
+        : base.mode,
     embedding: typeof candidate.embedding === 'string' ? candidate.embedding : base.embedding,
     vectorText: typeof candidate.vectorText === 'string' ? candidate.vectorText : base.vectorText,
     idText: typeof candidate.idText === 'string' ? candidate.idText : base.idText,
     queryText: typeof candidate.queryText === 'string' ? candidate.queryText : base.queryText,
-    ftsMode: candidate.ftsMode === 'query' || candidate.ftsMode === 'match'
-      ? candidate.ftsMode
-      : base.ftsMode,
+    ftsMode:
+      candidate.ftsMode === 'query' || candidate.ftsMode === 'match'
+        ? candidate.ftsMode
+        : base.ftsMode,
     ftsText: typeof candidate.ftsText === 'string' ? candidate.ftsText : base.ftsText,
     defaultOperator: candidate.defaultOperator === 'AND' ? 'AND' : base.defaultOperator,
     hnswEf: typeof candidate.hnswEf === 'string' ? candidate.hnswEf : base.hnswEf,
     hnswRadius: typeof candidate.hnswRadius === 'string' ? candidate.hnswRadius : base.hnswRadius,
     hnswLinear: typeof candidate.hnswLinear === 'boolean' ? candidate.hnswLinear : base.hnswLinear,
-    hnswRefiner: typeof candidate.hnswRefiner === 'boolean' ? candidate.hnswRefiner : base.hnswRefiner,
+    hnswRefiner:
+      typeof candidate.hnswRefiner === 'boolean' ? candidate.hnswRefiner : base.hnswRefiner,
     ivfNprobe: typeof candidate.ivfNprobe === 'string' ? candidate.ivfNprobe : base.ivfNprobe,
-    vamanaEfSearch: typeof candidate.vamanaEfSearch === 'string' ? candidate.vamanaEfSearch : base.vamanaEfSearch,
-    diskAnnListSize: typeof candidate.diskAnnListSize === 'string' ? candidate.diskAnnListSize : base.diskAnnListSize,
+    vamanaEfSearch:
+      typeof candidate.vamanaEfSearch === 'string' ? candidate.vamanaEfSearch : base.vamanaEfSearch,
+    diskAnnListSize:
+      typeof candidate.diskAnnListSize === 'string'
+        ? candidate.diskAnnListSize
+        : base.diskAnnListSize,
   };
 }
 
@@ -176,8 +193,8 @@ function loadStoredState(
     const parsed = JSON.parse(raw) as Partial<QueryTabStoredState>;
     const storedQueries = Array.isArray(parsed.queries)
       ? parsed.queries
-        .map((q) => normalizeStoredQuery(q, vectors, ftsFields))
-        .filter((q): q is VQState => q !== null)
+          .map((q) => normalizeStoredQuery(q, vectors, ftsFields))
+          .filter((q): q is VQState => q !== null)
       : [];
     return {
       queries: storedQueries.length > 0 ? storedQueries : makeDefaultQueries(vectors, ftsFields),
@@ -186,10 +203,12 @@ function loadStoredState(
       groupCount: typeof parsed.groupCount === 'number' ? parsed.groupCount : 2,
       topKPerGroup: typeof parsed.topKPerGroup === 'number' ? parsed.topKPerGroup : 3,
       filter: typeof parsed.filter === 'string' ? parsed.filter : '',
-      outputFields: Array.isArray(parsed.outputFields) ? parsed.outputFields.filter((v): v is string => typeof v === 'string') : [],
+      outputFields: Array.isArray(parsed.outputFields)
+        ? parsed.outputFields.filter((v): v is string => typeof v === 'string')
+        : [],
       includeVector: Boolean(parsed.includeVector),
       rerankerName: typeof parsed.rerankerName === 'string' ? parsed.rerankerName : '',
-      results: Array.isArray(parsed.results) ? parsed.results as SearchResult[] : [],
+      results: Array.isArray(parsed.results) ? (parsed.results as SearchResult[]) : [],
       tookMs: typeof parsed.tookMs === 'number' ? parsed.tookMs : null,
     };
   } catch {
@@ -207,7 +226,10 @@ function numericParam(value: string, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function buildVectorQueryParam(q: VQState, indexType: string | undefined): Record<string, unknown> | undefined {
+function buildVectorQueryParam(
+  q: VQState,
+  indexType: string | undefined,
+): Record<string, unknown> | undefined {
   switch (indexType) {
     case 'HNSW':
     case 'HNSW_RABITQ':
@@ -250,6 +272,9 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
   const { t } = useTranslation();
   const toast = useToast();
   const vectors = useMemo(() => collection.schema.vectors ?? [], [collection.schema.vectors]);
+  // Row key carrying the primary key: ``id`` normally, ``$id`` when the
+  // schema declares its own ``id`` column (backend doc_repr contract).
+  const pkKey = primaryKeyFor(collection.schema);
   const ftsFields = useMemo(
     () =>
       (collection.schema.fields ?? []).filter(
@@ -267,14 +292,18 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
     [storageKey, vectors, ftsFields],
   );
 
-  const [queries, setQueries] = useState<VQState[]>(() => initialStoredState?.queries ?? makeDefaultQueries(vectors, ftsFields));
+  const [queries, setQueries] = useState<VQState[]>(
+    () => initialStoredState?.queries ?? makeDefaultQueries(vectors, ftsFields),
+  );
 
   const [topK, setTopK] = useState(initialStoredState?.topK ?? 10);
   const [groupByField, setGroupByField] = useState(initialStoredState?.groupByField ?? '');
   const [groupCount, setGroupCount] = useState(initialStoredState?.groupCount ?? 2);
   const [topKPerGroup, setTopKPerGroup] = useState(initialStoredState?.topKPerGroup ?? 3);
   const [filter, setFilter] = useState(initialStoredState?.filter ?? '');
-  const [outputFields, setOutputFields] = useState<string[]>(() => initialStoredState?.outputFields ?? []);
+  const [outputFields, setOutputFields] = useState<string[]>(
+    () => initialStoredState?.outputFields ?? [],
+  );
   const [includeVector, setIncludeVector] = useState(initialStoredState?.includeVector ?? false);
   const [rerankerName, setRerankerName] = useState(initialStoredState?.rerankerName ?? '');
   const [results, setResults] = useState<SearchResult[]>(() => initialStoredState?.results ?? []);
@@ -283,7 +312,10 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
 
   const resultColumnKeys = useMemo(() => {
     if (results.length === 0) return [] as string[];
-    const seen = new Set<string>(['id']);
+    // The primary key is rendered in its own column (``item.id``), so pin
+    // its row key (``id`` or ``$id``) out of the data columns; a user column
+    // named ``id`` still appears as data when the pk moved to ``$id``.
+    const seen = new Set<string>([pkKey]);
     const out: string[] = [];
     for (const item of results) {
       for (const key of Object.keys(item.fields)) {
@@ -294,7 +326,7 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
       }
     }
     return out;
-  }, [results]);
+  }, [results, pkKey]);
   const hasGroupedResults = results.some((result) => result.groupByValue != null);
 
   function copyText(text: string): void {
@@ -303,7 +335,10 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
   }
 
   function handleCopyResult(item: SearchResult): void {
-    const doc = { id: item.id, score: item.score, ...item.fields };
+    // pkKey first, then spread fields: for schemas with their own ``id``
+    // column the spread keeps the user field under ``id`` while the primary
+    // key stays under ``$id``.
+    const doc = { [pkKey]: item.id, score: item.score, ...item.fields };
     copyText(JSON.stringify(doc, null, 2));
   }
 
@@ -329,9 +364,11 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
     () => (collection.schema.fields ?? []).filter((field) => !field.dataType.startsWith('ARRAY_')),
     [collection.schema.fields],
   );
-  const groupByIndexType = queries.length === 1 && queries[0]?.routeType === 'vector'
-    ? vectors.find((vector) => vector.name === queries[0]?.field)?.indexParam?.indexType ?? 'HNSW'
-    : undefined;
+  const groupByIndexType =
+    queries.length === 1 && queries[0]?.routeType === 'vector'
+      ? (vectors.find((vector) => vector.name === queries[0]?.field)?.indexParam?.indexType ??
+        'HNSW')
+      : undefined;
   const canGroupBy =
     queries.length === 1 &&
     queries[0]?.routeType === 'vector' &&
@@ -356,7 +393,10 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
   );
 
   useEffect(() => {
-    if (addFieldKey && !availableFieldsForAdd.some((f) => `${f.routeType}:${f.field}` === addFieldKey)) {
+    if (
+      addFieldKey &&
+      !availableFieldsForAdd.some((f) => `${f.routeType}:${f.field}` === addFieldKey)
+    ) {
       setAddFieldKey('');
     }
   }, [addFieldKey, availableFieldsForAdd]);
@@ -389,7 +429,22 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
       results,
       tookMs,
     });
-  }, [storageKey, queries, topK, groupByField, groupCount, topKPerGroup, filter, outputFields, includeVector, isMultiQuery, canGroupBy, rerankerName, results, tookMs]);
+  }, [
+    storageKey,
+    queries,
+    topK,
+    groupByField,
+    groupCount,
+    topKPerGroup,
+    filter,
+    outputFields,
+    includeVector,
+    isMultiQuery,
+    canGroupBy,
+    rerankerName,
+    results,
+    tookMs,
+  ]);
 
   const queryDimMismatches = useMemo(
     () =>
@@ -481,9 +536,13 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
       queries: querySpecs as SearchRequest['queries'],
       topK,
       filter: filter.trim() || null,
-      outputFields: outputFields.includes('__none__') ? [] : outputFields.length > 0 ? outputFields : null,
+      outputFields: outputFields.includes('__none__')
+        ? []
+        : outputFields.length > 0
+          ? outputFields
+          : null,
       includeVector,
-      rerankerName: querySpecs.length > 1 ? (rerankerName || DEFAULT_MULTIQUERY_RERANKER) : null,
+      rerankerName: querySpecs.length > 1 ? rerankerName || DEFAULT_MULTIQUERY_RERANKER : null,
       groupByField: canGroupBy && groupByField ? groupByField : null,
       groupCount,
       topKPerGroup,
@@ -506,7 +565,9 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
     <div className="zv-query-layout">
       <form className="zv-query-form" onSubmit={(e) => void handleSearch(e)} noValidate>
         <div className="zv-section-head">
-          <span className="zv-query-section-title">{t('pages.collections.detail.query.queryRoutes')}</span>
+          <span className="zv-query-section-title">
+            {t('pages.collections.detail.query.queryRoutes')}
+          </span>
           <div className="zv-query-add-control">
             <select
               className="zv-form-select"
@@ -538,7 +599,9 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
           const vecSchema = vectors.find((v) => v.name === q.field);
           const ftsField = ftsFields.find((f) => f.name === q.field);
           const indexType = vecSchema?.indexParam?.indexType;
-          const matchingEmbeddings = allEmbeddings.filter((emb) => embeddingMatchesVector(emb, vecSchema));
+          const matchingEmbeddings = allEmbeddings.filter((emb) =>
+            embeddingMatchesVector(emb, vecSchema),
+          );
 
           const dimMismatch = queryDimMismatches[idx] ?? false;
           const selectedEmb = q.embedding
@@ -547,7 +610,7 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
           const embDim = selectedEmb ? getEmbeddingDimension(selectedEmb.config) : null;
           const fieldDim = vecSchema?.dimension ?? null;
 
-        return (
+          return (
             <div className="zv-vq-card" key={`${q.routeType}:${q.field}`}>
               <div className="zv-vq-card__head">
                 <span className="zv-vq-field-name">{q.field}</span>
@@ -555,12 +618,11 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
                   <span className="zv-vq-field-tag">{vectorTagLabel(vecSchema)}</span>
                 )}
                 {q.routeType === 'fts' && ftsField && (
-                  <span className="zv-vq-field-tag">{t('pages.collections.detail.query.ftsFieldTag')}</span>
+                  <span className="zv-vq-field-tag">
+                    {t('pages.collections.detail.query.ftsFieldTag')}
+                  </span>
                 )}
-                <CloseButton
-                  className="zv-vq-remove"
-                  onClick={() => removeQuery(idx)}
-                />
+                <CloseButton className="zv-vq-remove" onClick={() => removeQuery(idx)} />
               </div>
 
               {q.routeType === 'fts' ? (
@@ -594,11 +656,15 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
                     />
                   </div>
                   <div className="zv-form-group">
-                    <label className="zv-form-label">{t('pages.collections.detail.query.defaultOperator')}</label>
+                    <label className="zv-form-label">
+                      {t('pages.collections.detail.query.defaultOperator')}
+                    </label>
                     <select
                       className="zv-form-select"
                       value={q.defaultOperator}
-                      onChange={(e) => updateQuery(idx, { defaultOperator: e.target.value as 'OR' | 'AND' })}
+                      onChange={(e) =>
+                        updateQuery(idx, { defaultOperator: e.target.value as 'OR' | 'AND' })
+                      }
                     >
                       <option value="OR">OR</option>
                       <option value="AND">AND</option>
@@ -607,160 +673,184 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
                 </>
               ) : (
                 <>
-              <div className="zv-form-group">
-                <label className="zv-form-label">{t('pages.collections.detail.query.embedding')}</label>
-                <select
-                  className="zv-form-select"
-                  value={q.embedding}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    updateQuery(idx, {
-                      embedding: val,
-                      mode: val ? 'text' : 'vector',
-                    });
-                  }}
-                >
-                  <option value="">{t('pages.collections.detail.query.embeddingNone')}</option>
-                  {matchingEmbeddings.map((emb) => (
-                    <option key={emb.name} value={emb.name}>
-                      {emb.name} ({getEmbeddingTag(emb)})
-                    </option>
-                  ))}
-                </select>
-                {dimMismatch && (
-                  <span className="zv-form-hint" style={{ color: 'var(--zv-color-warning)' }}>
-                    {t('pages.collections.detail.query.dimMismatch', { embDim, fieldDim })}
-                  </span>
-                )}
-              </div>
-
-              {!q.embedding ? (
-                <>
-                  <div className="zv-input-mode-tabs">
-                    <button
-                      type="button"
-                      className={`zv-input-mode-tab${q.mode === 'vector' ? ' zv-input-mode-tab--active' : ''}`}
-                      onClick={() => updateQuery(idx, { mode: 'vector' })}
+                  <div className="zv-form-group">
+                    <label className="zv-form-label">
+                      {t('pages.collections.detail.query.embedding')}
+                    </label>
+                    <select
+                      className="zv-form-select"
+                      value={q.embedding}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        updateQuery(idx, {
+                          embedding: val,
+                          mode: val ? 'text' : 'vector',
+                        });
+                      }}
                     >
-                      {t('pages.collections.detail.query.modeVector')}
-                    </button>
-                    <button
-                      type="button"
-                      className={`zv-input-mode-tab${q.mode === 'id' ? ' zv-input-mode-tab--active' : ''}`}
-                      onClick={() => updateQuery(idx, { mode: 'id' })}
-                    >
-                      {t('pages.collections.detail.query.modeId')}
-                    </button>
+                      <option value="">{t('pages.collections.detail.query.embeddingNone')}</option>
+                      {matchingEmbeddings.map((emb) => (
+                        <option key={emb.name} value={emb.name}>
+                          {emb.name} ({getEmbeddingTag(emb)})
+                        </option>
+                      ))}
+                    </select>
+                    {dimMismatch && (
+                      <span className="zv-form-hint" style={{ color: 'var(--zv-color-warning)' }}>
+                        {t('pages.collections.detail.query.dimMismatch', { embDim, fieldDim })}
+                      </span>
+                    )}
                   </div>
 
-                  {q.mode === 'vector' ? (
-                    <div className="zv-form-group" style={{ marginTop: 10 }}>
-                      <div className="zv-vector-editor">
-                        <div className="zv-vector-editor__toolbar">
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            disabled={!vecSchema}
-                            onClick={() => {
-                              if (vecSchema) updateQuery(idx, { vectorText: randomVectorText(vecSchema) });
-                            }}
-                          >
-                            {t('pages.collections.detail.query.randomVector')}
-                          </Button>
-                        </div>
-                        <textarea
-                          className="zv-form-textarea"
-                          placeholder={vectorPlaceholder(vecSchema)}
-                          value={q.vectorText}
-                          spellCheck={false}
-                          onChange={(e) => updateQuery(idx, { vectorText: e.target.value })}
-                        />
+                  {!q.embedding ? (
+                    <>
+                      <div className="zv-input-mode-tabs">
+                        <button
+                          type="button"
+                          className={`zv-input-mode-tab${q.mode === 'vector' ? ' zv-input-mode-tab--active' : ''}`}
+                          onClick={() => updateQuery(idx, { mode: 'vector' })}
+                        >
+                          {t('pages.collections.detail.query.modeVector')}
+                        </button>
+                        <button
+                          type="button"
+                          className={`zv-input-mode-tab${q.mode === 'id' ? ' zv-input-mode-tab--active' : ''}`}
+                          onClick={() => updateQuery(idx, { mode: 'id' })}
+                        >
+                          {t('pages.collections.detail.query.modeId')}
+                        </button>
                       </div>
-                    </div>
+
+                      {q.mode === 'vector' ? (
+                        <div className="zv-form-group" style={{ marginTop: 10 }}>
+                          <div className="zv-vector-editor">
+                            <div className="zv-vector-editor__toolbar">
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                disabled={!vecSchema}
+                                onClick={() => {
+                                  if (vecSchema)
+                                    updateQuery(idx, { vectorText: randomVectorText(vecSchema) });
+                                }}
+                              >
+                                {t('pages.collections.detail.query.randomVector')}
+                              </Button>
+                            </div>
+                            <textarea
+                              className="zv-form-textarea"
+                              placeholder={vectorPlaceholder(vecSchema)}
+                              value={q.vectorText}
+                              spellCheck={false}
+                              onChange={(e) => updateQuery(idx, { vectorText: e.target.value })}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="zv-form-group" style={{ marginTop: 10 }}>
+                          <input
+                            className="zv-form-input"
+                            placeholder={t('pages.collections.detail.query.idPlaceholder')}
+                            value={q.idText}
+                            onChange={(e) => updateQuery(idx, { idText: e.target.value })}
+                          />
+                        </div>
+                      )}
+                    </>
                   ) : (
-                    <div className="zv-form-group" style={{ marginTop: 10 }}>
-                      <input
-                        className="zv-form-input"
-                        placeholder={t('pages.collections.detail.query.idPlaceholder')}
-                        value={q.idText}
-                        onChange={(e) => updateQuery(idx, { idText: e.target.value })}
+                    <div className="zv-form-group">
+                      <textarea
+                        className="zv-form-textarea"
+                        placeholder={
+                          dimMismatch
+                            ? t('pages.collections.detail.query.textDisabled')
+                            : t('pages.collections.detail.query.textPlaceholder')
+                        }
+                        value={q.queryText}
+                        disabled={dimMismatch}
+                        onChange={(e) => updateQuery(idx, { queryText: e.target.value })}
                       />
                     </div>
                   )}
                 </>
-              ) : (
-                <div className="zv-form-group">
-                  <textarea
-                    className="zv-form-textarea"
-                    placeholder={dimMismatch ? t('pages.collections.detail.query.textDisabled') : t('pages.collections.detail.query.textPlaceholder')}
-                    value={q.queryText}
-                    disabled={dimMismatch}
-                    onChange={(e) => updateQuery(idx, { queryText: e.target.value })}
-                  />
-                </div>
-              )}
-                </>
               )}
 
-              {q.routeType === 'vector' && (indexType === 'HNSW' || indexType === 'HNSW_RABITQ') && (
-                <details className="zv-query-params-toggle">
-                  <summary className="zv-query-params-summary">{t('pages.collections.detail.query.queryParams')}</summary>
-                  <div className="zv-query-params-body">
-                    <div className="zv-form-row">
-                      <div className="zv-form-group">
-                        <label className="zv-form-label">{t('pages.collections.detail.query.ef')}</label>
-                        <input
-                          className="zv-form-input"
-                          type="number"
-                          value={q.hnswEf}
-                          min={1}
-                          onChange={(e) => updateQuery(idx, { hnswEf: e.target.value })}
-                        />
-                        <span className="zv-form-hint">{t('pages.collections.detail.query.efHint')}</span>
+              {q.routeType === 'vector' &&
+                (indexType === 'HNSW' || indexType === 'HNSW_RABITQ') && (
+                  <details className="zv-query-params-toggle">
+                    <summary className="zv-query-params-summary">
+                      {t('pages.collections.detail.query.queryParams')}
+                    </summary>
+                    <div className="zv-query-params-body">
+                      <div className="zv-form-row">
+                        <div className="zv-form-group">
+                          <label className="zv-form-label">
+                            {t('pages.collections.detail.query.ef')}
+                          </label>
+                          <input
+                            className="zv-form-input"
+                            type="number"
+                            value={q.hnswEf}
+                            min={1}
+                            onChange={(e) => updateQuery(idx, { hnswEf: e.target.value })}
+                          />
+                          <span className="zv-form-hint">
+                            {t('pages.collections.detail.query.efHint')}
+                          </span>
+                        </div>
+                        <div className="zv-form-group">
+                          <label className="zv-form-label">
+                            {t('pages.collections.detail.query.radius')}
+                          </label>
+                          <input
+                            className="zv-form-input"
+                            type="number"
+                            value={q.hnswRadius}
+                            step="any"
+                            onChange={(e) => updateQuery(idx, { hnswRadius: e.target.value })}
+                          />
+                          <span className="zv-form-hint">
+                            {t('pages.collections.detail.query.radiusHint')}
+                          </span>
+                        </div>
                       </div>
-                      <div className="zv-form-group">
-                        <label className="zv-form-label">{t('pages.collections.detail.query.radius')}</label>
-                        <input
-                          className="zv-form-input"
-                          type="number"
-                          value={q.hnswRadius}
-                          step="any"
-                          onChange={(e) => updateQuery(idx, { hnswRadius: e.target.value })}
-                        />
-                        <span className="zv-form-hint">{t('pages.collections.detail.query.radiusHint')}</span>
+                      <div className="zv-form-row">
+                        <div className="zv-form-group">
+                          <label className="zv-checkbox-label">
+                            <input
+                              type="checkbox"
+                              checked={q.hnswLinear}
+                              onChange={(e) => updateQuery(idx, { hnswLinear: e.target.checked })}
+                            />{' '}
+                            {t('pages.collections.detail.query.isLinear')}
+                          </label>
+                        </div>
+                        <div className="zv-form-group">
+                          <label className="zv-checkbox-label">
+                            <input
+                              type="checkbox"
+                              checked={q.hnswRefiner}
+                              onChange={(e) => updateQuery(idx, { hnswRefiner: e.target.checked })}
+                            />{' '}
+                            {t('pages.collections.detail.query.isUsingRefiner')}
+                          </label>
+                        </div>
                       </div>
                     </div>
-                    <div className="zv-form-row">
-                      <div className="zv-form-group">
-                        <label className="zv-checkbox-label">
-                          <input
-                            type="checkbox"
-                            checked={q.hnswLinear}
-                            onChange={(e) => updateQuery(idx, { hnswLinear: e.target.checked })}
-                          /> {t('pages.collections.detail.query.isLinear')}
-                        </label>
-                      </div>
-                      <div className="zv-form-group">
-                        <label className="zv-checkbox-label">
-                          <input
-                            type="checkbox"
-                            checked={q.hnswRefiner}
-                            onChange={(e) => updateQuery(idx, { hnswRefiner: e.target.checked })}
-                          /> {t('pages.collections.detail.query.isUsingRefiner')}
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-                </details>
-              )}
+                  </details>
+                )}
 
               {q.routeType === 'vector' && indexType === 'IVF' && (
                 <details className="zv-query-params-toggle">
-                  <summary className="zv-query-params-summary">{t('pages.collections.detail.query.queryParams')}</summary>
+                  <summary className="zv-query-params-summary">
+                    {t('pages.collections.detail.query.queryParams')}
+                  </summary>
                   <div className="zv-query-params-body">
                     <div className="zv-form-group">
-                      <label className="zv-form-label">{t('pages.collections.detail.query.nprobe')}</label>
+                      <label className="zv-form-label">
+                        {t('pages.collections.detail.query.nprobe')}
+                      </label>
                       <input
                         className="zv-form-input"
                         type="number"
@@ -768,7 +858,9 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
                         min={1}
                         onChange={(e) => updateQuery(idx, { ivfNprobe: e.target.value })}
                       />
-                      <span className="zv-form-hint">{t('pages.collections.detail.query.nprobeHint')}</span>
+                      <span className="zv-form-hint">
+                        {t('pages.collections.detail.query.nprobeHint')}
+                      </span>
                     </div>
                   </div>
                 </details>
@@ -776,11 +868,15 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
 
               {q.routeType === 'vector' && indexType === 'VAMANA' && (
                 <details className="zv-query-params-toggle">
-                  <summary className="zv-query-params-summary">{t('pages.collections.detail.query.queryParams')}</summary>
+                  <summary className="zv-query-params-summary">
+                    {t('pages.collections.detail.query.queryParams')}
+                  </summary>
                   <div className="zv-query-params-body">
                     <div className="zv-form-row">
                       <div className="zv-form-group">
-                        <label className="zv-form-label">{t('pages.collections.detail.query.efSearch')}</label>
+                        <label className="zv-form-label">
+                          {t('pages.collections.detail.query.efSearch')}
+                        </label>
                         <input
                           className="zv-form-input"
                           type="number"
@@ -790,7 +886,9 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
                         />
                       </div>
                       <div className="zv-form-group">
-                        <label className="zv-form-label">{t('pages.collections.detail.query.radius')}</label>
+                        <label className="zv-form-label">
+                          {t('pages.collections.detail.query.radius')}
+                        </label>
                         <input
                           className="zv-form-input"
                           type="number"
@@ -807,7 +905,8 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
                             type="checkbox"
                             checked={q.hnswLinear}
                             onChange={(e) => updateQuery(idx, { hnswLinear: e.target.checked })}
-                          /> {t('pages.collections.detail.query.isLinear')}
+                          />{' '}
+                          {t('pages.collections.detail.query.isLinear')}
                         </label>
                       </div>
                       <div className="zv-form-group">
@@ -816,7 +915,8 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
                             type="checkbox"
                             checked={q.hnswRefiner}
                             onChange={(e) => updateQuery(idx, { hnswRefiner: e.target.checked })}
-                          /> {t('pages.collections.detail.query.isUsingRefiner')}
+                          />{' '}
+                          {t('pages.collections.detail.query.isUsingRefiner')}
                         </label>
                       </div>
                     </div>
@@ -826,10 +926,14 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
 
               {q.routeType === 'vector' && indexType === 'DISKANN' && (
                 <details className="zv-query-params-toggle">
-                  <summary className="zv-query-params-summary">{t('pages.collections.detail.query.queryParams')}</summary>
+                  <summary className="zv-query-params-summary">
+                    {t('pages.collections.detail.query.queryParams')}
+                  </summary>
                   <div className="zv-query-params-body">
                     <div className="zv-form-group">
-                      <label className="zv-form-label">{t('pages.collections.detail.query.diskAnnListSize')}</label>
+                      <label className="zv-form-label">
+                        {t('pages.collections.detail.query.diskAnnListSize')}
+                      </label>
                       <input
                         className="zv-form-input"
                         type="number"
@@ -837,12 +941,13 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
                         min={1}
                         onChange={(e) => updateQuery(idx, { diskAnnListSize: e.target.value })}
                       />
-                      <span className="zv-form-hint">{t('pages.collections.detail.query.diskAnnListSizeHint')}</span>
+                      <span className="zv-form-hint">
+                        {t('pages.collections.detail.query.diskAnnListSizeHint')}
+                      </span>
                     </div>
                   </div>
                 </details>
               )}
-
             </div>
           );
         })}
@@ -865,13 +970,21 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
           </div>
         )}
 
-        <hr style={{ border: 'none', borderTop: '1px solid var(--zv-color-border)', margin: '10px 0' }} />
+        <hr
+          style={{
+            border: 'none',
+            borderTop: '1px solid var(--zv-color-border)',
+            margin: '10px 0',
+          }}
+        />
 
         <div className="zv-query-inline-row">
           {canGroupBy && groupByField ? (
             <>
               <div className="zv-query-inline-field">
-                <label className="zv-form-label" htmlFor="zv-query-group-count">{t('pages.collections.detail.query.groupCount')}</label>
+                <label className="zv-form-label" htmlFor="zv-query-group-count">
+                  {t('pages.collections.detail.query.groupCount')}
+                </label>
                 <input
                   id="zv-query-group-count"
                   className="zv-form-input"
@@ -882,12 +995,15 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
                   style={{ width: 72 }}
                   onChange={(e) => {
                     const value = Number(e.target.value);
-                    if (Number.isFinite(value)) setGroupCount(Math.max(1, Math.min(100, Math.round(value))));
+                    if (Number.isFinite(value))
+                      setGroupCount(Math.max(1, Math.min(100, Math.round(value))));
                   }}
                 />
               </div>
               <div className="zv-query-inline-field">
-                <label className="zv-form-label" htmlFor="zv-query-topk-per-group">{t('pages.collections.detail.query.topKPerGroup')}</label>
+                <label className="zv-form-label" htmlFor="zv-query-topk-per-group">
+                  {t('pages.collections.detail.query.topKPerGroup')}
+                </label>
                 <input
                   id="zv-query-topk-per-group"
                   className="zv-form-input"
@@ -898,7 +1014,8 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
                   style={{ width: 72 }}
                   onChange={(e) => {
                     const value = Number(e.target.value);
-                    if (Number.isFinite(value)) setTopKPerGroup(Math.max(1, Math.min(100, Math.round(value))));
+                    if (Number.isFinite(value))
+                      setTopKPerGroup(Math.max(1, Math.min(100, Math.round(value))));
                   }}
                 />
               </div>
@@ -915,13 +1032,16 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
                 style={{ width: 72 }}
                 onChange={(e) => {
                   const value = Number(e.target.value);
-                  if (Number.isFinite(value)) setTopK(Math.max(1, Math.min(100, Math.round(value))));
+                  if (Number.isFinite(value))
+                    setTopK(Math.max(1, Math.min(100, Math.round(value))));
                 }}
               />
             </div>
           )}
           <div className="zv-query-inline-field">
-            <label className="zv-form-label" htmlFor="zv-query-group-by">{t('pages.collections.detail.query.groupBy')}</label>
+            <label className="zv-form-label" htmlFor="zv-query-group-by">
+              {t('pages.collections.detail.query.groupBy')}
+            </label>
             <select
               id="zv-query-group-by"
               className="zv-form-select"
@@ -931,12 +1051,16 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
             >
               <option value="">{t('pages.collections.detail.query.groupByNone')}</option>
               {groupableFields.map((field) => (
-                <option key={field.name} value={field.name}>{field.name}</option>
+                <option key={field.name} value={field.name}>
+                  {field.name}
+                </option>
               ))}
             </select>
           </div>
           <div className="zv-query-inline-field">
-            <label className="zv-form-label">{t('pages.collections.detail.query.includeVector')}</label>
+            <label className="zv-form-label">
+              {t('pages.collections.detail.query.includeVector')}
+            </label>
             <button
               type="button"
               className={`zv-toggle-switch${includeVector ? ' zv-toggle-switch--on' : ''}`}
@@ -950,7 +1074,9 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
             </button>
           </div>
           <div className="zv-query-inline-field">
-            <label className="zv-form-label">{t('pages.collections.detail.query.outputFields')}</label>
+            <label className="zv-form-label">
+              {t('pages.collections.detail.query.outputFields')}
+            </label>
             <div className="zv-output-field-select">
               <select
                 className="zv-form-select"
@@ -975,7 +1101,9 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
                       ? t('pages.collections.detail.query.outputFieldsNone')
                       : outputFields.join(', ')}
                 </option>
-                <option value="__none__">{t('pages.collections.detail.query.outputFieldsNone')}</option>
+                <option value="__none__">
+                  {t('pages.collections.detail.query.outputFieldsNone')}
+                </option>
                 {(collection.schema.fields ?? []).map((f) => (
                   <option key={f.name} value={f.name} disabled={outputFields.includes(f.name)}>
                     {f.name}
@@ -995,7 +1123,11 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
 
         <div className="zv-form-group">
           <label className="zv-form-label">{t('pages.collections.detail.query.filter')}</label>
-          <FilterBuilder fields={collection.schema.fields ?? []} value={filter} onChange={(expr) => setFilter(expr)} />
+          <FilterBuilder
+            fields={collection.schema.fields ?? []}
+            value={filter}
+            onChange={(expr) => setFilter(expr)}
+          />
         </div>
 
         <Button
@@ -1026,9 +1158,7 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
           </div>
 
           {results.length === 0 ? (
-            <div className="zv-empty-state">
-              {t('pages.collections.detail.query.noResults')}
-            </div>
+            <div className="zv-empty-state">{t('pages.collections.detail.query.noResults')}</div>
           ) : (
             <div className="zv-data-table-wrap" style={{ border: 'none', borderRadius: 0 }}>
               <table>
@@ -1037,7 +1167,7 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
                     <th>#</th>
                     {hasGroupedResults && <th>{t('pages.collections.detail.query.group')}</th>}
                     <th>score</th>
-                    <th>id</th>
+                    <th>{pkKey}</th>
                     {resultColumnKeys.map((key) => (
                       <th key={key}>{key}</th>
                     ))}
@@ -1047,13 +1177,27 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
                 <tbody>
                   {results.map((item, idx) => (
                     <tr key={item.id}>
-                      <td><span className={`zv-qr-rank-inline${idx < 3 ? ' zv-qr-rank-inline--top' : ''}`}>{idx + 1}</span></td>
+                      <td>
+                        <span
+                          className={`zv-qr-rank-inline${idx < 3 ? ' zv-qr-rank-inline--top' : ''}`}
+                        >
+                          {idx + 1}
+                        </span>
+                      </td>
                       {hasGroupedResults && <td>{item.groupByValue ?? '—'}</td>}
-                      <td><span className="zv-qr-score-inline">{item.score.toFixed(SCORE_PRECISION)}</span></td>
+                      <td>
+                        <span className="zv-qr-score-inline">
+                          {item.score.toFixed(SCORE_PRECISION)}
+                        </span>
+                      </td>
                       <td>
                         <div className="zv-cell-copy">
                           <span className="zv-cell-copy__text">{item.id}</span>
-                          <button type="button" className="zv-cell-copy__btn" onClick={() => handleCopyCell(item.id)}>
+                          <button
+                            type="button"
+                            className="zv-cell-copy__btn"
+                            onClick={() => handleCopyCell(item.id)}
+                          >
                             {CopyIcon}
                           </button>
                         </div>
@@ -1061,9 +1205,15 @@ export function QueryTab({ collection }: QueryTabProps): JSX.Element {
                       {resultColumnKeys.map((key) => (
                         <td key={key}>
                           <div className="zv-cell-copy">
-                            <span className="zv-cell-copy__text">{formatCellValue(item.fields[key])}</span>
+                            <span className="zv-cell-copy__text">
+                              {formatCellValue(item.fields[key])}
+                            </span>
                             {item.fields[key] != null && (
-                              <button type="button" className="zv-cell-copy__btn" onClick={() => handleCopyCell(item.fields[key])}>
+                              <button
+                                type="button"
+                                className="zv-cell-copy__btn"
+                                onClick={() => handleCopyCell(item.fields[key])}
+                              >
                                 {CopyIcon}
                               </button>
                             )}

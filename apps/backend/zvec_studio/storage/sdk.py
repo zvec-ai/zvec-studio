@@ -18,14 +18,19 @@ became the only backend.
 
 from __future__ import annotations
 
+import contextlib
 import gc
 import json
 import math
 import re
+import tarfile
+import time
+import zlib
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import RLock
-from typing import Any
+from typing import Any, BinaryIO, cast
 
 import zvec
 from ulid import ULID
@@ -70,9 +75,14 @@ from zvec_studio.exceptions import (
     CollectionAlreadyExistsError,
     CollectionNotFoundError,
     DimensionMismatchError,
+    DocumentConflictError,
     DocumentNotFoundError,
+    ImportManifestInvalidError,
+    InvalidDocumentError,
     InvalidFilterExpressionError,
     InvalidSchemaError,
+    MaintenanceBlockedError,
+    UnsupportedVectorDataTypeError,
     ZvecStudioError,
 )
 from zvec_studio.schemas import (
@@ -94,6 +104,30 @@ from zvec_studio.schemas import (
     VectorIndexParam,
     VectorQuerySpec,
 )
+from zvec_studio.storage.doc_repr import doc_to_row, pk_key, split_pk
+from zvec_studio.storage.formats import ImportFormat
+from zvec_studio.storage.import_ import (
+    ImportFailure,
+    ImportMode,
+    ImportReport,
+    OnErrorMode,
+    validate_import_source,
+)
+from zvec_studio.storage.snapshot import (
+    DATA_FILE_NAME,
+    MANIFEST_NAME,
+    check_schema_compatible,
+    parse_manifest,
+)
+
+# Zvec's C++ core rejects write batches larger than this (observed error:
+# "Too many docs: N exceeds max write batch size of 1024"). It is a runtime
+# guard, not a documented contract -- keep the name honest and adjust it
+# (plus any test asserting the value) if the SDK ever publishes otherwise.
+_MAX_SDK_WRITE_BATCH = 1024
+# Benchmarked sweet spot: writing in 512-doc chunks measured faster than
+# 1024-doc chunks on the same workload (~68k vs ~54k docs/s, M-series SSD).
+_DEFAULT_WRITE_BATCH = 512
 
 _ZVEC_EXPORTS = vars(zvec)
 FtsIndexParam: type[Any] = _ZVEC_EXPORTS["FtsIndexParam"]
@@ -114,6 +148,21 @@ def _exc_msg(exc: BaseException) -> str:
     if exc.args:
         return " ".join(str(a) for a in exc.args if a)
     return repr(exc)
+
+
+def _raise_if_maintenance_blocked(exc: BaseException) -> None:
+    """Map Zvec's ``iterators are open`` rejection onto a retryable 409.
+
+    While a snapshot iterator is open (an export is running), Zvec refuses
+    maintenance operations with ``RuntimeError('... while iterators are
+    open')``. That is a transient conflict, not an invalid request — surface
+    it as ``MAINTENANCE_BLOCKED`` so clients can retry after the export
+    finishes instead of seeing an opaque 4xx/5xx.
+    """
+    if isinstance(exc, RuntimeError) and "iterator" in _exc_msg(exc).lower():
+        raise MaintenanceBlockedError(
+            _exc_msg(exc) or "Maintenance is blocked while an export is running."
+        ) from exc
 
 
 @dataclass
@@ -154,7 +203,7 @@ _SCALAR_TO_SDK: dict[ScalarDataType, SdkDataType] = {
 _VECTOR_TO_SDK: dict[VectorDataType, SdkDataType] = {
     VectorDataType.VECTOR_FP32: SdkDataType.VECTOR_FP32,
     VectorDataType.VECTOR_FP16: SdkDataType.VECTOR_FP16,
-    VectorDataType.VECTOR_FP64: SdkDataType.VECTOR_FP64,
+    # VECTOR_FP64 deliberately omitted: zvec rejects it at schema validation.
     VectorDataType.VECTOR_INT8: SdkDataType.VECTOR_INT8,
     VectorDataType.SPARSE_VECTOR_FP32: SdkDataType.SPARSE_VECTOR_FP32,
     VectorDataType.SPARSE_VECTOR_FP16: SdkDataType.SPARSE_VECTOR_FP16,
@@ -530,9 +579,19 @@ def _from_sdk_schema(sdk_schema: Any, path: Path) -> CollectionSchema:
     for v in (sdk_schema.vectors or []):
         vdt = _SDK_TO_VECTOR.get(v.data_type)
         if vdt is None:
-            raise CollectionNotFoundError(
-                f"Unknown vector data type {v.data_type} at {path}",
-                extra={"path": str(path)},
+            # The collection exists and opened fine — this is a dtype Studio
+            # cannot represent (e.g. a legacy VECTOR_FP64 collection), not a
+            # missing collection.
+            raise UnsupportedVectorDataTypeError(
+                f"Vector '{v.name}' uses data type {v.data_type}, which this "
+                f"version of Studio does not support "
+                f"(supported: {', '.join(t.value for t in VectorDataType)}).",
+                extra={
+                    "path": str(path),
+                    "vector": v.name,
+                    "dataType": str(v.data_type),
+                    "supported": [t.value for t in VectorDataType],
+                },
             )
         vectors.append(
             StudioVectorSchema(
@@ -558,13 +617,16 @@ def _from_sdk_schema(sdk_schema: Any, path: Path) -> CollectionSchema:
     return CollectionSchema(name=sdk_schema.name, vectors=vectors, fields=fields)
 
 
-def _doc_to_dict(doc: SdkDoc, *, include_vector: bool) -> dict[str, Any]:
-    out: dict[str, Any] = {"id": doc.id}
-    if doc.fields:
-        out.update(doc.fields)
-    if include_vector and doc.vectors:
-        out.update(doc.vectors)
-    return out
+def _doc_to_dict(
+    doc: SdkDoc, *, schema: CollectionSchema, include_vector: bool
+) -> dict[str, Any]:
+    """Flatten an SDK document into the wire row representation.
+
+    Delegates to :mod:`zvec_studio.storage.doc_repr` so the primary key lands
+    on ``$id`` when the schema declares its own ``id`` column instead of being
+    silently overwritten by it.
+    """
+    return doc_to_row(doc, schema=schema, include_vector=include_vector)
 
 
 def _dir_size(path: Path) -> int:
@@ -610,17 +672,6 @@ def _coerce_stats(raw: Any, collection_path: str | Path) -> CollectionStats:
         storageBytes=_dir_size(Path(collection_path)),
     )
 
-
-def _ensure_id(doc: dict[str, Any]) -> str:
-    raw = doc.get("id")
-    if raw is None:
-        return str(ULID())
-    if not isinstance(raw, str):
-        raise InvalidSchemaError(
-            "Document 'id' must be a string (Zvec requires str ids).",
-            extra={"id": raw},
-        )
-    return raw
 
 
 # ── Field type validation ──
@@ -694,16 +745,15 @@ def _validate_field_value(name: str, value: Any, field: FieldSchema) -> None:
 
 
 def _build_doc(doc: dict[str, Any], schema: CollectionSchema) -> SdkDoc:
-    doc_id = _ensure_id(doc)
+    found_id, columns = split_pk(doc, schema=schema)
+    doc_id = found_id if found_id is not None else str(ULID())
     vec_defs = {v.name: v for v in schema.vectors}
     field_map = {f.name: f for f in schema.fields}
     # ``Any`` mirrors the SDK's invariant value type (list[float]/list[int]/
     # ndarray/sparse dict) so mypy does not complain about narrowing.
     vectors: dict[str, Any] = {}
     fields: dict[str, Any] = {}
-    for k, v in doc.items():
-        if k == "id":
-            continue
+    for k, v in columns.items():
         if k in vec_defs:
             vec_def = vec_defs[k]
             if _is_sparse_vector_type(vec_def.dataType):
@@ -742,22 +792,20 @@ def _build_doc_partial(doc: dict[str, Any], schema: CollectionSchema) -> SdkDoc:
 
     Unlike :func:`_build_doc`, this does **not** require every vector field
     to be present; only the columns the caller is changing are validated.
-    The ``id`` is mandatory (the SDK rejects updates without an id).
+    The primary key is mandatory (the SDK rejects updates without an id).
     """
-    raw_id = doc.get("id")
-    if not isinstance(raw_id, str) or not raw_id:
+    found_id, columns = split_pk(doc, schema=schema)
+    if not found_id:
         raise InvalidSchemaError(
-            "Update payload requires an explicit string 'id'.",
-            extra={"id": raw_id},
+            f"Update payload requires an explicit string '{pk_key(schema)}'.",
+            extra={"primaryKeyKey": pk_key(schema)},
         )
     vec_defs = {v.name: v for v in schema.vectors}
     field_map = {f.name: f for f in schema.fields}
     # See note on ``_build_doc`` -- ``Any`` matches the SDK's invariant value type.
     vectors: dict[str, Any] = {}
     fields: dict[str, Any] = {}
-    for k, v in doc.items():
-        if k == "id":
-            continue
+    for k, v in columns.items():
         if k in vec_defs:
             vec_def = vec_defs[k]
             if _is_sparse_vector_type(vec_def.dataType):
@@ -782,7 +830,7 @@ def _build_doc_partial(doc: dict[str, Any], schema: CollectionSchema) -> SdkDoc:
                 f"Unknown column '{k}' in document.",
                 extra={"column": k},
             )
-    return SdkDoc(id=raw_id, fields=fields or None, vectors=vectors)
+    return SdkDoc(id=found_id, fields=fields or None, vectors=vectors)
 
 
 def _status_ok(status: Any) -> bool:
@@ -809,6 +857,100 @@ def _status_ok(status: Any) -> bool:
         except Exception:
             return False
     return True
+
+
+def _status_msg(status: Any) -> str:
+    """Best-effort human-readable message of a Zvec ``Status``.
+
+    ``Status.message()`` is a method on the pybind11 binding; some fallback
+    shapes expose it differently (or not at all).
+    """
+    getter = getattr(status, "message", None)
+    if callable(getter):
+        try:
+            return str(getter())
+        except Exception:
+            pass
+    try:
+        return str(status)
+    except Exception:
+        return ""
+
+
+def _write_in_batches(
+    sdk_docs: list[SdkDoc],
+    write_fn: Callable[[list[SdkDoc]], Any],
+    *,
+    failed_code: str,
+    batch_size: int = _DEFAULT_WRITE_BATCH,
+) -> list[Any]:
+    """Run ``write_fn`` in SDK-sized chunks and classify failures.
+
+    Absorbs the SDK's hard batch limit (:data:`_MAX_SDK_WRITE_BATCH`) so
+    callers may pass any number of documents. Per-document failures are
+    reported through the SDK ``Status`` list; this helper maps them onto the
+    Studio error taxonomy:
+
+    * duplicate primary key      -> :class:`DocumentConflictError` (409)
+    * unknown id (update)        -> :class:`DocumentNotFoundError` (404)
+    * anything else              -> :class:`ZvecStudioError` (*failed_code*)
+
+    A ``ValueError`` raised *by the SDK itself* (document-level validation)
+    becomes :class:`InvalidDocumentError` (422); if it still mentions the
+    batch limit, our own batching has regressed and it must stay a 500.
+    """
+    statuses: list[Any] = []
+    chunk = max(1, min(batch_size, _MAX_SDK_WRITE_BATCH))
+    try:
+        for start in range(0, len(sdk_docs), chunk):
+            result = write_fn(sdk_docs[start : start + chunk])
+            if not isinstance(result, list):
+                result = [result]
+            statuses.extend(result)
+    except ValueError as exc:
+        msg = _exc_msg(exc)
+        if "too many docs" in msg.lower():
+            raise ZvecStudioError(
+                f"Internal write-batch regression: {msg}",
+                code="INTERNAL_ERROR",
+            ) from exc
+        raise InvalidDocumentError(msg, sdk_exception="ValueError") from exc
+    _check_write_statuses(statuses, failed_code=failed_code)
+    return statuses
+
+
+def _check_write_statuses(statuses: list[Any], *, failed_code: str) -> None:
+    """Raise the first non-OK ``Status``, mapped to the closest HTTP error.
+
+    Classification is shared with the import row reports via
+    :func:`_classify_status_code`; only the opaque-failure code differs
+    (callers pass their own operation code, e.g. ``INSERT_FAILED``).
+    """
+    for s in statuses:
+        if _status_ok(s):
+            continue
+        msg = _status_msg(s)
+        code = _classify_status_code(msg)
+        if code == "DOCUMENT_CONFLICT":
+            raise DocumentConflictError(
+                msg or "Document already exists.", sdk_exception="Status"
+            )
+        if code == "DOCUMENT_NOT_FOUND":
+            raise DocumentNotFoundError(msg or "Document not found.", sdk_exception="Status")
+        raise ZvecStudioError(
+            f"Zvec write returned non-zero status: {msg or s}", code=failed_code
+        )
+
+
+def _classify_status_code(message: str) -> str:
+    """Map a non-OK ``Status`` message onto a Studio error code (for import
+    row reports, which must not raise)."""
+    lowered = message.lower()
+    if "already exists" in lowered:
+        return "DOCUMENT_CONFLICT"
+    if "not found" in lowered:
+        return "DOCUMENT_NOT_FOUND"
+    return "WRITE_FAILED"
 
 
 class SdkBackend:
@@ -860,7 +1002,11 @@ class SdkBackend:
 
     def optimize(self, name: str, *, path: str | None = None) -> None:
         record = self.get(name, path=path)
-        record.sdk_obj.optimize(zvec.OptimizeOption())
+        try:
+            record.sdk_obj.optimize(zvec.OptimizeOption())
+        except RuntimeError as exc:
+            _raise_if_maintenance_blocked(exc)
+            raise
 
     def destroy(self, name: str, *, path: str | None = None) -> None:
         with self._lock:
@@ -907,6 +1053,7 @@ class SdkBackend:
                 sdk_field, expression, zvec.AddColumnOption()
             )
         except (ValueError, RuntimeError) as exc:
+            _raise_if_maintenance_blocked(exc)
             raise InvalidSchemaError(
                 f"Zvec add_column failed: {_exc_msg(exc)}",
                 extra={"name": name, "column": field.name},
@@ -924,6 +1071,7 @@ class SdkBackend:
         try:
             record.sdk_obj.drop_column(field_name)
         except (ValueError, RuntimeError) as exc:
+            _raise_if_maintenance_blocked(exc)
             raise InvalidSchemaError(
                 f"Zvec drop_column failed: {_exc_msg(exc)}",
                 extra={"name": name, "column": field_name},
@@ -953,6 +1101,7 @@ class SdkBackend:
                 old_name, new_name=new_name, option=zvec.AlterColumnOption()
             )
         except (ValueError, RuntimeError) as exc:
+            _raise_if_maintenance_blocked(exc)
             raise InvalidSchemaError(
                 f"Zvec alter_column failed: {_exc_msg(exc)}",
                 extra={"name": name, "oldName": old_name, "newName": new_name},
@@ -983,6 +1132,7 @@ class SdkBackend:
                 vector_field, sdk_param, zvec.IndexOption()
             )
         except (ValueError, RuntimeError) as exc:
+            _raise_if_maintenance_blocked(exc)
             raise InvalidSchemaError(
                 f"Zvec create_index failed: {_exc_msg(exc)}",
                 extra={"name": name, "vectorField": vector_field},
@@ -1001,6 +1151,7 @@ class SdkBackend:
         try:
             record.sdk_obj.drop_index(vector_field)
         except (ValueError, RuntimeError) as exc:
+            _raise_if_maintenance_blocked(exc)
             raise InvalidSchemaError(
                 f"Zvec drop_index failed: {_exc_msg(exc)}",
                 extra={"name": name, "vectorField": vector_field},
@@ -1038,6 +1189,7 @@ class SdkBackend:
             param = _build_scalar_index_param(index_param)
             record.sdk_obj.create_index(field_name, param, zvec.IndexOption())
         except (ValueError, RuntimeError) as exc:
+            _raise_if_maintenance_blocked(exc)
             raise InvalidSchemaError(
                 f"Zvec create_index (scalar) failed: {_exc_msg(exc)}",
                 extra={"name": name, "field": field_name},
@@ -1055,6 +1207,7 @@ class SdkBackend:
         try:
             record.sdk_obj.drop_index(field_name)
         except (ValueError, RuntimeError) as exc:
+            _raise_if_maintenance_blocked(exc)
             raise InvalidSchemaError(
                 f"Zvec drop_index (scalar) failed: {_exc_msg(exc)}",
                 extra={"name": name, "field": field_name},
@@ -1063,6 +1216,23 @@ class SdkBackend:
         return record
 
     # ---- documents ----
+
+    def _ensure_unique_name(self, name: str, path: Path) -> None:
+        """Enforce the registry invariant: open collection names are unique.
+
+        Nearly every document API resolves a collection by name alone (the
+        optional ``path`` hint is a fast-path), so two same-named collections
+        can never be open at once — requests would silently resolve to
+        whichever registered first. Callers must close the blocking one or
+        pick another name.
+        """
+        for record in self._by_path.values():
+            if record.name == name and record.path != path:
+                raise CollectionAlreadyExistsError(
+                    f"Collection '{name}' is already open from '{record.path}'. "
+                    f"Close it first, or choose another name.",
+                    extra={"name": name, "conflictingPath": str(record.path)},
+                )
 
     def create(self, *, path: Path, schema: CollectionSchema) -> CollectionRecord:
         path = Path(path)
@@ -1084,6 +1254,7 @@ class SdkBackend:
                     f"Parent directory {path.parent} does not exist.",
                     extra={"path": str(path)},
                 )
+            self._ensure_unique_name(schema.name, path)
             sdk_schema = _to_sdk_schema(schema)
             try:
                 sdk_obj = zvec.create_and_open(str(path), sdk_schema)
@@ -1129,6 +1300,12 @@ class SdkBackend:
                     extra={"path": str(path)},
                 ) from exc
             schema = _from_sdk_schema(sdk_obj.schema, path)
+            try:
+                self._ensure_unique_name(schema.name, path)
+            except CollectionAlreadyExistsError:
+                # Drop the just-opened handle instead of waiting for GC.
+                sdk_obj = None  # type: ignore[assignment]
+                raise
             record = CollectionRecord(
                 name=schema.name,
                 path=path,
@@ -1159,15 +1336,9 @@ class SdkBackend:
     def insert_documents(self, name: str, docs: list[dict[str, Any]]) -> list[str]:
         record = self.get(name)
         sdk_docs = [_build_doc(d, record.schema) for d in docs]
-        statuses = record.sdk_obj.insert(sdk_docs)
-        if not isinstance(statuses, list):
-            statuses = [statuses]
-        for s in statuses:
-            if not _status_ok(s):
-                raise ZvecStudioError(
-                    f"Zvec insert returned non-zero status: {s}",
-                    code="INSERT_FAILED",
-                )
+        # The SDK rejects write batches above _MAX_SDK_WRITE_BATCH, so split
+        # internally (the HTTP contract accepts up to 10,000 documents).
+        _write_in_batches(sdk_docs, record.sdk_obj.insert, failed_code="INSERT_FAILED")
         record.sdk_obj.flush()
         return [d.id for d in sdk_docs]
 
@@ -1179,34 +1350,38 @@ class SdkBackend:
         For new ids, the document is inserted as-is.
 
         Implementation: uses ``update()`` for existing docs (partial merge)
-        and falls back to ``insert()`` for new docs.
+        and falls back to ``insert()`` for new docs. The primary key is
+        resolved through :mod:`zvec_studio.storage.doc_repr`, so a schema that
+        declares its own ``id`` column (primary key carried on ``$id``) still
+        merges by the real key, and ambiguous bare-``id`` rows are rejected.
         """
         record = self.get(name)
 
-        # Split into docs with explicit id vs without
-        with_id: list[dict[str, Any]] = []
+        # Split into docs with an explicit primary key vs without (split_pk
+        # also validates ambiguous rows before any write happens).
+        keyed: list[tuple[str, dict[str, Any]]] = []
         without_id: list[dict[str, Any]] = []
         for d in docs:
-            if d.get("id"):
-                with_id.append(d)
+            found_id, _ = split_pk(d, schema=record.schema)
+            if found_id:
+                keyed.append((found_id, d))
             else:
                 without_id.append(d)
 
         result_ids: list[str] = []
 
         # For docs with id: try update (partial merge), fallback to insert
-        if with_id:
+        if keyed:
             # Check which ids already exist
-            ids_to_check = [str(d["id"]) for d in with_id]
-            fetched = record.sdk_obj.fetch(ids_to_check)
+            fetched = record.sdk_obj.fetch([doc_id for doc_id, _ in keyed])
             existing_ids: set[str] = set()
             if isinstance(fetched, dict):
                 existing_ids = {k for k, v in fetched.items() if v is not None}
 
             to_update: list[dict[str, Any]] = []
             to_insert: list[dict[str, Any]] = []
-            for d in with_id:
-                if str(d["id"]) in existing_ids:
+            for doc_id, d in keyed:
+                if doc_id in existing_ids:
                     to_update.append(d)
                 else:
                     to_insert.append(d)
@@ -1214,43 +1389,25 @@ class SdkBackend:
             # Update existing docs (partial — only provided fields change)
             if to_update:
                 sdk_update_docs = [_build_doc_partial(d, record.schema) for d in to_update]
-                statuses = record.sdk_obj.update(sdk_update_docs)
-                if not isinstance(statuses, list):
-                    statuses = [statuses]
-                for s in statuses:
-                    if not _status_ok(s):
-                        raise ZvecStudioError(
-                            f"Zvec update returned non-zero status: {s}",
-                            code="UPSERT_FAILED",
-                        )
+                _write_in_batches(
+                    sdk_update_docs, record.sdk_obj.update, failed_code="UPSERT_FAILED"
+                )
                 result_ids.extend(d.id for d in sdk_update_docs)
 
             # Insert new docs with explicit id (full doc required)
             if to_insert:
                 sdk_insert_docs = [_build_doc(d, record.schema) for d in to_insert]
-                statuses = record.sdk_obj.insert(sdk_insert_docs)
-                if not isinstance(statuses, list):
-                    statuses = [statuses]
-                for s in statuses:
-                    if not _status_ok(s):
-                        raise ZvecStudioError(
-                            f"Zvec insert returned non-zero status: {s}",
-                            code="UPSERT_FAILED",
-                        )
+                _write_in_batches(
+                    sdk_insert_docs, record.sdk_obj.insert, failed_code="UPSERT_FAILED"
+                )
                 result_ids.extend(d.id for d in sdk_insert_docs)
 
         # Insert docs without id (auto-generate ULID)
         if without_id:
             sdk_new_docs = [_build_doc(d, record.schema) for d in without_id]
-            statuses = record.sdk_obj.insert(sdk_new_docs)
-            if not isinstance(statuses, list):
-                statuses = [statuses]
-            for s in statuses:
-                if not _status_ok(s):
-                    raise ZvecStudioError(
-                        f"Zvec insert returned non-zero status: {s}",
-                        code="UPSERT_FAILED",
-                    )
+            _write_in_batches(
+                sdk_new_docs, record.sdk_obj.insert, failed_code="UPSERT_FAILED"
+            )
             result_ids.extend(d.id for d in sdk_new_docs)
 
         record.sdk_obj.flush()
@@ -1259,33 +1416,372 @@ class SdkBackend:
     def update_documents(self, name: str, docs: list[dict[str, Any]]) -> list[str]:
         record = self.get(name)
         sdk_docs = [_build_doc_partial(d, record.schema) for d in docs]
-        statuses = record.sdk_obj.update(sdk_docs)
-        if not isinstance(statuses, list):
-            statuses = [statuses]
-        for s, d in zip(statuses, sdk_docs, strict=False):
-            if _status_ok(s):
-                continue
-            # Zvec returns ``code=1, message='Document not found'`` for unknown
-            # ids in update().  Surface that as 404 so the UI can react sensibly
-            # rather than treating it as an opaque 5xx.
-            msg = ""
-            getter = getattr(s, "message", None)
-            if callable(getter):
-                try:
-                    msg = str(getter())
-                except Exception:
-                    msg = ""
-            if "not found" in msg.lower():
-                raise DocumentNotFoundError(
-                    f"Document '{d.id}' not found in '{name}'.",
-                    extra={"collection": name, "id": d.id},
-                )
-            raise ZvecStudioError(
-                f"Zvec update returned non-zero status: {s}",
-                code="UPDATE_FAILED",
-            )
+        # ``update`` reports unknown ids through a per-doc ``Status`` whose
+        # message contains "not found"; _check_write_statuses maps that to
+        # DocumentNotFoundError (404) instead of an opaque 5xx.
+        _write_in_batches(sdk_docs, record.sdk_obj.update, failed_code="UPDATE_FAILED")
         record.sdk_obj.flush()
         return [d.id for d in sdk_docs]
+
+    def import_documents(
+        self,
+        name: str,
+        *,
+        source_path: str,
+        fmt: ImportFormat,
+        mode: ImportMode = ImportMode.REPLACE,
+        on_error: OnErrorMode = OnErrorMode.ABORT,
+        batch_size: int = _DEFAULT_WRITE_BATCH,
+        path: str | None = None,
+    ) -> ImportReport:
+        """Import documents from a file, streaming.
+
+        Pipeline: parse row -> build ``SdkDoc`` (schema-validated) -> write in
+        SDK-sized batches (``upsert`` for ``replace``, ``insert`` for
+        ``insert``) -> aggregate a per-row report. Memory stays bounded by one
+        batch regardless of file size; the collection is flushed once at the
+        end (including aborts, so partially imported rows are durable).
+
+        Sources ending in ``.tar.gz`` / ``.tgz`` are treated as snapshot
+        packages: the embedded ``manifest.json`` is parsed and schema-checked
+        *before any row is written* (fail-fast 409), then the embedded JSONL
+        member is consumed through the same pipeline.
+
+        ``path`` fast-paths collection lookup (the registry guarantees open
+        names are unique, so it is never needed for disambiguation — handy
+        all the same when a caller already holds the absolute path).
+        """
+        record = self.get(name, path=path)
+        source = validate_import_source(source_path)
+        chunk = max(1, min(batch_size, _MAX_SDK_WRITE_BATCH))
+        report = ImportReport()
+        started = time.perf_counter()
+
+        with contextlib.ExitStack() as stack:
+            parser = self._open_import_stream(stack, source, record.schema, fmt)
+            aborted = self._consume_rows(
+                record, parser, mode=mode, on_error=on_error, chunk=chunk, report=report
+            )
+
+        # One flush for the whole run (see design doc §6.4: per-batch flushing
+        # would pay needless segment-seal costs).
+        record.sdk_obj.flush()
+        report.aborted = aborted
+        report.duration_ms = (time.perf_counter() - started) * 1000
+        return report
+
+    def _open_import_stream(
+        self,
+        stack: contextlib.ExitStack,
+        source: Path,
+        schema: CollectionSchema,
+        fmt: ImportFormat,
+    ) -> Iterator[tuple[int, dict[str, Any]]]:
+        """Open the row stream for plain JSONL files or snapshot packages.
+
+        A ``*.tar.gz`` source that is not actually a readable gzip/tar stream
+        (or breaks mid-read) is a user input error, mapped to 400
+        ``IMPORT_MANIFEST_INVALID`` instead of leaking tarfile/gzip internals
+        as a 500.
+        """
+        if source.name.lower().endswith((".tar.gz", ".tgz")):
+            try:
+                tar = stack.enter_context(tarfile.open(source, mode="r:gz"))  # noqa: SIM115
+                members = {m.name: m for m in tar if m.isfile()}
+            except (tarfile.TarError, EOFError, OSError, zlib.error) as exc:
+                raise ImportManifestInvalidError(
+                    f"'{source.name}' is not a readable snapshot package: {exc}",
+                    extra={"path": str(source)},
+                ) from exc
+            if MANIFEST_NAME not in members or DATA_FILE_NAME not in members:
+                raise ImportManifestInvalidError(
+                    f"Snapshot must contain '{MANIFEST_NAME}' and '{DATA_FILE_NAME}'.",
+                    extra={"members": sorted(members)},
+                )
+            manifest_file = tar.extractfile(members[MANIFEST_NAME])
+            if manifest_file is None:
+                raise ImportManifestInvalidError(
+                    f"'{MANIFEST_NAME}' is not a readable file inside the snapshot."
+                )
+            try:
+                manifest = parse_manifest(manifest_file.read())
+            except (tarfile.TarError, EOFError, OSError, zlib.error) as exc:
+                raise ImportManifestInvalidError(
+                    f"'{MANIFEST_NAME}' inside '{source.name}' is corrupted: {exc}",
+                    extra={"path": str(source)},
+                ) from exc
+            check_schema_compatible(manifest, schema)
+            data_file = tar.extractfile(members[DATA_FILE_NAME])
+            if data_file is None:
+                raise ImportManifestInvalidError(
+                    f"'{DATA_FILE_NAME}' is not a readable file inside the snapshot."
+                )
+            return self._guarded_snapshot_rows(fmt.parse(cast(BinaryIO, data_file)), source)
+        stream = stack.enter_context(source.open("rb"))
+        return fmt.parse(stream)
+
+    @staticmethod
+    def _guarded_snapshot_rows(
+        rows: Iterator[tuple[int, dict[str, Any]]], source: Path
+    ) -> Iterator[tuple[int, dict[str, Any]]]:
+        """Re-raise mid-stream gzip/tar corruption as a 400 manifest error.
+
+        Row-level parse failures (``InvalidDocumentError``) pass through
+        untouched — only archive-level breakage is reclassified.
+        """
+        try:
+            yield from rows
+        except (tarfile.TarError, EOFError, OSError, zlib.error) as exc:
+            raise ImportManifestInvalidError(
+                f"'{source.name}' is corrupted and cannot be read to the end: {exc}",
+                extra={"path": str(source)},
+            ) from exc
+
+    def _consume_rows(
+        self,
+        record: CollectionRecord,
+        parser: Iterator[tuple[int, dict[str, Any]]],
+        *,
+        mode: ImportMode,
+        on_error: OnErrorMode,
+        chunk: int,
+        report: ImportReport,
+    ) -> bool:
+        """Build rows into batches, write them, and report; return aborted."""
+        batch: list[SdkDoc] = []
+        batch_lines: list[int] = []
+        aborted = False
+
+        def flush_batch() -> bool:
+            """Write the pending batch; return True to abort the whole import."""
+            nonlocal batch, batch_lines
+            if not batch:
+                return False
+            abort_now = not self._import_write_batch(
+                record,
+                batch,
+                batch_lines,
+                mode=mode,
+                on_error=on_error,
+                report=report,
+            )
+            batch, batch_lines = [], []
+            return abort_now
+
+        while True:
+            try:
+                line_number, row = next(parser)
+            except StopIteration:
+                break
+            except ImportManifestInvalidError:
+                # Request-level: mid-stream archive corruption (see
+                # _guarded_snapshot_rows) maps to a 400 response, never to a
+                # row-level failure that abort/skip would digest.
+                raise
+            except ZvecStudioError as exc:
+                # Format-level row error (invalid JSON, wrong shape, ...).
+                # Malformed lines count toward total_lines too. In skip mode
+                # the invariant imported + failed == total_lines holds; under
+                # abort, same-batch rows after the first failure are
+                # compensated (deleted) and counted in neither bucket, so
+                # imported + failed may be less than total_lines.
+                report.total_lines += 1
+                raw_line = exc.extra.get("line", 0)
+                report.add_failure(
+                    ImportFailure(
+                        line=int(raw_line) if isinstance(raw_line, int) else 0,
+                        code=exc.code,
+                        message=exc.message,
+                    )
+                )
+                if on_error is OnErrorMode.ABORT:
+                    aborted = True
+                    break
+                continue
+
+            report.total_lines += 1
+            try:
+                batch.append(_build_doc(row, record.schema))
+            except ZvecStudioError as exc:
+                report.add_failure(
+                    ImportFailure(line=line_number, code=exc.code, message=exc.message)
+                )
+                if on_error is OnErrorMode.ABORT:
+                    aborted = True
+                    break
+                continue
+            batch_lines.append(line_number)
+
+            if len(batch) >= chunk and flush_batch():
+                aborted = True
+                break
+
+        # Write whatever valid rows are still buffered. After an abort the
+        # buffer holds only rows validated *before* the failing one, and
+        # "stop at the first error" must not silently discard them.
+        if flush_batch():
+            aborted = True
+        return aborted
+
+    def _import_write_batch(
+        self,
+        record: CollectionRecord,
+        sdk_docs: list[SdkDoc],
+        lines: list[int],
+        *,
+        mode: ImportMode,
+        on_error: OnErrorMode,
+        report: ImportReport,
+    ) -> bool:
+        """Write one batch; return True when the import should continue.
+
+        A ``ValueError`` from the SDK means the whole batch was rejected at
+        validation time; either way we retry row by row so the valid rows in
+        the batch still land — under ``skip`` to locate every offending line,
+        under ``abort`` to keep the rows before the first failing one
+        (consistent with the other abort paths, which never discard rows that
+        were already validated).
+        """
+        write_fn = (
+            record.sdk_obj.upsert if mode is ImportMode.REPLACE else record.sdk_obj.insert
+        )
+        try:
+            statuses = write_fn(sdk_docs)
+            if not isinstance(statuses, list):
+                statuses = [statuses]
+        except ValueError as exc:
+            msg = _exc_msg(exc)
+            if "too many docs" in msg.lower():
+                # Batching regression — never disguise as user input.
+                raise ZvecStudioError(
+                    f"Internal write-batch regression: {msg}", code="INTERNAL_ERROR"
+                ) from exc
+            return self._import_write_one_by_one(
+                record,
+                sdk_docs,
+                lines,
+                mode=mode,
+                report=report,
+                stop_at_first_failure=on_error is OnErrorMode.ABORT,
+            )
+
+        failed_in_batch = False
+        first_failure_idx: int | None = None
+        for i, s in enumerate(statuses):
+            if _status_ok(s):
+                report.imported += 1
+                continue
+            failed_in_batch = True
+            if first_failure_idx is None:
+                first_failure_idx = i
+            # ``abort`` reports only the first failing row (the import stops);
+            # ``skip`` records all of them.
+            if on_error is OnErrorMode.SKIP or first_failure_idx == i:
+                msg = _status_msg(s)
+                report.add_failure(
+                    ImportFailure(
+                        line=lines[i], code=_classify_status_code(msg), message=msg
+                    )
+                )
+        if failed_in_batch and on_error is OnErrorMode.ABORT:
+            if mode is ImportMode.INSERT and first_failure_idx is not None:
+                # True prefix semantics: rows submitted *after* the first
+                # failing one were already persisted by the batch write.
+                # An insert-confirmed id is guaranteed to be fresh (a clash
+                # would have failed), so deleting them cannot touch
+                # pre-existing data. REPLACE mode is excluded — an upserted
+                # row may have overwritten an existing document, and
+                # deleting it would destroy the original instead of
+                # restoring it.
+                stale = [
+                    sdk_docs[j].id
+                    for j in range(first_failure_idx + 1, len(statuses))
+                    if _status_ok(statuses[j])
+                ]
+                if stale:
+                    with contextlib.suppress(Exception):
+                        record.sdk_obj.delete(stale)
+                    report.imported -= len(stale)
+            return False
+        return True
+
+    def _import_write_one_by_one(
+        self,
+        record: CollectionRecord,
+        sdk_docs: list[SdkDoc],
+        lines: list[int],
+        *,
+        mode: ImportMode,
+        report: ImportReport,
+        stop_at_first_failure: bool = False,
+    ) -> bool:
+        """Row-by-row fallback after a batch-level ValueError.
+
+        ``skip`` uses it to locate every offending line (and keep good rows);
+        ``abort`` uses it with ``stop_at_first_failure`` so the rows before
+        the first failing one still land. Returns False to abort the import.
+        """
+        write_fn = (
+            record.sdk_obj.upsert if mode is ImportMode.REPLACE else record.sdk_obj.insert
+        )
+        for doc, line in zip(sdk_docs, lines, strict=True):
+            try:
+                statuses = write_fn([doc])
+                status = statuses[0] if isinstance(statuses, list) else statuses
+            except ValueError as exc:
+                report.add_failure(
+                    ImportFailure(line=line, code="INVALID_DOCUMENT", message=_exc_msg(exc))
+                )
+                if stop_at_first_failure:
+                    return False
+                continue
+            if _status_ok(status):
+                report.imported += 1
+            else:
+                msg = _status_msg(status)
+                report.add_failure(
+                    ImportFailure(line=line, code=_classify_status_code(msg), message=msg)
+                )
+                if stop_at_first_failure:
+                    return False
+        return True
+
+    def iter_documents(
+        self,
+        name: str,
+        *,
+        include_vector: bool,
+        output_fields: list[str] | None = None,
+        include_fields: bool = True,
+        path: str | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Stream every document as a wire row (design doc §6.3).
+
+        Wraps the SDK snapshot iterator (zvec 0.7 ``iter_docs``) in ``with`` so
+        the iterator — which blocks maintenance operations while open — is
+        released on EVERY exit path: normal exhaustion, early ``close()``
+        (client disconnect), and exceptions mid-stream.
+
+        ``include_fields=False`` keeps only the primary key and the vectors
+        (the reverse of ``include_vector=False``).
+        """
+        record = self.get(name, path=path)
+        with record.sdk_obj.iter_docs(
+            output_fields=output_fields, include_vector=include_vector
+        ) as iterator:
+            if include_fields:
+                for doc in iterator:
+                    yield doc_to_row(
+                        doc, schema=record.schema, include_vector=include_vector
+                    )
+            else:
+                vectors = {v.name for v in record.schema.vectors}
+                pk = pk_key(record.schema)
+                for doc in iterator:
+                    row = doc_to_row(
+                        doc, schema=record.schema, include_vector=include_vector
+                    )
+                    yield {k: v for k, v in row.items() if k == pk or k in vectors}
 
     def get_document(self, name: str, doc_id: str) -> dict[str, Any]:
         record = self.get(name)
@@ -1297,7 +1793,7 @@ class SdkBackend:
                 f"Document '{sid}' not found in '{name}'.",
                 extra={"collection": name, "id": sid},
             )
-        return _doc_to_dict(doc, include_vector=True)
+        return _doc_to_dict(doc, schema=record.schema, include_vector=True)
 
     def delete_document(self, name: str, doc_id: str) -> None:
         record = self.get(name)
@@ -1319,6 +1815,8 @@ class SdkBackend:
         present = record.sdk_obj.fetch(sids)
         deleted_ids = list(present.keys()) if isinstance(present, dict) else []
         if deleted_ids:
+            # No batching needed here: the write-batch limit is insert/update
+            # specific (a 2048-id delete was verified to succeed in one call).
             record.sdk_obj.delete(deleted_ids)
             record.sdk_obj.flush()
         return len(deleted_ids)
@@ -1379,7 +1877,10 @@ class SdkBackend:
                 str(exc),
                 extra={"filter": filter_expr},
             ) from exc
-        return [_doc_to_dict(d, include_vector=include_vector) for d in docs]
+        return [
+            _doc_to_dict(d, schema=record.schema, include_vector=include_vector)
+            for d in docs
+        ]
 
     # ---- search ----
 
@@ -1434,7 +1935,7 @@ class SdkBackend:
             (
                 d.id,
                 float(d.score) if d.score is not None else 0.0,
-                _doc_to_dict(d, include_vector=include_vector),
+                _doc_to_dict(d, schema=record.schema, include_vector=include_vector),
             )
             for d in docs
         ]
@@ -1521,7 +2022,7 @@ class SdkBackend:
             (
                 doc.id,
                 float(doc.score) if doc.score is not None else 0.0,
-                _doc_to_dict(doc, include_vector=include_vector),
+                _doc_to_dict(doc, schema=record.schema, include_vector=include_vector),
                 str(group.group_by_value),
             )
             for group in groups
