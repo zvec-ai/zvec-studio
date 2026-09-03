@@ -12,7 +12,7 @@ import {
 
 import './CreateCollectionDialog.css';
 
-const COLLECTION_NAME_RE = /^[A-Za-z][A-Za-z0-9_]{2,63}$/;
+const COLLECTION_NAME_RE = /^[A-Za-z0-9_-]{3,64}$/;
 const FIELD_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 
 const VECTOR_TYPES = ['VECTOR_FP32', 'VECTOR_FP16', 'VECTOR_INT8', 'SPARSE_VECTOR_FP32', 'SPARSE_VECTOR_FP16'] as const;

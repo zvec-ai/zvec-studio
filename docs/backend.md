@@ -89,7 +89,7 @@ Fusion rerankers (`rrf`/`weighted`) cannot be invoked via `:rerank` — they onl
 
 ## Pydantic Schema Notes
 
-- Collection names: `^[A-Za-z][A-Za-z0-9_]{2,63}$`
+- Collection names: `^[A-Za-z0-9_-]{3,64}$`
 - Field/vector names: `^[A-Za-z_][A-Za-z0-9_]{0,63}$`
 - Reserved field names: `id`, `_id` (injected by SDK)
 - Reserved collection names: `recent`, `open` (conflict with URL paths)

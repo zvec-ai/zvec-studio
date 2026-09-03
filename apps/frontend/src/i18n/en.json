@@ -169,7 +169,7 @@
         "successBody": "\"{{name}}\" created at {{path}}",
         "errors": {
           "nameRequired": "Name is required.",
-          "nameFormat": "Name must match ^[A-Za-z][A-Za-z0-9_]{2,63}$ (start with a letter, 3-64 chars).",
+          "nameFormat": "Name must match ^[A-Za-z0-9_-]{3,64}$ (3-64 chars, letters, numbers, underscores, hyphens).",
           "pathRequired": "Path is required.",
           "pathAbsolute": "Please provide an absolute path (starting with / on macOS/Linux or a drive letter on Windows).",
           "dimRange": "Dimension must be an integer between 1 and 32768.",
