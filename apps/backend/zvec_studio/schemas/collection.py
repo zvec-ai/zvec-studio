@@ -18,9 +18,9 @@ from typing import Annotated, Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 _NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
-# Zvec is stricter on collection names: must start with a letter and be at
-# least 3 characters long (verified empirically against zvec 0.4.0).
-_COLLECTION_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{2,63}$")
+# Collection names: 3 to 64 characters, letters, digits, underscores, and hyphens
+# (aligned with zvec engine validation ^[a-zA-Z0-9_-]{3,64}$).
+_COLLECTION_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{3,64}$")
 
 # ``id`` and ``_id`` used to be rejected here on the assumption that Zvec
 # "injects" ``id`` and a same-named column would shadow it. That assumption is
@@ -202,8 +202,8 @@ class CollectionSchema(BaseModel):
     def _validate_name(cls, v: str) -> str:
         if not _COLLECTION_NAME_RE.match(v):
             raise ValueError(
-                "collection name must match ^[A-Za-z][A-Za-z0-9_]{2,63}$ "
-                "(start with a letter, 3-64 chars)"
+                "collection name must match ^[A-Za-z0-9_-]{3,64}$ "
+                "(3-64 chars, letters, digits, underscores, hyphens)"
             )
         if v.lower() in _RESERVED_COLLECTION_NAMES:
             raise ValueError(
@@ -444,7 +444,7 @@ class CollectionImportRequest(BaseModel):
     @classmethod
     def _validate_name(cls, v: str | None) -> str | None:
         if v is not None and not _COLLECTION_NAME_RE.match(v):
-            raise ValueError("collection name must match ^[A-Za-z][A-Za-z0-9_]{2,63}$")
+            raise ValueError("collection name must match ^[A-Za-z0-9_-]{3,64}$")
         return v
 
 
