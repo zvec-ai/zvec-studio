@@ -139,13 +139,23 @@ describe('SchemaPanelDdl', () => {
     });
 
     await user.click(screen.getByTestId('zv-schema-add-field'));
+    const fieldType = await screen.findByTestId('zv-schema-add-field-type') as HTMLSelectElement;
+    expect(fieldType).toHaveValue('INT32');
+    expect(Array.from(fieldType.options, (option) => option.value)).toEqual([
+      'INT32',
+      'INT64',
+      'UINT32',
+      'UINT64',
+      'FLOAT',
+      'DOUBLE',
+    ]);
     await user.click(await screen.findByTestId('zv-schema-add-field-submit'));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/field name/i);
     expect(state.calls).toHaveLength(0);
 
     await user.type(screen.getByTestId('zv-schema-add-field-name'), 'category');
-    await user.selectOptions(screen.getByTestId('zv-schema-add-field-type'), 'ARRAY_STRING');
+    await user.selectOptions(fieldType, 'DOUBLE');
     await user.type(screen.getByTestId('zv-schema-add-field-expression'), 'doc.category');
     await user.click(screen.getByTestId('zv-schema-add-field-submit'));
 
@@ -154,7 +164,7 @@ describe('SchemaPanelDdl', () => {
         method: 'POST',
         path: '/collections/demo/fields',
         body: {
-          field: { name: 'category', dataType: 'ARRAY_STRING', nullable: true },
+          field: { name: 'category', dataType: 'DOUBLE', nullable: true },
           expression: 'doc.category',
         },
       });

@@ -20,6 +20,7 @@ from pydantic import ValidationError
 from zvec_studio.schemas.collection import (
     CollectionCreateRequest,
     CollectionSchema,
+    FieldAddRequest,
     FieldSchema,
     IndexType,
     MetricType,
@@ -112,6 +113,38 @@ class TestFieldSchema:
         assert f.indexParam is not None
         assert f.indexParam.indexType is IndexType.FTS
         assert f.indexParam.tokenizerName == "jieba"
+
+
+class TestFieldAddRequest:
+    @pytest.mark.parametrize(
+        "data_type", ["INT32", "INT64", "UINT32", "UINT64", "FLOAT", "DOUBLE"]
+    )
+    def test_accepts_numeric_scalar_types(self, data_type: str) -> None:
+        request = FieldAddRequest.model_validate(
+            {"field": {"name": "score", "dataType": data_type}}
+        )
+        assert request.field.dataType.value == data_type
+
+    @pytest.mark.parametrize(
+        "data_type",
+        [
+            "BOOL",
+            "STRING",
+            "ARRAY_BOOL",
+            "ARRAY_INT32",
+            "ARRAY_INT64",
+            "ARRAY_UINT32",
+            "ARRAY_UINT64",
+            "ARRAY_FLOAT",
+            "ARRAY_DOUBLE",
+            "ARRAY_STRING",
+        ],
+    )
+    def test_rejects_unsupported_scalar_types(self, data_type: str) -> None:
+        with pytest.raises(ValidationError, match="numeric scalar type"):
+            FieldAddRequest.model_validate(
+                {"field": {"name": "value", "dataType": data_type}}
+            )
 
 
 class TestVectorSchema:

@@ -57,23 +57,13 @@ function typeBadgeClass(dataType: string): string {
   return 'zv-type-badge zv-type-badge--text';
 }
 
-const SCALAR_TYPES: ReadonlyArray<SelectOption<ScalarDataType>> = [
+const ADDABLE_SCALAR_TYPES: ReadonlyArray<SelectOption<ScalarDataType>> = [
   { value: 'INT32', label: 'INT32' },
   { value: 'INT64', label: 'INT64' },
   { value: 'UINT32', label: 'UINT32' },
   { value: 'UINT64', label: 'UINT64' },
   { value: 'FLOAT', label: 'FLOAT' },
   { value: 'DOUBLE', label: 'DOUBLE' },
-  { value: 'BOOL', label: 'BOOL' },
-  { value: 'STRING', label: 'STRING' },
-  { value: 'ARRAY_BOOL', label: 'ARRAY_BOOL' },
-  { value: 'ARRAY_INT32', label: 'ARRAY_INT32' },
-  { value: 'ARRAY_INT64', label: 'ARRAY_INT64' },
-  { value: 'ARRAY_UINT32', label: 'ARRAY_UINT32' },
-  { value: 'ARRAY_UINT64', label: 'ARRAY_UINT64' },
-  { value: 'ARRAY_FLOAT', label: 'ARRAY_FLOAT' },
-  { value: 'ARRAY_DOUBLE', label: 'ARRAY_DOUBLE' },
-  { value: 'ARRAY_STRING', label: 'ARRAY_STRING' },
 ];
 const INDEX_TYPES: ReadonlyArray<SelectOption<IndexType>> = [
   { value: 'HNSW', label: 'HNSW' },
@@ -423,13 +413,13 @@ function AddFieldDialog({ open, onClose, collection, toast }: AddFieldDialogProp
   const { t } = useTranslation();
   const mutation = useAddField();
   const [name, setName] = useState('');
-  const [dataType, setDataType] = useState<ScalarDataType>('STRING');
+  const [dataType, setDataType] = useState<ScalarDataType>('INT32');
   const [expression, setExpression] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   function reset(): void {
     setName('');
-    setDataType('STRING');
+    setDataType('INT32');
     setExpression('');
     setError(null);
   }
@@ -518,7 +508,7 @@ function AddFieldDialog({ open, onClose, collection, toast }: AddFieldDialogProp
       />
       <Select<ScalarDataType>
         label={t('pages.collections.detail.schema.ddl.addFieldDialog.typeLabel')}
-        options={SCALAR_TYPES}
+        options={ADDABLE_SCALAR_TYPES}
         value={dataType}
         onChange={(event) => setDataType(event.target.value as ScalarDataType)}
         disabled={mutation.isPending}

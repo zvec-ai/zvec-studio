@@ -75,6 +75,18 @@ class ScalarDataType(str, Enum):
     ARRAY_STRING = "ARRAY_STRING"
 
 
+_ADDABLE_SCALAR_DATA_TYPES: frozenset[ScalarDataType] = frozenset(
+    {
+        ScalarDataType.INT32,
+        ScalarDataType.INT64,
+        ScalarDataType.UINT32,
+        ScalarDataType.UINT64,
+        ScalarDataType.FLOAT,
+        ScalarDataType.DOUBLE,
+    }
+)
+
+
 class IndexType(str, Enum):
     """Index families exposed by the Zvec SDK."""
 
@@ -340,6 +352,13 @@ class FieldAddRequest(BaseModel):
             " Empty string defaults to the dtype's zero value."
         ),
     )
+
+    @field_validator("field")
+    @classmethod
+    def _validate_field_data_type(cls, field: FieldSchema) -> FieldSchema:
+        if field.dataType not in _ADDABLE_SCALAR_DATA_TYPES:
+            raise ValueError("field dataType must be a numeric scalar type")
+        return field
 
 
 class FieldRenameRequest(BaseModel):

@@ -461,6 +461,18 @@ class TestMaintenance:
 
 
 class TestFieldDDL:
+    @pytest.mark.parametrize("data_type", ["BOOL", "STRING", "ARRAY_INT64"])
+    async def test_add_unsupported_field_type_returns_422(
+        self, client: AsyncClient, tmp_path: Path, data_type: str
+    ) -> None:
+        await _create(client, tmp_path / "c", "badtype")
+
+        resp = await client.post(
+            f"{API}/collections/badtype/fields",
+            json={"field": {"name": "value", "dataType": data_type}},
+        )
+        assert resp.status_code == 422
+
     async def test_add_drop_rename_field_round_trip(
         self, client: AsyncClient, tmp_path: Path
     ) -> None:
@@ -492,10 +504,11 @@ class TestFieldDDL:
         self, client: AsyncClient, tmp_path: Path
     ) -> None:
         await _create(client, tmp_path / "c", "dup1")
-        resp = await client.post(
-            f"{API}/collections/dup1/fields",
-            json={"field": {"name": "title", "dataType": "STRING"}},
-        )
+        payload = {"field": {"name": "score", "dataType": "INT64"}}
+        first = await client.post(f"{API}/collections/dup1/fields", json=payload)
+        assert first.status_code == 201
+
+        resp = await client.post(f"{API}/collections/dup1/fields", json=payload)
         assert resp.status_code == 400
         assert resp.json()["code"] == "INVALID_SCHEMA"
 
