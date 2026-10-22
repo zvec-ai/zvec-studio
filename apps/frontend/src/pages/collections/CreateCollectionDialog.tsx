@@ -12,7 +12,6 @@ import {
 
 import './CreateCollectionDialog.css';
 
-const COLLECTION_NAME_RE = /^[A-Za-z][A-Za-z0-9_]{2,63}$/;
 const FIELD_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 
 const VECTOR_TYPES = ['VECTOR_FP32', 'VECTOR_FP16', 'VECTOR_INT8', 'SPARSE_VECTOR_FP32', 'SPARSE_VECTOR_FP16'] as const;
@@ -212,7 +211,7 @@ export function CreateCollectionDialog({
 
   function onNameChange(next: string): void {
     setName(next);
-    if (next.trim() && COLLECTION_NAME_RE.test(next)) clearError('name');
+    if (next.trim()) clearError('name');
   }
 
   function onParentPicked(picked: string): void {
@@ -254,8 +253,6 @@ export function CreateCollectionDialog({
   function validate(): Record<string, string> {
     const next: Record<string, string> = {};
     if (!name.trim()) next.name = t('pages.collections.create.errors.nameRequired');
-    else if (!COLLECTION_NAME_RE.test(name))
-      next.name = t('pages.collections.create.errors.nameFormat');
     if (!path.trim()) next.path = t('pages.collections.create.errors.pathRequired');
     if (fields.length === 0) next.fields = t('pages.collections.create.errors.fieldsRequired');
     for (const f of fields) {
@@ -345,6 +342,16 @@ export function CreateCollectionDialog({
           title: t(err.error.messageKey, { defaultValue: err.error.code }),
           description: err.error.message,
         });
+        const nameError =
+          err.error.fieldErrors?.['schema.name'] ??
+          err.error.fieldErrors?.['body.schema.name'] ??
+          err.error.fieldErrors?.['name'];
+        if (nameError) {
+          setErrors((prev) => ({
+            ...prev,
+            name: nameError,
+          }));
+        }
       } else {
         toast.push({ title: t('errors.unknown'), severity: 'error' });
       }

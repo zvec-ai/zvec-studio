@@ -323,14 +323,30 @@ class TestCollectionSchema:
         schema = CollectionSchema.model_validate(payload)
         assert schema.fields == []
 
-    @pytest.mark.parametrize("bad_name", ["x", "ab", "1abc", "a-b", "_x"])
-    def test_collection_name_must_be_at_least_3_chars_letter_first(
-        self, bad_name: str
-    ) -> None:
+    @pytest.mark.parametrize("empty_name", ["", "   "])
+    def test_collection_name_empty_rejected(self, empty_name: str) -> None:
         payload = _valid_schema_payload()
-        payload["name"] = bad_name
+        payload["name"] = empty_name
         with pytest.raises(ValidationError):
             CollectionSchema.model_validate(payload)
+
+    @pytest.mark.parametrize("reserved_name", ["recent", "open", "RECENT", "Open"])
+    def test_collection_name_reserved_rejected(self, reserved_name: str) -> None:
+        payload = _valid_schema_payload()
+        payload["name"] = reserved_name
+        with pytest.raises(ValidationError):
+            CollectionSchema.model_validate(payload)
+
+    @pytest.mark.parametrize(
+        "valid_name",
+        ["abc", "a-b", "pr-new-collection", "-start", "end-", "1abc", "col_123", "a" * 64],
+    )
+    def test_collection_name_valid_accepted(self, valid_name: str) -> None:
+        payload = _valid_schema_payload()
+        payload["name"] = valid_name
+        schema = CollectionSchema.model_validate(payload)
+        assert schema.name == valid_name
+
 
 
 class TestCollectionCreateRequest:

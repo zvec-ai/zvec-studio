@@ -36,6 +36,8 @@ export interface UserFacingError {
   readonly traceId: string | null;
   /** Severity for Toast styling. */
   readonly severity: ErrorSeverity;
+  /** Optional field-level error messages keyed by field path (e.g. ``schema.name``). */
+  readonly fieldErrors?: Readonly<Record<string, string>>;
 }
 
 const KNOWN_CODES = new Set<string>([
@@ -91,6 +93,31 @@ export function mapProblem(problem: ProblemDetails, status?: number): UserFacing
   const code = rawCode && KNOWN_CODES.has(rawCode) ? rawCode : 'INTERNAL_ERROR';
   const traceId = typeof problem.traceId === 'string' ? problem.traceId : null;
   const message = problem.detail ?? problem.title ?? 'Unknown error';
+
+  let fieldErrors: Record<string, string> | undefined;
+  if (Array.isArray(problem.errors)) {
+    const collected: Record<string, string> = {};
+    for (const item of problem.errors) {
+      if (item && typeof item === 'object') {
+        const errObj = item as { loc?: unknown; msg?: unknown };
+        if (Array.isArray(errObj.loc) && typeof errObj.msg === 'string') {
+          const locParts = errObj.loc.map(String);
+          const fullPath = locParts.join('.');
+          const trimmedPath = locParts.filter((p) => p !== 'body').join('.');
+          let msg = errObj.msg;
+          if (msg.startsWith('Value error, ')) {
+            msg = msg.slice('Value error, '.length);
+          }
+          if (fullPath) collected[fullPath] = msg;
+          if (trimmedPath) collected[trimmedPath] = msg;
+        }
+      }
+    }
+    if (Object.keys(collected).length > 0) {
+      fieldErrors = collected;
+    }
+  }
+
   return {
     code,
     messageKey: `errors.code.${code}`,
@@ -98,6 +125,7 @@ export function mapProblem(problem: ProblemDetails, status?: number): UserFacing
     status: resolvedStatus,
     traceId,
     severity: severityFor(resolvedStatus),
+    ...(fieldErrors ? { fieldErrors } : {}),
   };
 }
 

@@ -169,7 +169,7 @@
         "successBody": "\"{{name}}\" 已创建在 {{path}}",
         "errors": {
           "nameRequired": "名称为必填项。",
-          "nameFormat": "名称必须匹配 ^[A-Za-z][A-Za-z0-9_]{2,63}$（以字母开头，3-64 个字符）。",
+          "nameFormat": "名称必须匹配 ^[A-Za-z0-9_-]{3,64}$（3-64 个字符，支持字母、数字、下划线和连字符）。",
           "pathRequired": "路径为必填项。",
           "pathAbsolute": "请提供绝对路径（macOS/Linux 以 / 开头，Windows 以盘符开头）。",
           "dimRange": "维度必须是 1 到 32768 之间的整数。",

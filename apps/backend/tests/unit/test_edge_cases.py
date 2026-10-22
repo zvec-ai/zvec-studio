@@ -92,12 +92,13 @@ async def test_collection_name_max_length_accepted(
 async def test_collection_name_exceeds_max_length_rejected(
     client: AsyncClient,
 ) -> None:
-    """A collection name of 65 characters should fail schema validation with 422."""
+    """A collection name of 65 characters should fail engine validation with 400 INVALID_SCHEMA."""
     too_long = "a" * 65
     body = {"path": "/tmp/col_too_long", "schema": _valid_schema(too_long)}
 
     resp = await client.post(f"{API}/collections", json=body)
-    assert resp.status_code == 422
+    assert resp.status_code == 400
+    assert resp.json()["code"] == "INVALID_SCHEMA"
 
 
 # ---------------------------------------------------------------------------

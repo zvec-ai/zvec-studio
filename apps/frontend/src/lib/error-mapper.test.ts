@@ -36,6 +36,21 @@ describe('mapProblem', () => {
     const err = mapProblem({ code: 'INVALID_SCHEMA', detail: 'nope' }, 400);
     expect(err.traceId).toBeNull();
   });
+
+  it('extracts fieldErrors from problem.errors array', () => {
+    const problem: ProblemDetails = {
+      code: 'VALIDATION_ERROR',
+      detail: 'Validation failed',
+      errors: [
+        { loc: ['body', 'schema', 'name'], msg: 'Value error, collection name is invalid' },
+        { loc: ['body', 'path'], msg: 'path is required' },
+      ],
+    };
+    const err = mapProblem(problem, 422);
+    expect(err.fieldErrors).toBeDefined();
+    expect(err.fieldErrors?.['schema.name']).toBe('collection name is invalid');
+    expect(err.fieldErrors?.['path']).toBe('path is required');
+  });
 });
 
 describe('mapUnknownError', () => {
