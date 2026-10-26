@@ -34,6 +34,9 @@ class Settings(BaseSettings):
         default=Path.home() / ".zvec-studio",
         description="Directory where Studio persists config/state",
     )
+    auto_flush: bool = Field(
+        default=True, description="Flush after each document CRUD request"
+    )
     api_prefix: str = Field(default="/api/v1", description="API route prefix")
     cors_origins: list[str] = Field(
         default_factory=lambda: [

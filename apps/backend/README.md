@@ -43,6 +43,7 @@ See [`zvec_studio/settings.py`](zvec_studio/settings.py).
 | --- | --- | --- |
 | `ZVEC_STUDIO_HOST` | `127.0.0.1` | Bind address |
 | `ZVEC_STUDIO_PORT` | `7860` | Bind port |
+| `ZVEC_STUDIO_AUTO_FLUSH` | `true` | Flush after each document CRUD request |
 | `ZVEC_STUDIO_LOG_LEVEL` | `info` | `critical \| error \| warning \| info \| debug` |
 | `ZVEC_STUDIO_DATA_DIR` | `~/.zvec-studio` | Config & AI functions storage |
 | `ZVEC_STUDIO_API_PREFIX` | `/api/v1` | Route prefix |
@@ -104,3 +105,15 @@ See [`docs/architecture.md`](../../docs/architecture.md) for the full request fl
 ## License
 
 Apache-2.0 — [`LICENSE`](../../LICENSE)
+
+## Batch writes without per-request flush
+
+Start with `ZVEC_STUDIO_AUTO_FLUSH=false` to let consecutive insert, upsert,
+update and delete requests reuse the current write block. This is a process-wide
+setting; the default remains `true`. Finish a batch with the existing
+`POST /api/v1/collections/{name}:flush` API or close the collection. File imports
+still flush once at the end of the whole import.
+
+With automatic flushing disabled, a successful write response does not mean a
+flush has completed. Explicitly save before stopping the server; an abnormal
+exit may lose unsaved changes. Each actual flush can still end a write block.

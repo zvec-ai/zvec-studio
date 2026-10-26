@@ -167,7 +167,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # App-scoped state (consumed by dependencies/tests).
     app.state.settings = effective
     app.state.registry = CollectionRegistry()
-    app.state.backend = SdkBackend()
+    app.state.backend = SdkBackend(auto_flush=effective.auto_flush)
     app.state.config_store = ConfigStore(effective.data_dir)
     app.state.ai_registry = AIFunctionRegistry(effective.data_dir)
     _seed_builtins(app.state.ai_registry)

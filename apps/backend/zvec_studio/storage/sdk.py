@@ -962,7 +962,8 @@ class SdkBackend:
     fully supported.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, auto_flush: bool = True) -> None:
+        self._auto_flush = auto_flush
         self._by_path: dict[str, CollectionRecord] = {}
         self._lock = RLock()
 
@@ -995,6 +996,10 @@ class SdkBackend:
         return _coerce_stats(record.sdk_obj.stats, record.path)
 
     # ---- maintenance / lifecycle ----
+
+    def _flush_after_write(self, record: CollectionRecord) -> None:
+        if self._auto_flush:
+            record.sdk_obj.flush()
 
     def flush(self, name: str, *, path: str | None = None) -> None:
         record = self.get(name, path=path)
@@ -1319,13 +1324,11 @@ class SdkBackend:
         with self._lock:
             record = self.get(name, path=path)
             key = str(record.path)
-            self._by_path.pop(key, None)
             sdk_obj = record.sdk_obj
-            try:
-                if sdk_obj is not None and hasattr(sdk_obj, "flush"):
-                    sdk_obj.flush()
-            except Exception:
-                pass
+            # Keep the handle registered if saving deferred writes fails.
+            if sdk_obj is not None and hasattr(sdk_obj, "flush"):
+                sdk_obj.flush()
+            self._by_path.pop(key, None)
             record.sdk_obj = None
             del sdk_obj
             gc.collect()
@@ -1339,7 +1342,7 @@ class SdkBackend:
         # The SDK rejects write batches above _MAX_SDK_WRITE_BATCH, so split
         # internally (the HTTP contract accepts up to 10,000 documents).
         _write_in_batches(sdk_docs, record.sdk_obj.insert, failed_code="INSERT_FAILED")
-        record.sdk_obj.flush()
+        self._flush_after_write(record)
         return [d.id for d in sdk_docs]
 
     def upsert_documents(self, name: str, docs: list[dict[str, Any]]) -> list[str]:
@@ -1410,7 +1413,7 @@ class SdkBackend:
             )
             result_ids.extend(d.id for d in sdk_new_docs)
 
-        record.sdk_obj.flush()
+        self._flush_after_write(record)
         return result_ids
 
     def update_documents(self, name: str, docs: list[dict[str, Any]]) -> list[str]:
@@ -1420,7 +1423,7 @@ class SdkBackend:
         # message contains "not found"; _check_write_statuses maps that to
         # DocumentNotFoundError (404) instead of an opaque 5xx.
         _write_in_batches(sdk_docs, record.sdk_obj.update, failed_code="UPDATE_FAILED")
-        record.sdk_obj.flush()
+        self._flush_after_write(record)
         return [d.id for d in sdk_docs]
 
     def import_documents(
@@ -1807,7 +1810,7 @@ class SdkBackend:
                 extra={"collection": name, "id": sid},
             )
         record.sdk_obj.delete(sid)
-        record.sdk_obj.flush()
+        self._flush_after_write(record)
 
     def delete_documents(self, name: str, ids: list[str]) -> int:
         record = self.get(name)
@@ -1818,7 +1821,7 @@ class SdkBackend:
             # No batching needed here: the write-batch limit is insert/update
             # specific (a 2048-id delete was verified to succeed in one call).
             record.sdk_obj.delete(deleted_ids)
-            record.sdk_obj.flush()
+            self._flush_after_write(record)
         return len(deleted_ids)
 
     def delete_by_filter(self, name: str, filter_expr: str) -> int:
@@ -1847,7 +1850,7 @@ class SdkBackend:
                 str(exc),
                 extra={"filter": filter_expr},
             ) from exc
-        record.sdk_obj.flush()
+        self._flush_after_write(record)
         return count
 
     def browse(
